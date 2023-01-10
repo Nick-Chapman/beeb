@@ -1,10 +1,12 @@
 
-top: _build run-first
+top: _build run-bf
+
+ssd: _build/bf.ssd
 
 run-%: _build/%.ssd
 	b-em $<
 
 _build/%.ssd: src/%.asm
-	beebasm -i $< -do $@ -boot Code
+	beebasm -i $< -do $@ -boot Code -v || rm $@
 
 _build: ; @mkdir -p $@
