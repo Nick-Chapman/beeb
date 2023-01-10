@@ -1,9 +1,10 @@
 
-BEEBASM = ../stardot/beebasm/beebasm
-B-EM = ../stardot/b-em/b-em
+top: _build run-simple
 
-run: demo.ssd
-	$(B-EM) $^
+run-%: _build/%.ssd
+	b-em $<
 
-demo.ssd: demo.6502
-	$(BEEBASM) -i $^ -do $@ -boot Code -v
+_build/%.ssd: src/%.asm
+	beebasm -i $< -do $@ -boot Code
+
+_build: ; @mkdir -p $@
