@@ -7,6 +7,6 @@ run-%: _build/%.ssd
 	b-em $<
 
 _build/%.ssd: src/%.asm
-	beebasm -i $< -do $@ -boot Code -v || rm $@
+	beebasm -i $< -do $@ -boot Code || rm $@
 
 _build: ; @mkdir -p $@

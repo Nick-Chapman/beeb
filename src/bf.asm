@@ -54,8 +54,12 @@ org $2000
 .dot
     cmp #ASC(".") : bne open
     lda (mp),Y
+    cmp #10 : bne print
+    clc
+    adc #3
+.print
     jsr OSWRCH
-
+    jmp advance
 .open
     cmp #ASC("[") : bne close
     lda (mp),Y
@@ -72,11 +76,10 @@ org $2000
     dex
     bne forward
     jmp advance
-
 .close
     cmp #ASC("]") : bne advance
     lda (mp),Y
-    beq advance
+    beq done
     ldx #1
 .backward
     jsr decip
@@ -88,6 +91,7 @@ org $2000
     cmp #ASC("[") : bne backward
     dex
     bne backward
+.done
     jmp advance
 .incip
     inc ip
