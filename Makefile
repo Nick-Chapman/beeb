@@ -1,5 +1,5 @@
 
-top: _build run-simple
+top: _build run-first
 
 run-%: _build/%.ssd
 	b-em $<
