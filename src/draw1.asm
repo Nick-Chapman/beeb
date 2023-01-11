@@ -1,7 +1,10 @@
 
 ; Plotting example
 
+ula = &fe21
+
 oswrch = &ffee
+osbyte = &fff4
 
 org &2000
 
@@ -25,12 +28,36 @@ white = 3
     lda #white
     ldy #100
     ldx #50
-.aloop
     jsr small_m
-    jsr pause
+.aloop
+    ;jsr pause
+    jsr vsync
+    jsr raster_show_on
     jsr small_m
     inx : inx : iny
+    jsr small_m
+    jsr raster_show_off
     jmp aloop
+    rts
+
+.vsync
+    pha : txa : pha : tya : pha
+    lda #19 : jsr osbyte
+    pla : tay : pla : tax : pla
+    rts
+
+.raster_show_on
+    pha
+    ;lda #&00+(1EOR7) : sta ula
+    lda #6 : sta ula
+    pla
+    rts
+
+.raster_show_off
+    pha
+    ;lda #&00+(0EOR7) : sta ula
+    lda #7 : sta ula
+    pla
     rts
 
 .small_m
