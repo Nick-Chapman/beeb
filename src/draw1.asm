@@ -13,6 +13,7 @@ white = 3
 .start:
     jsr switch_mode1
     jsr cursor_off
+    jsr replace_white_with_cyan
     lda #white
     ;jsr border
     ;jsr wash_screen_with_colours
@@ -21,7 +22,7 @@ white = 3
     jmp spin
 
 .animate:
-    lda #yellow
+    lda #white
     ldy #100
     ldx #50
 .aloop
@@ -140,6 +141,15 @@ white = 3
     lda #0 : jsr oswrch
     lda #0 : jsr oswrch
     lda #0 : jsr oswrch
+    lda #0 : jsr oswrch
+    lda #0 : jsr oswrch
+    lda #0 : jsr oswrch
+    rts
+
+.replace_white_with_cyan
+    lda #19 : jsr oswrch
+    lda #7 : jsr oswrch
+    lda #6 : jsr oswrch
     lda #0 : jsr oswrch
     lda #0 : jsr oswrch
     lda #0 : jsr oswrch
