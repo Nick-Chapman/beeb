@@ -14,10 +14,53 @@ white = 3
     jsr switch_mode1
     jsr cursor_off
     lda #white
-    jsr border
-    jsr wash_screen_with_colours
+    ;jsr border
+    ;jsr wash_screen_with_colours
+    jsr animate
 .spin:
     jmp spin
+
+.animate:
+    lda #yellow
+    ldy #100
+    ldx #50
+.aloop
+    jsr small_m
+    jsr pause
+    jsr small_m
+    inx : inx : iny
+    jmp aloop
+    rts
+
+.small_m
+    ;pha : txa : pha : tya : pha
+    ;lda #white
+
+    dey : inx : jsr plot_dot
+    dey : inx : jsr plot_dot
+    inx : jsr plot_dot
+    iny : inx : jsr plot_dot
+    dey : inx : jsr plot_dot
+    inx : jsr plot_dot
+    iny : inx : jsr plot_dot
+    iny : jsr plot_dot
+    iny : inx : jsr plot_dot
+    iny : jsr plot_dot
+    iny : dex : jsr plot_dot
+    iny : jsr plot_dot
+    iny : dex : jsr plot_dot
+    dex : jsr plot_dot
+    dey : dex : jsr plot_dot
+    iny : dex : jsr plot_dot
+    dex : jsr plot_dot
+    dey : dex : jsr plot_dot
+    dey : inx : jsr plot_dot
+    dey : dex : jsr plot_dot
+    dey : dex : jsr plot_dot
+    dey : jsr plot_dot
+
+    ;pla : tay : pla : tax : pla
+    rts
 
 .border
     ldx #1
@@ -71,18 +114,18 @@ white = 3
 ;;     lda #7 : jsr oswrch
 ;;     rts
 
-;; .pause:
-;;     txa : pha : tya : pha
-;;     ldx #1
-;; .loop_x:
-;;     ldy #255
-;; .loop_y:
-;;     dey
-;;     bne loop_y
-;;     dex
-;;     bne loop_x
-;;     pla : tay : pla : tax
-;;     rts
+.pause:
+    pha : txa : pha : tya : pha
+    ldx #30
+.loop_x:
+    ldy #255
+.loop_y:
+    dey
+    bne loop_y
+    dex
+    bne loop_x
+    pla : tay : pla : tax : pla
+    rts
 
 .switch_mode1:
     lda #22 : jsr oswrch
