@@ -11,7 +11,7 @@ red = 1
 yellow = 2
 cyan = 3
 
-org &70 ; could be 0
+org 0 ;&70 ; could be 0
 
 .tmp SKIP 1
 .X SKIP 1
@@ -24,6 +24,12 @@ org &70 ; could be 0
 .fineX SKIP 1
 .fineY SKIP 1
 .fineYsplit SKIP 1
+
+.ob1X SKIP 1
+.ob1Y SKIP 1
+.ob2X SKIP 1
+.ob2Y SKIP 1
+
 
 org &2000
 
@@ -484,12 +490,12 @@ EQUB    xxoo
 ;small_m = new_small_m
 ;small_m = old_small_m
 
-.animate:
+.OLD_animate:
     lda #100 : sta Y
     lda #50 : sta X
     jsr new_small_m
     ;rts ; stop animation early
-.aloop
+.OLD_aloop
     jsr vsync
     jsr raster_show_on
     ;jsr pause
@@ -498,7 +504,43 @@ EQUB    xxoo
     inc Y
     jsr new_small_m
     jsr raster_show_off
+    jmp OLD_aloop
+
+
+.init_world
+    lda #50 : sta ob1X
+    lda #100 : sta ob1Y
+    lda #70 : sta ob2X
+    lda #130 : sta ob2Y
+    rts
+
+.update_world
+    inc ob1X : inc ob1X : inc ob1Y
+    inc ob2X : dec ob2Y
+    rts
+
+.display_world
+    lda ob1X : sta X
+    lda ob1Y : sta Y
+    jsr new_small_m
+    ;; lda ob2X : sta X
+    ;; lda ob2Y : sta Y
+    ;; jsr new_small_m
+    rts
+
+
+.animate
+    jsr init_world
+    jsr display_world ; on0
+.aloop
+    jsr vsync
+    jsr raster_show_on
+    jsr display_world ; off
+    jsr update_world
+    jsr display_world ; on
+    jsr raster_show_off
     jmp aloop
+
 
 .end
 save "code", start, end
