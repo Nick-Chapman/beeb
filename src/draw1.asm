@@ -30,7 +30,6 @@ org 0 ;&70 ; could be 0
 .ob2X SKIP 1
 .ob2Y SKIP 1
 
-
 org &2000
 
 .start:
@@ -38,9 +37,6 @@ org &2000
     jsr cursor_off
     jsr replace_white_with_cyan
     lda #cyan
-    ;jsr border
-    ;jsr wash_screen_with_colours
-    ;jsr preshift
     jsr animate
 
 .spin:
@@ -94,55 +90,6 @@ org &2000
     dey : dex : jsr plot_dot
     dey : jsr plot_dot
     rts
-
-.border
-    ldx #1
-.next_x
-    ldy #255
-    jsr plot_dot
-    ldy #0
-    jsr plot_dot
-    inx
-    bne next_x
-    jsr plot_dot
-    ldy #1
-.next_y
-    ldx #0
-    jsr plot_dot
-    ldx #255
-    jsr plot_dot
-    iny
-    bne next_y
-    ldy #255
-    jsr plot_dot
-    rts
-
-.wash_screen_with_colours
-    lda #yellow
-    jsr wash
-    lda #cyan ; to show as red
-    jsr wash
-    lda #red ; to clear to black
-    jsr wash
-    rts
-
-.wash: ; takes colour in Acc
-    pha
-    ldy #1
-.next_row:
-    ldx #1
-.next:
-    pla : pha
-    jsr plot_dot
-    inx
-    txa : cmp #255 : bne next
-    tya : clc : adc #1 : tay : cmp #255 : bne next_row
-    pla
-    rts
-
-;; .beep:
-;;     lda #7 : jsr oswrch
-;;     rts
 
 .pause:
     pha : txa : pha : tya : pha
@@ -258,27 +205,6 @@ xxoo = &cc
 xxox = &dd
 xxxo = &ee
 xxxx = &ff
-
-
-;; triangle data...
-;; EQUB    xooo
-;; EQUB    xxoo
-;; EQUB    xxxo
-;; EQUB    xxxx
-;; EQUB    xxxx
-;; EQUB    xxxx
-;; EQUB    xxxx
-;; EQUB    xxxx
-
-;; EQUB    oooo
-;; EQUB    oooo
-;; EQUB    oooo
-;; EQUB    oooo
-;; EQUB    xooo
-;; EQUB    xxoo
-;; EQUB    xxxo
-;; EQUB    xxxx
-
 
 ;; small meteor data... (unshifted)
 .sprite_data0:
@@ -474,7 +400,6 @@ EQUB    xxoo
     lda dp : clc : adc #8 : sta dp
     ;lda dp+1 : clc : adc #0 : sta dp+1 ; needed if sprite data crosses a page
 
-    ;jmp noColWrap
     lda X : clc : adc #4 : sta X : bcc noColWrap
 
     sec
@@ -486,25 +411,6 @@ EQUB    xxoo
 
 .noColWrap
     jmp render_loop
-
-;small_m = new_small_m
-;small_m = old_small_m
-
-.OLD_animate:
-    lda #100 : sta Y
-    lda #50 : sta X
-    jsr new_small_m
-    ;rts ; stop animation early
-.OLD_aloop
-    jsr vsync
-    jsr raster_show_on
-    ;jsr pause
-    jsr new_small_m
-    inc X : inc X
-    inc Y
-    jsr new_small_m
-    jsr raster_show_off
-    jmp OLD_aloop
 
 
 .init_world
@@ -528,7 +434,6 @@ EQUB    xxoo
     ;; jsr new_small_m
     rts
 
-
 .animate
     jsr init_world
     jsr display_world ; on0
@@ -540,7 +445,6 @@ EQUB    xxoo
     jsr display_world ; on
     jsr raster_show_off
     jmp aloop
-
 
 .end
 save "code", start, end
