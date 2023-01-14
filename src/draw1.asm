@@ -63,34 +63,6 @@ org &2000
     pla
     rts
 
-.old_small_m
-    ldx X
-    ldy Y : iny : iny
-    lda #cyan
-    dey : inx : jsr plot_dot
-    dey : inx : jsr plot_dot
-    inx : jsr plot_dot
-    iny : inx : jsr plot_dot
-    dey : inx : jsr plot_dot
-    inx : jsr plot_dot
-    iny : inx : jsr plot_dot
-    iny : jsr plot_dot
-    iny : inx : jsr plot_dot
-    iny : jsr plot_dot
-    iny : dex : jsr plot_dot
-    iny : jsr plot_dot
-    iny : dex : jsr plot_dot
-    dex : jsr plot_dot
-    dey : dex : jsr plot_dot
-    iny : dex : jsr plot_dot
-    dex : jsr plot_dot
-    dey : dex : jsr plot_dot
-    dey : inx : jsr plot_dot
-    dey : dex : jsr plot_dot
-    dey : dex : jsr plot_dot
-    dey : jsr plot_dot
-    rts
-
 .pause:
     pha : txa : pha : tya : pha
     ldx #130
@@ -141,50 +113,6 @@ org &2000
 ;;
 ;; A_hi = &30 + (5 * brick_row + half_brick_on_row) / 2 [&30-&7F]
 ;; A_lo = (x ^ half_brick_offset) % 128 / 4 * 8 + y%8 [0-255]
-
-.plot_dot
-    pha
-
-    tya : lsr a : lsr a : lsr a : sta tmp ; brick_row
-    asl a : asl a : clc : adc tmp : sta tmp ; 5*brick_row
-    txa : lsr a : lsr a : lsr a : lsr a : lsr a : lsr a ; half_brick_on_row
-    clc : adc tmp : lsr a
-    clc : adc #&30
-    sta p+1 ; A_hi
-
-    tya : lsr a : lsr a : lsr a : and #1 ; odd_row
-    asl a : asl a : asl a : asl a : asl a : asl a : sta tmp ; half_brick_offset
-    txa : and #127 : eor tmp : lsr a : lsr a : asl a : asl a : asl a : sta tmp
-    tya : and #7
-    clc : adc tmp
-    sta p ; A_lo
-
-    pla : pha
-    and #2 : asl a : asl a : asl a
-    sta tmp
-    pla : pha
-    and #1 : ora tmp ; col pattern [&00, &01, &10, &11]
-
-    sta tmp
-    txa : and #1
-    bne no1
-    asl tmp
-.no1
-    txa : and #2
-    bne no2
-    asl tmp : asl tmp
-.no2
-    ;; tmp has colour byte mask shifted to correct pixel
-
-    tya : pha
-    ldy #0
-    lda (p),y
-    eor tmp
-    sta (p),y
-    pla : tay
-
-    pla
-    rts
 
 ;----------------------------------------------------------------------
 ;;; draw sprites as a single unit sharing the calculations
