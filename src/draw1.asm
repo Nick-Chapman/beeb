@@ -11,7 +11,7 @@ red = 1
 yellow = 2
 cyan = 3
 
-org 0 ;&70 ; could be 0
+org 0
 
 .tmp SKIP 1
 .X SKIP 1
@@ -24,6 +24,7 @@ org 0 ;&70 ; could be 0
 .fineX SKIP 1
 .fineY SKIP 1
 .fineYsplit SKIP 1
+.Xwrap SKIP 1
 
 .ob1X SKIP 1
 .ob1Y SKIP 1
@@ -258,7 +259,7 @@ EQUB    xxoo
     EQUW sprite_data0, sprite_data1, sprite_data2, sprite_data3
 
 
-.new_small_m:
+.OLD_small_m:
 
     lda Y : lsr a : lsr a : lsr a : sta tmp ; brick_row
     asl a : asl a : clc : adc tmp : sta tmp ; 5*brick_row
@@ -340,9 +341,10 @@ EQUB    xxoo
 .noColWrap
     jmp render_loop
 
+;----------------------------------------------------------------------
 
 .init_world
-    lda #50 : sta ob1X
+    lda #200 : sta ob1X
     lda #100 : sta ob1Y
     lda #70 : sta ob2X
     lda #130 : sta ob2Y
@@ -353,26 +355,116 @@ EQUB    xxoo
     inc ob2X : dec ob2Y
     rts
 
-.display_world
+.OLD_display_world
     lda ob1X : sta X
     lda ob1Y : sta Y
-    jsr new_small_m
+    jsr OLD_small_m
     ;; lda ob2X : sta X
     ;; lda ob2Y : sta Y
     ;; jsr new_small_m
     rts
 
+.display_world
+    lda ob1X : sta X
+    lda ob1Y : sta Y
+    jsr small_m2
+    rts
+
 .animate
     jsr init_world
-    jsr display_world ; on0
+    jsr OLD_display_world ; on0
 .aloop
     jsr vsync
     jsr raster_show_on
     jsr display_world ; off
     jsr update_world
-    jsr display_world ; on
+    jsr OLD_display_world ; on
     jsr raster_show_off
     jmp aloop
+
+;----------------------------------------------------------------------
+.small_m2:
+
+    lda Y : lsr a : lsr a : lsr a : sta tmp ; brick_row
+    asl a : asl a : clc : adc tmp : sta tmp ; 5*brick_row
+    lda X : lsr a : lsr a : lsr a : lsr a : lsr a : lsr a ; half_brick_on_row
+    clc : adc tmp : lsr a
+    clc : adc #&30
+    sta p+1 ; A_hi
+
+    lda Y : lsr a : lsr a : lsr a : and #1 ; odd_row
+    asl a : asl a : asl a : asl a : asl a : asl a : sta tmp ; half_brick_offset
+    lda X : and #127 : eor tmp : lsr a : lsr a : asl a : asl a : asl a : sta tmp
+
+    ;; fine y-offset [0-7]
+    lda Y : and #7 : sta fineY
+
+    clc : adc tmp
+    sta p ; A_lo
+
+    ;; fine x-offset [0-3]
+    lda X : and #3 : clc : asl a : tax ; asl because words are 2 bytes
+
+    lda sprite_data_p,x
+    sta dp
+    lda sprite_data_p+1,x
+    sta dp+1
+
+    clc
+    lda p   : adc #120 : sta q ; 120==128-8 !
+    lda p+1 : adc   #2 :
+    sec : cmp #&80 : bcc noCycleScreen2 : sbc #&50
+.noCycleScreen2
+    sta q+1
+
+    lda #8 : sec : sbc fineY : sta fineYsplit
+
+    ldy #0
+
+    ;lda #24
+    ;lda #0 : clc : sbc X : and #&fc
+    ;sta Xwrap
+
+.render_loop2
+    tya : and #7 : cmp fineYsplit : bpl noR1x
+
+    lda (dp),y
+    eor (p),y
+    sta (p),y
+    jmp noR2x
+.noR1x
+
+    lda (dp),y
+    eor (q),y
+    sta (q),y
+.noR2x
+
+    iny
+    cpy #24 : beq doneRender  ; 8 rows * 3 columns
+
+    ;cpy Xwrap : beq doXwrap
+
+    ;lda X : cmp #248 : beq doXwrap
+
+    cpy #8 : beq noJumpRenderLoop
+    cpy #16 : beq noJumpRenderLoop
+    jmp render_loop2
+
+.noJumpRenderLoop
+
+    lda X : clc : adc #4 : sta X : bcc render_loop2
+
+.doXwrap
+    sec : lda p+1 : sbc #2 : sta p+1
+    sec : lda q+1 : sbc #2 : sta q+1
+
+    jmp render_loop2
+
+.doneRender
+    rts
+
+
+;----------------------------------------------------------------------
 
 .end
 save "code", start, end
