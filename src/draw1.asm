@@ -6,39 +6,40 @@ ula = &fe21
 oswrch = &ffee
 osbyte = &fff4
 
-org &2000
-
 black = 0
 red = 1
 yellow = 2
-white = 3
+cyan = 3
+
+org &70 ; could be 0
+
+.tmp SKIP 1
+.X SKIP 1
+.Y SKIP 1
+
+.p SKIP 2
+.q SKIP 2
+.dp SKIP 2
+
+.fineX SKIP 1
+.fineY SKIP 1
+.fineYsplit SKIP 1
+
+org &2000
 
 .start:
     jsr switch_mode1
     jsr cursor_off
     jsr replace_white_with_cyan
-    lda #white
+    lda #cyan
     ;jsr border
     ;jsr wash_screen_with_colours
+    ;jsr preshift
     jsr animate
-.spin:
-    jmp spin
 
-.animate:
-    lda #white
-    ldy #100
-    ldx #50
-    jsr small_m
-.aloop
-    ;jsr pause
-    jsr vsync
-    jsr raster_show_on
-    jsr small_m
-    inx : inx : iny
-    jsr small_m
-    jsr raster_show_off
-    jmp aloop
-    rts
+.spin:
+    ;rts ; early return
+    jmp spin
 
 .vsync
     pha : txa : pha : tya : pha
@@ -60,10 +61,10 @@ white = 3
     pla
     rts
 
-.small_m
-    ;pha : txa : pha : tya : pha
-    ;lda #white
-
+.old_small_m
+    ldx X
+    ldy Y : iny : iny
+    lda #cyan
     dey : inx : jsr plot_dot
     dey : inx : jsr plot_dot
     inx : jsr plot_dot
@@ -86,8 +87,6 @@ white = 3
     dey : dex : jsr plot_dot
     dey : dex : jsr plot_dot
     dey : jsr plot_dot
-
-    ;pla : tay : pla : tax : pla
     rts
 
 .border
@@ -100,7 +99,6 @@ white = 3
     inx
     bne next_x
     jsr plot_dot
-
     ldy #1
 .next_y
     ldx #0
@@ -109,16 +107,14 @@ white = 3
     jsr plot_dot
     iny
     bne next_y
-
     ldy #255
     jsr plot_dot
-
     rts
 
 .wash_screen_with_colours
     lda #yellow
     jsr wash
-    lda #white ; to show as red
+    lda #cyan ; to show as red
     jsr wash
     lda #red ; to clear to black
     jsr wash
@@ -144,7 +140,7 @@ white = 3
 
 .pause:
     pha : txa : pha : tya : pha
-    ldx #30
+    ldx #130
 .loop_x:
     ldy #255
 .loop_y:
@@ -193,9 +189,6 @@ white = 3
 ;; A_hi = &30 + (5 * brick_row + half_brick_on_row) / 2 [&30-&7F]
 ;; A_lo = (x ^ half_brick_offset) % 128 / 4 * 8 + y%8 [0-255]
 
-p = &70
-tmp = &72
-
 .plot_dot
     pha
 
@@ -240,6 +233,272 @@ tmp = &72
     pla
     rts
 
+;----------------------------------------------------------------------
+;;; draw sprites as a single unit sharing the calculations
+
+oooo = &00
+ooox = &11
+ooxo = &22
+ooxx = &33
+oxoo = &44
+oxox = &55
+oxxo = &66
+oxxx = &77
+xooo = &88
+xoox = &99
+xoxo = &aa
+xoxx = &bb
+xxoo = &cc
+xxox = &dd
+xxxo = &ee
+xxxx = &ff
+
+
+;; triangle data...
+;; EQUB    xooo
+;; EQUB    xxoo
+;; EQUB    xxxo
+;; EQUB    xxxx
+;; EQUB    xxxx
+;; EQUB    xxxx
+;; EQUB    xxxx
+;; EQUB    xxxx
+
+;; EQUB    oooo
+;; EQUB    oooo
+;; EQUB    oooo
+;; EQUB    oooo
+;; EQUB    xooo
+;; EQUB    xxoo
+;; EQUB    xxxo
+;; EQUB    xxxx
+
+
+;; small meteor data... (unshifted)
+.sprite_data0:
+
+EQUB    ooxx
+EQUB    oxoo
+EQUB    xooo
+EQUB    xooo
+EQUB    oxoo
+EQUB    ooxo
+EQUB    oxoo
+EQUB    ooxx
+
+EQUB    oxxo
+EQUB    xoox
+EQUB    ooox
+EQUB    oooo
+EQUB    oooo
+EQUB    ooox
+EQUB    xoox
+EQUB    oxxo
+
+EQUB    oooo
+EQUB    oooo
+EQUB    oooo
+EQUB    xooo
+EQUB    xooo
+EQUB    oooo
+EQUB    oooo
+EQUB    oooo
+
+;; small meteor data... (shifted 1)
+.sprite_data1:
+
+EQUB    ooox
+EQUB    ooxo
+EQUB    oxoo
+EQUB    oxoo
+EQUB    ooxo
+EQUB    ooox
+EQUB    ooxo
+EQUB    ooox
+
+EQUB    xoxx
+EQUB    oxoo
+EQUB    oooo
+EQUB    oooo
+EQUB    oooo
+EQUB    oooo
+EQUB    oxoo
+EQUB    xoxx
+
+EQUB    oooo
+EQUB    xooo
+EQUB    xooo
+EQUB    oxoo
+EQUB    oxoo
+EQUB    xooo
+EQUB    xooo
+EQUB    oooo
+
+;; small meteor data... (shifted 2)
+.sprite_data2:
+
+EQUB    oooo
+EQUB    ooox
+EQUB    ooxo
+EQUB    ooxo
+EQUB    ooox
+EQUB    oooo
+EQUB    ooox
+EQUB    oooo
+
+EQUB    xxox
+EQUB    ooxo
+EQUB    oooo
+EQUB    oooo
+EQUB    oooo
+EQUB    xooo
+EQUB    ooxo
+EQUB    xxox
+
+EQUB    xooo
+EQUB    oxoo
+EQUB    oxoo
+EQUB    ooxo
+EQUB    ooxo
+EQUB    oxoo
+EQUB    oxoo
+EQUB    xooo
+
+;; small meteor data... (shifted 3)
+.sprite_data3:
+
+EQUB    oooo
+EQUB    oooo
+EQUB    ooox
+EQUB    ooox
+EQUB    oooo
+EQUB    oooo
+EQUB    oooo
+EQUB    oooo
+
+EQUB    oxxo
+EQUB    xoox
+EQUB    oooo
+EQUB    oooo
+EQUB    xooo
+EQUB    oxoo
+EQUB    xoox
+EQUB    oxxo
+
+EQUB    xxoo
+EQUB    ooxo
+EQUB    ooxo
+EQUB    ooox
+EQUB    ooox
+EQUB    ooxo
+EQUB    ooxo
+EQUB    xxoo
+
+.sprite_data_p:
+    EQUW sprite_data0, sprite_data1, sprite_data2, sprite_data3
+
+
+.new_small_m:
+
+    lda Y : lsr a : lsr a : lsr a : sta tmp ; brick_row
+    asl a : asl a : clc : adc tmp : sta tmp ; 5*brick_row
+    lda X : lsr a : lsr a : lsr a : lsr a : lsr a : lsr a ; half_brick_on_row
+    clc : adc tmp : lsr a
+    clc : adc #&30
+    sta p+1 ; A_hi
+
+    lda Y : lsr a : lsr a : lsr a : and #1 ; odd_row
+    asl a : asl a : asl a : asl a : asl a : asl a : sta tmp ; half_brick_offset
+    lda X : and #127 : eor tmp : lsr a : lsr a : asl a : asl a : asl a : sta tmp
+
+    ;; fine y-offset [0-7]
+    lda Y : and #7 : sta fineY
+    ;lda #0
+
+    clc : adc tmp
+    sta p ; A_lo
+
+    ;; fine x-offset [0-3]
+    lda X : and #3 : clc : asl a : tax ; asl because words are 2 bytes
+    ;ldx #0
+
+    lda sprite_data_p,x
+    sta dp
+    lda sprite_data_p+1,x
+    sta dp+1
+
+    clc
+    lda p   : adc #120 : sta q ; 120==128-8 !
+    lda p+1 : adc   #2 :
+    sec : cmp #&80 : bcc noCycleScreen : sbc #&50
+.noCycleScreen
+    sta q+1
+
+    lda #8 : sec : sbc fineY : sta fineYsplit
+
+    ldx #3 ; number of sprite columns
+    ldy #0
+
+.render_loop
+    cpy fineYsplit : bpl noR1
+
+    lda (dp),y
+    eor (p),y
+    sta (p),y
+.noR1
+    cpy fineYsplit : bmi noR2
+
+    lda (dp),y
+    eor (q),y
+    sta (q),y
+.noR2
+
+    iny
+    cpy #8 : bne render_loop
+    dex : bne next_col
+    lda X : sec : sbc #8 : sta X ; restore X after doing 2(#cols-1)x adc#4
+    rts
+
+.next_col
+    ldy #0
+    lda p : clc : adc #8 : sta p
+    lda p+1 : adc #0 : sta p+1
+    lda q : clc : adc #8 : sta q
+    lda q+1 : adc #0 : sta q+1
+    lda dp : clc : adc #8 : sta dp
+    ;lda dp+1 : clc : adc #0 : sta dp+1 ; needed if sprite data crosses a page
+
+    ;jmp noColWrap
+    lda X : clc : adc #4 : sta X : bcc noColWrap
+
+    sec
+    ;lda p   : sbc #128 : sta p
+    lda p+1 : sbc #2 : sta p+1
+    sec
+    ;lda q   : sbc #128 : sta q
+    lda q+1 : sbc #2 : sta q+1
+
+.noColWrap
+    jmp render_loop
+
+;small_m = new_small_m
+;small_m = old_small_m
+
+.animate:
+    lda #100 : sta Y
+    lda #50 : sta X
+    jsr new_small_m
+    ;rts ; stop animation early
+.aloop
+    jsr vsync
+    jsr raster_show_on
+    ;jsr pause
+    jsr new_small_m
+    inc X : inc X
+    inc Y
+    jsr new_small_m
+    jsr raster_show_off
+    jmp aloop
 
 .end
 save "code", start, end
