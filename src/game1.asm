@@ -25,19 +25,19 @@ ORG &70
 .lastKeyL SKIP 1
 .lastKeyR SKIP 1
 
-;.currFX SKIP 1 ; fine-X   : 0..3
+.currFX SKIP 1 ; fine-X   : 0..3
 .currCX SKIP 1 ; coarse-X : 0..79
 .currFY SKIP 1 ; fine-Y   : 0..7
 .currCY SKIP 1 ; coarse-Y : 0..31
 .currA SKIP 2 ; current screen address (which we fill)
 
-;.lastFX SKIP 1
+.lastFX SKIP 1
 .lastA SKIP 2 ; last screen address (which we erase)
 
 .write SKIP 2 ; pointer for writing to screen
 
 ORG &1900
-GUARD &1C00
+GUARD &1D00
 GUARD screenStart
 
 .start:
@@ -52,7 +52,7 @@ GUARD screenStart
     jsr saveLastKeys
     jsr readKeys
     lda keyEscape : bne quit
-    jsr updateGameState;WithRepeat
+    jsr updateGameStateWithRepeat
     jsr prepareForDraw
     jsr syncDelay
     jsr drawScreen
@@ -143,13 +143,13 @@ GUARD screenStart
     rts
 
 .initVars:
-    lda #0 : sta currCX : sta currCY : sta currFY ; : sta currFX
+    lda #0 : sta currCX : sta currCY : sta currFY : sta currFX
     lda #HI(screenStart) : sta currA+1
     lda #LO(screenStart) : sta currA
     rts
 
 .saveLastScreenAddr:
-    ;lda currFX : sta lastFX
+    lda currFX : sta lastFX
     lda currA : sta lastA
     lda currA+1 : sta lastA+1
     rts
@@ -178,12 +178,19 @@ GUARD screenStart
     rts }
 
 .onL: {
-    ;dec currFX
+    lda currFX : bne no
     jsr leftCoarse
+    lda #4 : sta currFX
+.no:
+    dec currFX
     rts }
+
 .onR: {
-    ;inc currFX
+    inc currFX
+    lda currFX : cmp #4 : bne no
+    lda #0 : sta currFX
     jsr rightCoarse
+.no:
     rts }
 
 
@@ -272,12 +279,6 @@ GUARD screenStart
     lda currA+1     : sbc #0 : sta currA+1
     rts
 
-;; .incA: {
-;;     inc currA
-;;     bne no
-;;     inc currA+1
-;; .no:
-;;     rts }
 
 .prepareForDraw:
     rts
@@ -290,27 +291,26 @@ GUARD screenStart
 .drawLast:
     lda lastA : sta write
     lda lastA+1 : sta write+1
-    ;ldx lastFX
+    ldx lastFX
     jsr eorWrite
     rts
 
 .drawCurr:
     lda currA : sta write
     lda currA+1 : sta write+1
-    ldx #0 ; currFX
+    ldx currFX
     jsr eorWrite
     rts
 
 .eorWrite:
     ldy #0
     lda (write),y
-    ;eor dotData,x
-    eor #&88 ; single dot
+    eor dotData,x
     sta (write),y
     rts
 
-;; .dotData:
-;;     EQUB &88, &44, &22, &11
+.dotData:
+    EQUB &88, &44, &22, &11
 
 .drawGrid: {
     lda #LO(screenStart) : sta write
@@ -368,16 +368,16 @@ GUARD screenStart
     lda #19 : jsr osbyte
     rts
 
-;; .pause: {
-;;     tax
-;; .loopX:
-;;     ldy #255
-;; .loopY:
-;;     dey
-;;     bne loopY
-;;     dex
-;;     bne loopX
-;;     rts }
+.pause: {
+    tax
+.loopX:
+    ldy #255
+.loopY:
+    dey
+    bne loopY
+    dex
+    bne loopX
+    rts }
 
 .end:
 SAVE "Code", start, end
