@@ -25,8 +25,11 @@ ORG &70
 .lastKeyL SKIP 1
 .lastKeyR SKIP 1
 
-.currCX SKIP 1
-.currCY SKIP 1 ; coarse-Y
+.currCX SKIP 1 ; coarse-X : 0..79
+.currFX SKIP 1 ; fine-X   : 0..3
+.currCY SKIP 1 ; coarse-Y : 0..31
+.currFY SKIP 1 ; fine-Y   : 0..7
+
 .currA SKIP 2 ; current screen address (which we fill)
 .lastA SKIP 2 ; last screen address (which we erase)
 
@@ -48,7 +51,7 @@ GUARD screenStart
     jsr saveLastKeys
     jsr readKeys
     lda keyEscape : bne quit
-    jsr updateGameStateWithRepeat
+    jsr updateGameState;WithRepeat
     jsr prepareForDraw
     jsr syncDelay
     jsr drawScreen
@@ -139,7 +142,7 @@ GUARD screenStart
     rts
 
 .initVars:
-    lda #0 : sta currCX : sta currCY
+    lda #0 : sta currCX : sta currCY : sta currFY : sta currFX
     lda #HI(screenStart) : sta currA+1
     lda #LO(screenStart) : sta currA
     rts
@@ -149,46 +152,77 @@ GUARD screenStart
     lda currA+1 : sta lastA+1
     rts
 
-.onU:
-    lda currCY : bne nowrap
-    lda currA+1 : clc : adc #HI(screenEnd-screenStart) : sta currA+1 ; wrap
-.nowrap:
-    jsr upLine
-    lda currCY : sec : sbc #1 : and #31 : sta currCY
-    rts
-
+.onU: {
+    jsr unwrapScreen
+    dec currCY
+    jsr upCoarse
+    rts }
 .onD: {
-    lda currCY : clc : adc #1 : and #31 : sta currCY : bne nowrap
-    lda currA+1 : sec : sbc #HI(screenEnd-screenStart) : sta currA+1 ; wrap
-.nowrap:
-    jsr downLine
+    inc currCY
+    jsr downCoarse
+    jsr wrapScreen
+    rts }
+.onL: {
+    jsr unwrapLine
+    dec currCX
+    jsr leftCoarse
+    rts }
+.onR: {
+    inc currCX
+    jsr rightCoarse
+    jsr wrapLine
     rts }
 
-.onL: {
-    lda currCX : bne nowrap
+
+.unwrapScreen: {
+    lda currCY
+    bne no
+    lda #32 : sta currCY
+    lda currA+1 : clc : adc #HI(screenEnd-screenStart) : sta currA+1
+.no:
+    rts }
+
+.wrapScreen: {
+    lda currCY
+    cmp #32 : bne no
+    lda #0 : sta currCY
+    lda currA+1 : sec : sbc #HI(screenEnd-screenStart) : sta currA+1
+.no:
+    rts }
+
+.unwrapLine : {
+    lda currCX
+    bne no
     lda #80 : sta currCX
-    jsr downLine
-.nowrap:
-    dec currCX
+    jsr downCoarse
+.no:
+    rts }
+
+.wrapLine : {
+    lda currCX
+    cmp #80 : bne no
+    lda #0 : sta currCX
+    jsr upCoarse
+.no:
+    rts }
+
+
+.leftCoarse:
     lda currA : sec : sbc #8 : sta currA
     lda currA+1     : sbc #0 : sta currA+1
-    rts }
+    rts
 
-.onR: {
-    inc currCX : lda currCX : cmp #80 : bne nowrap
-    lda #0 : sta currCX
-    jsr upLine
-.nowrap:
+.rightCoarse:
     lda currA : clc : adc #8 : sta currA
     lda currA+1     : adc #0 : sta currA+1
-    rts }
+    rts
 
-.upLine:
+.upCoarse:
     lda currA : sec : sbc #&80 : sta currA
     lda currA+1     : sbc #2   : sta currA+1
     rts
 
-.downLine:
+.downCoarse:
     lda currA : clc : adc #&80 : sta currA
     lda currA+1     : adc #2   : sta currA+1
     rts
