@@ -25,12 +25,13 @@ ORG &70
 .lastKeyL SKIP 1
 .lastKeyR SKIP 1
 
+;.currFX SKIP 1 ; fine-X   : 0..3
 .currCX SKIP 1 ; coarse-X : 0..79
-.currFX SKIP 1 ; fine-X   : 0..3
-.currCY SKIP 1 ; coarse-Y : 0..31
 .currFY SKIP 1 ; fine-Y   : 0..7
-
+.currCY SKIP 1 ; coarse-Y : 0..31
 .currA SKIP 2 ; current screen address (which we fill)
+
+;.lastFX SKIP 1
 .lastA SKIP 2 ; last screen address (which we erase)
 
 .write SKIP 2 ; pointer for writing to screen
@@ -142,36 +143,70 @@ GUARD screenStart
     rts
 
 .initVars:
-    lda #0 : sta currCX : sta currCY : sta currFY : sta currFX
+    lda #0 : sta currCX : sta currCY : sta currFY ; : sta currFX
     lda #HI(screenStart) : sta currA+1
     lda #LO(screenStart) : sta currA
     rts
 
 .saveLastScreenAddr:
+    ;lda currFX : sta lastFX
     lda currA : sta lastA
     lda currA+1 : sta lastA+1
     rts
 
+
 .onU: {
-    jsr unwrapScreen
-    dec currCY
+    lda currFY : bne no
+    lda #8 : sta currFY
+    lda currA : clc : adc #8 : sta currA
+    lda currA+1     : adc #0 : sta currA+1
     jsr upCoarse
+.no:
+    dec currFY
+    jsr decA
     rts }
+
 .onD: {
-    inc currCY
+    inc currFY
+    jsr incA
+    lda currFY : cmp #8 : bne no
+    lda #0 : sta currFY
+    lda currA : sec : sbc #8 : sta currA
+    lda currA+1     : sbc #0 : sta currA+1
     jsr downCoarse
-    jsr wrapScreen
+.no:
     rts }
+
 .onL: {
-    jsr unwrapLine
-    dec currCX
+    ;dec currFX
     jsr leftCoarse
     rts }
 .onR: {
-    inc currCX
+    ;inc currFX
     jsr rightCoarse
-    jsr wrapLine
     rts }
+
+
+.upCoarse:
+    jsr unwrapScreen
+    dec currCY
+    jsr upA
+    rts
+.downCoarse:
+    inc currCY
+    jsr downA
+    jsr wrapScreen
+    rts
+.leftCoarse:
+    jsr unwrapLine
+    dec currCX
+    jsr leftA
+    rts
+.rightCoarse:
+    inc currCX
+    jsr rightA
+    jsr wrapLine
+    rts
 
 
 .unwrapScreen: {
@@ -194,7 +229,7 @@ GUARD screenStart
     lda currCX
     bne no
     lda #80 : sta currCX
-    jsr downCoarse
+    jsr downA
 .no:
     rts }
 
@@ -202,31 +237,47 @@ GUARD screenStart
     lda currCX
     cmp #80 : bne no
     lda #0 : sta currCX
-    jsr upCoarse
+    jsr upA
 .no:
     rts }
 
 
-.leftCoarse:
+.leftA:
     lda currA : sec : sbc #8 : sta currA
     lda currA+1     : sbc #0 : sta currA+1
     rts
 
-.rightCoarse:
+.rightA:
     lda currA : clc : adc #8 : sta currA
     lda currA+1     : adc #0 : sta currA+1
     rts
 
-.upCoarse:
+.upA:
     lda currA : sec : sbc #&80 : sta currA
     lda currA+1     : sbc #2   : sta currA+1
     rts
 
-.downCoarse:
+.downA:
     lda currA : clc : adc #&80 : sta currA
     lda currA+1     : adc #2   : sta currA+1
     rts
 
+.incA:
+    lda currA : clc : adc #1 : sta currA
+    lda currA+1     : adc #0 : sta currA+1
+    rts
+
+.decA:
+    lda currA : sec : sbc #1 : sta currA
+    lda currA+1     : sbc #0 : sta currA+1
+    rts
+
+;; .incA: {
+;;     inc currA
+;;     bne no
+;;     inc currA+1
+;; .no:
+;;     rts }
 
 .prepareForDraw:
     rts
@@ -239,21 +290,27 @@ GUARD screenStart
 .drawLast:
     lda lastA : sta write
     lda lastA+1 : sta write+1
+    ;ldx lastFX
     jsr eorWrite
     rts
 
 .drawCurr:
     lda currA : sta write
     lda currA+1 : sta write+1
+    ldx #0 ; currFX
     jsr eorWrite
     rts
 
 .eorWrite:
     ldy #0
     lda (write),y
+    ;eor dotData,x
     eor #&88 ; single dot
     sta (write),y
     rts
+
+;; .dotData:
+;;     EQUB &88, &44, &22, &11
 
 .drawGrid: {
     lda #LO(screenStart) : sta write
@@ -311,16 +368,16 @@ GUARD screenStart
     lda #19 : jsr osbyte
     rts
 
-.pause: {
-    tax
-.loopX:
-    ldy #255
-.loopY:
-    dey
-    bne loopY
-    dex
-    bne loopX
-    rts }
+;; .pause: {
+;;     tax
+;; .loopX:
+;;     ldy #255
+;; .loopY:
+;;     dey
+;;     bne loopY
+;;     dex
+;;     bne loopX
+;;     rts }
 
 .end:
 SAVE "Code", start, end
