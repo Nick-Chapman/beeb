@@ -7,6 +7,7 @@ keyCodeU = -58
 keyCodeD = -42
 keyCodeL = -26
 keyCodeR = -122
+keyCodeEscape = -113
 
 screenStart = &3000
 screenEnd = &8000
@@ -17,6 +18,7 @@ ORG &70
 .keyD SKIP 1
 .keyL SKIP 1
 .keyR SKIP 1
+.keyEscape SKIP 1
 
 .lastKeyU SKIP 1
 .lastKeyD SKIP 1
@@ -45,11 +47,14 @@ GUARD screenStart
 .loop:
     jsr saveLastKeys
     jsr readKeys
+    lda keyEscape : bne quit
     jsr updateGameStateWithRepeat
     jsr prepareForDraw
     jsr syncDelay
     jsr drawScreen
     jmp loop
+.quit:
+    rts
     }
 
 .saveLastKeys:
@@ -64,6 +69,7 @@ GUARD screenStart
     jsr checkD
     jsr checkL
     jsr checkR
+    jsr checkEscape
     rts
 
 .checkU: {
@@ -106,6 +112,15 @@ GUARD screenStart
     lda #1 : sta keyR : .no:
     rts }
 
+.checkEscape: {
+    lda #0 : sta keyEscape
+    lda #&81
+    ldx #(keyCodeEscape AND &ff)
+    ldy #(keyCodeEscape AND &ff00) DIV 256
+    jsr osbyte
+    cpx #&ff : bne no
+    lda #1 : sta keyEscape : .no:
+    rts }
 
 .updateGameState:
     jsr saveLastScreenAddr
