@@ -291,13 +291,23 @@ GUARD screenStart
     rts
 
 .eorWrite:
+    txa : asl a : tax
+    lda sprite,x : sta pokeSprite+1
+    lda sprite+1,x : sta pokeSprite+2
     lda (write),y
-    eor dotData,x
+    .pokeSprite : eor &BEEF
     sta (write),y
     rts
 
-.dotData:
-    EQUB &88, &44, &22, &11
+.sprite: EQUW sprite0, sprite1, sprite2, sprite3
+.sprite0: EQUB &88
+.sprite1: EQUB &44
+.sprite2: EQUB &22
+.sprite3: EQUB &11
+
+
+.dummySprite:
+    EQUB &dd
 
 .drawGrid: {
     lda #LO(screenStart) : sta write
