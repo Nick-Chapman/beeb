@@ -32,6 +32,7 @@ ORG &70
 .currA SKIP 2 ; current screen address (which we fill)
 
 .lastFX SKIP 1
+.lastFY SKIP 1
 .lastA SKIP 2 ; last screen address (which we erase)
 
 .write SKIP 2 ; pointer for writing to screen
@@ -149,6 +150,7 @@ GUARD screenStart
     rts
 
 .saveLastScreenAddr:
+    lda currFY : sta lastFY
     lda currFX : sta lastFX
     lda currA : sta lastA
     lda currA+1 : sta lastA+1
@@ -158,21 +160,15 @@ GUARD screenStart
 .onU: {
     lda currFY : bne no
     lda #8 : sta currFY
-    lda currA : clc : adc #8 : sta currA
-    lda currA+1     : adc #0 : sta currA+1
     jsr upCoarse
 .no:
     dec currFY
-    jsr decA
     rts }
 
 .onD: {
     inc currFY
-    jsr incA
     lda currFY : cmp #8 : bne no
     lda #0 : sta currFY
-    lda currA : sec : sbc #8 : sta currA
-    lda currA+1     : sbc #0 : sta currA+1
     jsr downCoarse
 .no:
     rts }
@@ -269,16 +265,6 @@ GUARD screenStart
     lda currA+1     : adc #2   : sta currA+1
     rts
 
-.incA:
-    lda currA : clc : adc #1 : sta currA
-    lda currA+1     : adc #0 : sta currA+1
-    rts
-
-.decA:
-    lda currA : sec : sbc #1 : sta currA
-    lda currA+1     : sbc #0 : sta currA+1
-    rts
-
 
 .prepareForDraw:
     rts
@@ -292,6 +278,7 @@ GUARD screenStart
     lda lastA : sta write
     lda lastA+1 : sta write+1
     ldx lastFX
+    ldy lastFY
     jsr eorWrite
     rts
 
@@ -299,11 +286,11 @@ GUARD screenStart
     lda currA : sta write
     lda currA+1 : sta write+1
     ldx currFX
+    ldy currFY
     jsr eorWrite
     rts
 
 .eorWrite:
-    ldy #0
     lda (write),y
     eor dotData,x
     sta (write),y

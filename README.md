@@ -5,8 +5,10 @@ Eventual goal: write a graphics game.
 
 ## game1
 
-TODO:
+DONE
 - Have A be unaffected by fine-Y adjust, and use FY for y-index when plotting.
+
+TODO:
 - Use self-mod code for sprite data access avoiding x-index for FX.
 - Have more than one object (test with tab-key to switch which is controlled by keys).
 - Disconnect keys from direct position control; go via intermediate speed.
