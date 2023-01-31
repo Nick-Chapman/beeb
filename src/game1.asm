@@ -8,6 +8,7 @@ keyCodeD = -42
 keyCodeL = -26
 keyCodeR = -122
 keyCodeEscape = -113
+keyCodeTab = -97
 
 screenStart = &3000
 screenEnd = &8000
@@ -18,12 +19,14 @@ ORG &70
 .keyD SKIP 1
 .keyL SKIP 1
 .keyR SKIP 1
+.keyTab SKIP 1
 .keyEscape SKIP 1
 
 .lastKeyU SKIP 1
 .lastKeyD SKIP 1
 .lastKeyL SKIP 1
 .lastKeyR SKIP 1
+.lastKeyTab SKIP 1
 
 .write SKIP 2 ; pointer for indirect-indexed addresing
 
@@ -38,10 +41,15 @@ ORG &70
 
 objectSize = theObjectEnd - theObjectStart
 
+.selectedObj SKIP 1 ; using tab key
+
+numObjects = 2
+
+;;; objects dont need to be in zero-page
 .curr1 SKIP objectSize
 .last1 SKIP objectSize
-
-;;; TODO: Have 2nd object: curr/last
+.curr2 SKIP objectSize
+.last2 SKIP objectSize
 
 ORG &1900
 GUARD &1D00
@@ -49,8 +57,6 @@ GUARD screenStart
 
 .start:
     jmp main
-
-
 
 .focusObject: {
     ldy #0
@@ -72,6 +78,7 @@ GUARD screenStart
     bne loop
     rts }
 
+
 .focusCurr1:
     lda #LO(curr1) : sta write
     lda #HI(curr1) : sta write+1
@@ -92,20 +99,42 @@ GUARD screenStart
     lda #HI(last1) : sta write+1
     jmp saveObject
 
+.focusCurr2:
+    lda #LO(curr2) : sta write
+    lda #HI(curr2) : sta write+1
+    jmp focusObject
+
+.focusLast2:
+    lda #LO(last2) : sta write
+    lda #HI(last2) : sta write+1
+    jmp focusObject
+
+.saveCurr2:
+    lda #LO(curr2) : sta write
+    lda #HI(curr2) : sta write+1
+    jmp saveObject
+
+.saveLast2:
+    lda #LO(last2) : sta write
+    lda #HI(last2) : sta write+1
+    jmp saveObject
 
 
 .main: {
     jsr setupMachine
+    jsr initVars
     jsr initCurr1
+    jsr initCurr2
     jsr drawGrid
     jsr focusCurr1 : jsr drawFocused
+    jsr focusCurr2 : jsr drawFocused
 .loop:
     jsr saveLastKeys
     jsr readKeys
     lda keyEscape : bne quit
+    { lda keyTab : beq no : lda lastKeyTab : bne no : jsr onTab : .no }
     jsr saveLastScreenAddr
-    jsr updateFocussedWithRepeat
-    jsr saveCurr1
+    jsr updateSelected
     jsr prepareForDraw
     jsr syncDelay
     jsr drawScreen
@@ -115,19 +144,57 @@ GUARD screenStart
     }
 
 
+.initVars:
+    lda #1 : sta selectedObj
+    rts
+
+
 .initCurr1:
-    lda #0 : sta theCX : sta theCY : sta theFY : sta theFX
+    lda #0 : sta theCX
+    lda #0 : sta theFX
+    lda #0 : sta theCY
+    lda #0 : sta theFY
     lda #HI(screenStart) : sta theA+1
     lda #LO(screenStart) : sta theA
     jsr saveCurr1
     rts
 
-.saveLastScreenAddr:
-    jsr focusCurr1 : jsr saveLast1
+.initCurr2: ; 19,17
+    lda #4 : sta theCX
+    lda #3 : sta theFX
+    lda #2 : sta theCY
+    lda #1 : sta theFY
+    lda #HI(screenStart)+5 : sta theA+1
+    lda #LO(screenStart)+32 : sta theA
+    jsr saveCurr2
     rts
 
 
+.saveLastScreenAddr:
+    jsr focusCurr1 : jsr saveLast1
+    jsr focusCurr2 : jsr saveLast2
+    rts
+
+
+.updateSelected:
+    jsr focusSelected
+    jsr updateFocussedWithRepeat
+    jsr saveSelected
+    rts
+
+.focusSelected: {
+    lda selectedObj : bne two
+    jmp focusCurr1  : .two
+    jmp focusCurr2 }
+
+.saveSelected: {
+    lda selectedObj : bne two
+    jmp saveCurr1  : .two
+    jmp saveCurr2 }
+
+
 .saveLastKeys:
+    lda keyTab : sta lastKeyTab
     lda keyU : sta lastKeyU
     lda keyD : sta lastKeyD
     lda keyL : sta lastKeyL
@@ -139,6 +206,7 @@ GUARD screenStart
     jsr checkD
     jsr checkL
     jsr checkR
+    jsr checkTab
     jsr checkEscape
     rts
 
@@ -182,6 +250,16 @@ GUARD screenStart
     lda #1 : sta keyR : .no:
     rts }
 
+.checkTab: {
+    lda #0 : sta keyTab
+    lda #&81
+    ldx #(keyCodeTab AND &ff)
+    ldy #(keyCodeTab AND &ff00) DIV 256
+    jsr osbyte
+    cpx #&ff : bne no
+    lda #1 : sta keyTab : .no:
+    rts }
+
 .checkEscape: {
     lda #0 : sta keyEscape
     lda #&81
@@ -191,6 +269,7 @@ GUARD screenStart
     cpx #&ff : bne no
     lda #1 : sta keyEscape : .no:
     rts }
+
 
 .updateFocussed:
     { lda keyU : beq no : lda lastKeyU : bne no : jsr onU : .no }
@@ -205,6 +284,15 @@ GUARD screenStart
     { lda keyL : beq no : jsr onL : .no }
     { lda keyR : beq no : jsr onR : .no }
     rts
+
+.onTab: {
+    inc selectedObj
+    lda selectedObj
+    cmp #numObjects
+    bne done
+    lda #0 : sta selectedObj
+.done:
+    rts }
 
 .onU: {
     lda theFY : bne no
@@ -315,12 +403,14 @@ GUARD screenStart
     rts
 
 
-.prepareForDraw:
+.prepareForDraw: ; hook for one-day!
     rts
 
 .drawScreen:
     jsr focusLast1 : jsr drawFocused ; erasing
+    jsr focusLast2 : jsr drawFocused ; erasing
     jsr focusCurr1 : jsr drawFocused
+    jsr focusCurr2 : jsr drawFocused
     rts
 
 .drawFocused:
