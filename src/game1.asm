@@ -414,31 +414,42 @@ GUARD screenStart
     rts
 
 .drawFocused:
-    lda theA : sta write
-    lda theA+1 : sta write+1
-    ldx theFX
-    ldy theFY
+    lda theFX : asl a : tax
+    lda stripA,x : sta pokeSprite+1
+    lda stripA+1,x : sta pokeSprite+2
     jsr eorWrite
+
+    jsr rightCoarse
+
+    lda theFX : asl a : tax
+    lda stripB,x : sta pokeSprite+1
+    lda stripB+1,x : sta pokeSprite+2
+    jsr eorWrite
+
     rts
 
 .eorWrite:
-    txa : asl a : tax
-    lda sprite,x : sta pokeSprite+1
-    lda sprite+1,x : sta pokeSprite+2
+    lda theA : sta write
+    lda theA+1 : sta write+1
+    ldy theFY
     lda (write),y
     .pokeSprite : eor &BEEF
     sta (write),y
     rts
 
-.sprite: EQUW sprite0, sprite1, sprite2, sprite3
-.sprite0: EQUB &88
-.sprite1: EQUB &44
-.sprite2: EQUB &22
-.sprite3: EQUB &11
 
+.stripA: EQUW stripA0, stripA1, stripA2, stripA3
+.stripA0: EQUB &ff
+.stripA1: EQUB &77
+.stripA2: EQUB &33
+.stripA3: EQUB &11
 
-.dummySprite:
-    EQUB &dd
+.stripB: EQUW stripB0, stripB1, stripB2, stripB3
+.stripB0: EQUB &88
+.stripB1: EQUB &cc
+.stripB2: EQUB &ee
+.stripB3: EQUB &ff
+
 
 .drawGrid: {
     lda #LO(screenStart) : sta write
