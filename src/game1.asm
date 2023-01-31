@@ -25,17 +25,23 @@ ORG &70
 .lastKeyL SKIP 1
 .lastKeyR SKIP 1
 
-.currFX SKIP 1 ; fine-X   : 0..3
-.currCX SKIP 1 ; coarse-X : 0..79
-.currFY SKIP 1 ; fine-Y   : 0..7
-.currCY SKIP 1 ; coarse-Y : 0..31
-.currA SKIP 2 ; current screen address (which we fill)
+.write SKIP 2 ; pointer for indirect-indexed addresing
 
-.lastFX SKIP 1
-.lastFY SKIP 1
-.lastA SKIP 2 ; last screen address (which we erase)
+;;; object in focus... 6 bytes
+.theObjectStart
+.theCX SKIP 1 ; coarse-X : 0..79
+.theCY SKIP 1 ; coarse-Y : 0..31
+.theFX SKIP 1 ; fine-X   : 0..3
+.theFY SKIP 1 ; fine-Y   : 0..7
+.theA SKIP 2  ; screen address of the 8x8 char
+.theObjectEnd
 
-.write SKIP 2 ; pointer for writing to screen
+objectSize = theObjectEnd - theObjectStart
+
+.curr1 SKIP objectSize
+.last1 SKIP objectSize
+
+;;; TODO: Have 2nd object: curr/last
 
 ORG &1900
 GUARD &1D00
@@ -44,16 +50,62 @@ GUARD screenStart
 .start:
     jmp main
 
+
+
+.focusObject: {
+    ldy #0
+.loop:
+    lda (write),y
+    sta theObjectStart,y
+    iny
+    cpy #objectSize
+    bne loop
+    rts }
+
+.saveObject: {
+    ldy #0
+.loop:
+    lda theObjectStart,y
+    sta (write),y
+    iny
+    cpy #objectSize
+    bne loop
+    rts }
+
+.focusCurr1:
+    lda #LO(curr1) : sta write
+    lda #HI(curr1) : sta write+1
+    jmp focusObject
+
+.focusLast1:
+    lda #LO(last1) : sta write
+    lda #HI(last1) : sta write+1
+    jmp focusObject
+
+.saveCurr1:
+    lda #LO(curr1) : sta write
+    lda #HI(curr1) : sta write+1
+    jmp saveObject
+
+.saveLast1:
+    lda #LO(last1) : sta write
+    lda #HI(last1) : sta write+1
+    jmp saveObject
+
+
+
 .main: {
     jsr setupMachine
-    jsr initVars
+    jsr initCurr1
     jsr drawGrid
-    jsr drawCurr
+    jsr focusCurr1 : jsr drawFocused
 .loop:
     jsr saveLastKeys
     jsr readKeys
     lda keyEscape : bne quit
-    jsr updateGameStateWithRepeat
+    jsr saveLastScreenAddr
+    jsr updateFocussedWithRepeat
+    jsr saveCurr1
     jsr prepareForDraw
     jsr syncDelay
     jsr drawScreen
@@ -61,6 +113,19 @@ GUARD screenStart
 .quit:
     rts
     }
+
+
+.initCurr1:
+    lda #0 : sta theCX : sta theCY : sta theFY : sta theFX
+    lda #HI(screenStart) : sta theA+1
+    lda #LO(screenStart) : sta theA
+    jsr saveCurr1
+    rts
+
+.saveLastScreenAddr:
+    jsr focusCurr1 : jsr saveLast1
+    rts
+
 
 .saveLastKeys:
     lda keyU : sta lastKeyU
@@ -127,64 +192,48 @@ GUARD screenStart
     lda #1 : sta keyEscape : .no:
     rts }
 
-.updateGameState:
-    jsr saveLastScreenAddr
+.updateFocussed:
     { lda keyU : beq no : lda lastKeyU : bne no : jsr onU : .no }
     { lda keyD : beq no : lda lastKeyD : bne no : jsr onD : .no }
     { lda keyL : beq no : lda lastKeyL : bne no : jsr onL : .no }
     { lda keyR : beq no : lda lastKeyR : bne no : jsr onR : .no }
     rts
 
-.updateGameStateWithRepeat:
-    jsr saveLastScreenAddr
+.updateFocussedWithRepeat:
     { lda keyU : beq no : jsr onU : .no }
     { lda keyD : beq no : jsr onD : .no }
     { lda keyL : beq no : jsr onL : .no }
     { lda keyR : beq no : jsr onR : .no }
     rts
 
-.initVars:
-    lda #0 : sta currCX : sta currCY : sta currFY : sta currFX
-    lda #HI(screenStart) : sta currA+1
-    lda #LO(screenStart) : sta currA
-    rts
-
-.saveLastScreenAddr:
-    lda currFY : sta lastFY
-    lda currFX : sta lastFX
-    lda currA : sta lastA
-    lda currA+1 : sta lastA+1
-    rts
-
-
 .onU: {
-    lda currFY : bne no
-    lda #8 : sta currFY
+    lda theFY : bne no
+    lda #8 : sta theFY
     jsr upCoarse
 .no:
-    dec currFY
+    dec theFY
     rts }
 
 .onD: {
-    inc currFY
-    lda currFY : cmp #8 : bne no
-    lda #0 : sta currFY
+    inc theFY
+    lda theFY : cmp #8 : bne no
+    lda #0 : sta theFY
     jsr downCoarse
 .no:
     rts }
 
 .onL: {
-    lda currFX : bne no
+    lda theFX : bne no
     jsr leftCoarse
-    lda #4 : sta currFX
+    lda #4 : sta theFX
 .no:
-    dec currFX
+    dec theFX
     rts }
 
 .onR: {
-    inc currFX
-    lda currFX : cmp #4 : bne no
-    lda #0 : sta currFX
+    inc theFX
+    lda theFX : cmp #4 : bne no
+    lda #0 : sta theFX
     jsr rightCoarse
 .no:
     rts }
@@ -192,77 +241,77 @@ GUARD screenStart
 
 .upCoarse:
     jsr unwrapScreen
-    dec currCY
+    dec theCY
     jsr upA
     rts
 .downCoarse:
-    inc currCY
+    inc theCY
     jsr downA
     jsr wrapScreen
     rts
 .leftCoarse:
     jsr unwrapLine
-    dec currCX
+    dec theCX
     jsr leftA
     rts
 .rightCoarse:
-    inc currCX
+    inc theCX
     jsr rightA
     jsr wrapLine
     rts
 
 
 .unwrapScreen: {
-    lda currCY
+    lda theCY
     bne no
-    lda #32 : sta currCY
-    lda currA+1 : clc : adc #HI(screenEnd-screenStart) : sta currA+1
+    lda #32 : sta theCY
+    lda theA+1 : clc : adc #HI(screenEnd-screenStart) : sta theA+1
 .no:
     rts }
 
 .wrapScreen: {
-    lda currCY
+    lda theCY
     cmp #32 : bne no
-    lda #0 : sta currCY
-    lda currA+1 : sec : sbc #HI(screenEnd-screenStart) : sta currA+1
+    lda #0 : sta theCY
+    lda theA+1 : sec : sbc #HI(screenEnd-screenStart) : sta theA+1
 .no:
     rts }
 
 .unwrapLine : {
-    lda currCX
+    lda theCX
     bne no
-    lda #80 : sta currCX
+    lda #80 : sta theCX
     jsr downA
 .no:
     rts }
 
 .wrapLine : {
-    lda currCX
+    lda theCX
     cmp #80 : bne no
-    lda #0 : sta currCX
+    lda #0 : sta theCX
     jsr upA
 .no:
     rts }
 
 
 .leftA:
-    lda currA : sec : sbc #8 : sta currA
-    lda currA+1     : sbc #0 : sta currA+1
+    lda theA : sec : sbc #8 : sta theA
+    lda theA+1     : sbc #0 : sta theA+1
     rts
 
 .rightA:
-    lda currA : clc : adc #8 : sta currA
-    lda currA+1     : adc #0 : sta currA+1
+    lda theA : clc : adc #8 : sta theA
+    lda theA+1     : adc #0 : sta theA+1
     rts
 
 .upA:
-    lda currA : sec : sbc #&80 : sta currA
-    lda currA+1     : sbc #2   : sta currA+1
+    lda theA : sec : sbc #&80 : sta theA
+    lda theA+1     : sbc #2   : sta theA+1
     rts
 
 .downA:
-    lda currA : clc : adc #&80 : sta currA
-    lda currA+1     : adc #2   : sta currA+1
+    lda theA : clc : adc #&80 : sta theA
+    lda theA+1     : adc #2   : sta theA+1
     rts
 
 
@@ -270,23 +319,15 @@ GUARD screenStart
     rts
 
 .drawScreen:
-    jsr drawLast ; erasing
-    jsr drawCurr
+    jsr focusLast1 : jsr drawFocused ; erasing
+    jsr focusCurr1 : jsr drawFocused
     rts
 
-.drawLast:
-    lda lastA : sta write
-    lda lastA+1 : sta write+1
-    ldx lastFX
-    ldy lastFY
-    jsr eorWrite
-    rts
-
-.drawCurr:
-    lda currA : sta write
-    lda currA+1 : sta write+1
-    ldx currFX
-    ldy currFY
+.drawFocused:
+    lda theA : sta write
+    lda theA+1 : sta write+1
+    ldx theFX
+    ldy theFY
     jsr eorWrite
     rts
 
