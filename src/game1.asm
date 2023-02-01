@@ -132,19 +132,20 @@ GUARD screenStart
     jsr focusCurr2 : jsr drawStripA
     jsr focusCurr1 : jsr drawStripB
     jsr focusCurr2 : jsr drawStripB
+    sei
 .loop:
     jsr saveLastKeys
-    ;jsr readKeys ; TEMP DISABLE KEYS
+    jsr readKeys ; TEMP DISABLE KEYS
     lda keyEscape : bne quit
     { lda keyTab : beq no : lda lastKeyTab : bne no : jsr onTab : .no }
     jsr saveLastScreenAddr
     jsr updateSelected
     jsr prepareForDraw
-    lda #3 : sta ula ; blue
+    ;lda #3 : sta ula ; blue
     jsr syncDelay
     lda #4 : sta ula ; yellow
     jsr drawScreen
-    lda #7 : sta ula
+    lda #7 : sta ula ; black
     jmp loop
 .quit:
     rts
