@@ -134,7 +134,7 @@ GUARD screenStart
     jsr focusCurr2 : jsr drawStripB
 .loop:
     jsr saveLastKeys
-    jsr readKeys
+    ;jsr readKeys ; TEMP DISABLE KEYS
     lda keyEscape : bne quit
     { lda keyTab : beq no : lda lastKeyTab : bne no : jsr onTab : .no }
     jsr saveLastScreenAddr
@@ -153,6 +153,12 @@ GUARD screenStart
 
 .initVars:
     lda #1 : sta selectedObj
+    lda #0 : sta keyTab
+    lda #0 : sta keyEscape
+    lda #0 : sta keyU
+    lda #1 : sta keyD
+    lda #0 : sta keyL
+    lda #1 : sta keyR
     rts
 
 
