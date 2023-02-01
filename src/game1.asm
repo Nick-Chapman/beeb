@@ -1,4 +1,6 @@
 
+ula = &fe21
+
 osasci = &ffe3
 oswrch = &ffee
 osbyte = &fff4
@@ -52,7 +54,7 @@ numObjects = 2
 .last2 SKIP objectSize
 
 ORG &1900
-GUARD &1D00
+GUARD &1e00
 GUARD screenStart
 
 .start:
@@ -126,8 +128,10 @@ GUARD screenStart
     jsr initCurr1
     jsr initCurr2
     jsr drawGrid
-    jsr focusCurr1 : jsr drawFocused
-    jsr focusCurr2 : jsr drawFocused
+    jsr focusCurr1 : jsr drawStripA
+    jsr focusCurr2 : jsr drawStripA
+    jsr focusCurr1 : jsr drawStripB
+    jsr focusCurr2 : jsr drawStripB
 .loop:
     jsr saveLastKeys
     jsr readKeys
@@ -407,48 +411,68 @@ GUARD screenStart
     rts
 
 .drawScreen:
-    jsr focusLast1 : jsr drawFocused ; erasing
-    jsr focusLast2 : jsr drawFocused ; erasing
-    jsr focusCurr1 : jsr drawFocused
-    jsr focusCurr2 : jsr drawFocused
+    lda #6 : sta ula
+    jsr focusLast1 : jsr drawStripA ; erasing
+    jsr focusLast2 : jsr drawStripA ; erasing
+    jsr focusCurr1 : jsr drawStripA
+    jsr focusCurr2 : jsr drawStripA
+    jsr focusLast1 : jsr drawStripB ; erasing
+    jsr focusLast2 : jsr drawStripB ; erasing
+    jsr focusCurr1 : jsr drawStripB
+    jsr focusCurr2 : jsr drawStripB
+    lda #7 : sta ula
     rts
 
-.drawFocused:
+.drawStripA:
     lda theFX : asl a : tax
     lda stripA,x : sta pokeSprite+1
     lda stripA+1,x : sta pokeSprite+2
     jsr eorWrite
+    rts
 
+.drawStripB:
     jsr rightCoarse
-
     lda theFX : asl a : tax
     lda stripB,x : sta pokeSprite+1
     lda stripB+1,x : sta pokeSprite+2
     jsr eorWrite
-
     rts
 
 .eorWrite:
     lda theA : sta write
     lda theA+1 : sta write+1
     ldy theFY
+    ldx #0
+.plotLoop:
     lda (write),y
-    .pokeSprite : eor &BEEF
+    .pokeSprite : eor &BEEF ;,x
     sta (write),y
+    iny
+    cpy #8 : beq down : .afterDown
+    inx
+    cpx #13 ; column height
+    bne plotLoop
     rts
+.down:
+    jsr downCoarse
+    ldy #0
+    lda theA : sta write
+    lda theA+1 : sta write+1
+    jmp afterDown
+
 
 
 .stripA: EQUW stripA0, stripA1, stripA2, stripA3
-.stripA0: EQUB &ff
-.stripA1: EQUB &77
-.stripA2: EQUB &33
-.stripA3: EQUB &11
+.stripA0: EQUB &ff,&ff
+.stripA1: EQUB &77,&77
+.stripA2: EQUB &33,&33
+.stripA3: EQUB &11,&11
 
 .stripB: EQUW stripB0, stripB1, stripB2, stripB3
-.stripB0: EQUB &88
-.stripB1: EQUB &cc
-.stripB2: EQUB &ee
-.stripB3: EQUB &ff
+.stripB0: EQUB &88,&88
+.stripB1: EQUB &cc,&cc
+.stripB2: EQUB &ee,&ee
+.stripB3: EQUB &ff,&ff
 
 
 .drawGrid: {
