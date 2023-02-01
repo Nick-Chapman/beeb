@@ -140,8 +140,11 @@ GUARD screenStart
     jsr saveLastScreenAddr
     jsr updateSelected
     jsr prepareForDraw
+    lda #3 : sta ula ; blue
     jsr syncDelay
+    lda #4 : sta ula ; yellow
     jsr drawScreen
+    lda #7 : sta ula
     jmp loop
 .quit:
     rts
@@ -411,7 +414,6 @@ GUARD screenStart
     rts
 
 .drawScreen:
-    lda #6 : sta ula
     jsr focusLast1 : jsr drawStripA ; erasing
     jsr focusLast2 : jsr drawStripA ; erasing
     jsr focusCurr1 : jsr drawStripA
@@ -420,7 +422,6 @@ GUARD screenStart
     jsr focusLast2 : jsr drawStripB ; erasing
     jsr focusCurr1 : jsr drawStripB
     jsr focusCurr2 : jsr drawStripB
-    lda #7 : sta ula
     rts
 
 .drawStripA:
