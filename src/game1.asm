@@ -483,11 +483,11 @@ GUARD screenStart
     ldx numDataObjects
     jsr resetDataPrepPtr
 .loop:
-    ldy #0 : lda (ptr),y : sta write
-    ldy #1 : lda (ptr),y : sta write+1
-    ldy #0 : lda (write),y
+    ldy #0 : lda (ptr),y : sta pokeR+1 : sta pokeW+1
+    ldy #1 : lda (ptr),y : sta pokeR+2 : sta pokeW+2
+    ldy #0 : .pokeR : lda &BEEF,y
     ldy #2 : eor (ptr),y
-    ldy #0 : sta (write),y
+    ldy #0 : .pokeW : sta &BEEF,y
     cpx numDataObjects
     beq done
     jsr incPtr3
