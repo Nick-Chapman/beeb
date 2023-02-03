@@ -135,13 +135,13 @@ GUARD screenStart
     sei
 .loop:
     jsr saveLastKeys
-    jsr readKeys ; TEMP DISABLE KEYS
+    jsr readKeys
     lda keyEscape : bne quit
     { lda keyTab : beq no : lda lastKeyTab : bne no : jsr onTab : .no }
     jsr saveLastScreenAddr
     jsr updateSelected
     jsr prepareForDraw
-    ;lda #3 : sta ula ; blue
+    lda #3 : sta ula ; blue
     jsr syncDelay
     lda #4 : sta ula ; yellow
     jsr drawScreen
@@ -447,25 +447,24 @@ GUARD screenStart
     rts
 
 .eorWrite:
-    lda theA : sta write
-    lda theA+1 : sta write+1
-    ldy theFY
+    ldy #0
     ldx #0
+    lda theA : clc : adc theFY : sta theA
 .plotLoop:
-    lda (write),y
+    lda (theA),y
     .pokeSprite : eor &BEEF ;,x
-    sta (write),y
-    iny
-    cpy #8 : beq down : .afterDown
+    sta (theA),y
+    inc theA
+    inc theFY
+    lda theFY : cmp #8 : beq down : .afterDown
     inx
     cpx #13 ; column height
     bne plotLoop
     rts
 .down:
+    lda theA : sec : sbc #8 : sta theA
     jsr downCoarse
-    ldy #0
-    lda theA : sta write
-    lda theA+1 : sta write+1
+    lda #0 : sta theFY
     jmp afterDown
 
 
