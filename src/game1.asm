@@ -456,18 +456,24 @@ GUARD screenStart
     jsr eorWrite
     rts
 
+
 .eorWrite:
     ldx #0
     lda theA : clc : adc theFY : sta theA
 .plotLoop:
     .pokeSprite : lda &BEEF ;,x
-    ldy #2 : sta (ptr),y
-    ldy #0 : lda theA   : sta (ptr),y
-    ldy #1 : lda theA+1 : sta (ptr),y
+    ldy #4 : sta (ptr),y
+    lda theA   : ldy #1 : sta (ptr),y : ldy #6 : sta (ptr),y
+    lda theA+1 : ldy #2 : sta (ptr),y : ldy #7 : sta (ptr),y
+
+    lda template   : ldy #0 : sta (ptr),y
+    lda template+3 : ldy #3 : sta (ptr),y
+    lda template+5 : ldy #5 : sta (ptr),y
+
     inc theA
     inc theFY
     lda theFY : cmp #8 : beq down : .afterDown
-    jsr incPtr3
+    jsr incPtr
     inx
     cpx #13 ; column height
     bne plotLoop
@@ -479,22 +485,16 @@ GUARD screenStart
     jmp afterDown
 
 
-.blitScreen: {
-    ldx numDataObjects
-    jsr resetDataPrepPtr
-.loop:
-    ldy #0 : lda (ptr),y : sta pokeR+1 : sta pokeW+1
-    ldy #1 : lda (ptr),y : sta pokeR+2 : sta pokeW+2
-    ldy #0 : .pokeR : lda &BEEF,y
-    ldy #2 : eor (ptr),y
-    ldy #0 : .pokeW : sta &BEEF,y
-    cpx numDataObjects
-    beq done
-    jsr incPtr3
-    jmp loop
-.done:
-    rts }
+;;; for each screen-write, we generate a code sequence following this 8-byte template
+.template:
+    lda &ffff
+    eor #&ff
+    sta &ffff
 
+.blitScreen:
+    lda rtsTemplate : ldy #0 : sta (ptr),y ; finalize generate-code
+    jsr dataPrep ; could jump
+    .rtsTemplate : rts
 
 .resetDataPrepPtr:
     lda #0 : sta numDataObjects
@@ -502,9 +502,9 @@ GUARD screenStart
     lda #HI(dataPrep) : sta ptr+1
     rts
 
-.incPtr3:
+.incPtr:
     inc numDataObjects
-    lda ptr : clc : adc #3 : sta ptr
+    lda ptr : clc : adc #8 : sta ptr ; was 3
     lda ptr+1     : adc #0 : sta ptr+1
     rts
 
