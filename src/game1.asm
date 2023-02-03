@@ -31,6 +31,8 @@ ORG &70
 .lastKeyTab SKIP 1
 
 .write SKIP 2 ; pointer for indirect-indexed addresing
+.ptr SKIP 2
+.numDataObjects SKIP 1
 
 ;;; object in focus... 6 bytes
 .theObjectStart
@@ -53,8 +55,11 @@ numObjects = 2
 .curr2 SKIP objectSize
 .last2 SKIP objectSize
 
+dataPrep = &2000 ; 16 pages (4k) here
+
 ORG &1900
 GUARD &1e00
+GUARD dataPrep
 GUARD screenStart
 
 .start:
@@ -128,10 +133,14 @@ GUARD screenStart
     jsr initCurr1
     jsr initCurr2
     jsr drawGrid
+    lda #LO(dataPrep) : sta ptr
+    lda #HI(dataPrep) : sta ptr+1
+    lda #52 : sta numDataObjects ; should be inc'ed by incPtr3
     jsr focusCurr1 : jsr drawStripA
     jsr focusCurr2 : jsr drawStripA
     jsr focusCurr1 : jsr drawStripB
     jsr focusCurr2 : jsr drawStripB
+    jsr blitScreen
     sei
 .loop:
     jsr saveLastKeys
@@ -144,7 +153,7 @@ GUARD screenStart
     lda #3 : sta ula ; blue
     jsr syncDelay
     lda #4 : sta ula ; yellow
-    jsr drawScreen
+    jsr blitScreen
     lda #7 : sta ula ; black
     jmp loop
 .quit:
@@ -417,10 +426,10 @@ GUARD screenStart
     rts
 
 
-.prepareForDraw: ; hook for one-day!
-    rts
-
-.drawScreen:
+.prepareForDraw:
+    lda #LO(dataPrep) : sta ptr
+    lda #HI(dataPrep) : sta ptr+1
+    lda #104 : sta numDataObjects ; should be inc'ed by incPtr3
     jsr focusLast1 : jsr drawStripA ; erasing
     jsr focusLast2 : jsr drawStripA ; erasing
     jsr focusCurr1 : jsr drawStripA
@@ -447,16 +456,17 @@ GUARD screenStart
     rts
 
 .eorWrite:
-    ldy #0
     ldx #0
     lda theA : clc : adc theFY : sta theA
 .plotLoop:
-    lda (theA),y
-    .pokeSprite : eor &BEEF ;,x
-    sta (theA),y
+    .pokeSprite : lda &BEEF ;,x
+    ldy #2 : sta (ptr),y
+    ldy #0 : lda theA   : sta (ptr),y
+    ldy #1 : lda theA+1 : sta (ptr),y
     inc theA
     inc theFY
     lda theFY : cmp #8 : beq down : .afterDown
+    jsr incPtr3
     inx
     cpx #13 ; column height
     bne plotLoop
@@ -467,6 +477,29 @@ GUARD screenStart
     lda #0 : sta theFY
     jmp afterDown
 
+
+.blitScreen: {
+    lda #LO(dataPrep) : sta ptr
+    lda #HI(dataPrep) : sta ptr+1
+    ldx #0
+.loop:
+    ldy #0 : lda (ptr),y : sta write
+    ldy #1 : lda (ptr),y : sta write+1
+    ldy #0 : lda (write),y
+    ldy #2 : eor (ptr),y
+    ldy #0 : sta (write),y
+    inx
+    cpx numDataObjects
+    beq done
+    jsr incPtr3
+    jmp loop
+.done:
+    rts }
+
+.incPtr3:
+    lda ptr : clc : adc #3 : sta ptr
+    lda ptr+1     : adc #0 : sta ptr+1
+    rts
 
 
 .stripA: EQUW stripA0, stripA1, stripA2, stripA3
