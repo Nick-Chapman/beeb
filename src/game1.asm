@@ -133,13 +133,9 @@ GUARD screenStart
     jsr initCurr1
     jsr initCurr2
     jsr drawGrid
-    lda #LO(dataPrep) : sta ptr
-    lda #HI(dataPrep) : sta ptr+1
-    lda #52 : sta numDataObjects ; should be inc'ed by incPtr3
-    jsr focusCurr1 : jsr drawStripA
-    jsr focusCurr2 : jsr drawStripA
-    jsr focusCurr1 : jsr drawStripB
-    jsr focusCurr2 : jsr drawStripB
+
+    jsr resetDataPrepPtr
+    jsr prepDraw
     jsr blitScreen
     sei
 .loop:
@@ -149,7 +145,11 @@ GUARD screenStart
     { lda keyTab : beq no : lda lastKeyTab : bne no : jsr onTab : .no }
     jsr saveLastScreenAddr
     jsr updateSelected
-    jsr prepareForDraw
+
+    jsr resetDataPrepPtr
+    jsr prepErase
+    jsr prepDraw
+
     lda #3 : sta ula ; blue
     jsr syncDelay
     lda #4 : sta ula ; yellow
@@ -426,19 +426,20 @@ GUARD screenStart
     rts
 
 
-.prepareForDraw:
-    lda #LO(dataPrep) : sta ptr
-    lda #HI(dataPrep) : sta ptr+1
-    lda #104 : sta numDataObjects ; should be inc'ed by incPtr3
-    jsr focusLast1 : jsr drawStripA ; erasing
-    jsr focusLast2 : jsr drawStripA ; erasing
+.prepErase:
+    jsr focusLast1 : jsr drawStripA
+    jsr focusLast2 : jsr drawStripA
+    jsr focusLast1 : jsr drawStripB
+    jsr focusLast2 : jsr drawStripB
+    rts
+
+.prepDraw:
     jsr focusCurr1 : jsr drawStripA
     jsr focusCurr2 : jsr drawStripA
-    jsr focusLast1 : jsr drawStripB ; erasing
-    jsr focusLast2 : jsr drawStripB ; erasing
     jsr focusCurr1 : jsr drawStripB
     jsr focusCurr2 : jsr drawStripB
     rts
+
 
 .drawStripA:
     lda theFX : asl a : tax
@@ -479,16 +480,14 @@ GUARD screenStart
 
 
 .blitScreen: {
-    lda #LO(dataPrep) : sta ptr
-    lda #HI(dataPrep) : sta ptr+1
-    ldx #0
+    ldx numDataObjects
+    jsr resetDataPrepPtr
 .loop:
     ldy #0 : lda (ptr),y : sta write
     ldy #1 : lda (ptr),y : sta write+1
     ldy #0 : lda (write),y
     ldy #2 : eor (ptr),y
     ldy #0 : sta (write),y
-    inx
     cpx numDataObjects
     beq done
     jsr incPtr3
@@ -496,7 +495,15 @@ GUARD screenStart
 .done:
     rts }
 
+
+.resetDataPrepPtr:
+    lda #0 : sta numDataObjects
+    lda #LO(dataPrep) : sta ptr
+    lda #HI(dataPrep) : sta ptr+1
+    rts
+
 .incPtr3:
+    inc numDataObjects
     lda ptr : clc : adc #3 : sta ptr
     lda ptr+1     : adc #0 : sta ptr+1
     rts
