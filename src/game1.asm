@@ -54,11 +54,13 @@ numObjects = 2
 .last1 SKIP objectSize
 .curr2 SKIP objectSize
 .last2 SKIP objectSize
+.curr3 SKIP objectSize
+.last3 SKIP objectSize
 
 dataPrep = &2000 ; 16 pages (4k) here before screen starts
 
 ORG &1900
-GUARD &1e00
+GUARD &1f00
 GUARD screenStart
 
 .start:
@@ -126,11 +128,33 @@ GUARD screenStart
     jmp saveObject
 
 
+.focusCurr3:
+    lda #LO(curr3) : sta write
+    lda #HI(curr3) : sta write+1
+    jmp focusObject
+
+.focusLast3:
+    lda #LO(last3) : sta write
+    lda #HI(last3) : sta write+1
+    jmp focusObject
+
+.saveCurr3:
+    lda #LO(curr3) : sta write
+    lda #HI(curr3) : sta write+1
+    jmp saveObject
+
+.saveLast3:
+    lda #LO(last3) : sta write
+    lda #HI(last3) : sta write+1
+    jmp saveObject
+
+
 .main: {
     jsr setupMachine
     jsr initVars
     jsr initCurr1
     jsr initCurr2
+    jsr initCurr3
     jsr drawGrid
 
     jsr resetDataPrepPtr
@@ -191,10 +215,21 @@ GUARD screenStart
     jsr saveCurr2
     rts
 
+.initCurr3:
+    lda #0 : sta theCX
+    lda #0 : sta theFX
+    lda #4 : sta theCY
+    lda #0 : sta theFY
+    lda #HI(screenStart)+10 : sta theA+1
+    lda #LO(screenStart) : sta theA
+    jsr saveCurr3
+    rts
+
 
 .saveLastScreenAddr:
     jsr focusCurr1 : jsr saveLast1
     jsr focusCurr2 : jsr saveLast2
+    jsr focusCurr3 : jsr saveLast3
     rts
 
 
@@ -427,16 +462,20 @@ GUARD screenStart
 
 .prepErase:
     jsr focusLast1 : jsr drawStripA
-    jsr focusLast2 : jsr drawStripA
     jsr focusLast1 : jsr drawStripB
+    jsr focusLast2 : jsr drawStripA
     jsr focusLast2 : jsr drawStripB
+    jsr focusLast3 : jsr drawStripA
+    jsr focusLast3 : jsr drawStripB
     rts
 
 .prepDraw:
     jsr focusCurr1 : jsr drawStripA
-    jsr focusCurr2 : jsr drawStripA
     jsr focusCurr1 : jsr drawStripB
     jsr focusCurr2 : jsr drawStripB
+    jsr focusCurr2 : jsr drawStripA
+    jsr focusCurr3 : jsr drawStripB
+    jsr focusCurr3 : jsr drawStripA
     rts
 
 

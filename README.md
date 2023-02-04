@@ -14,9 +14,11 @@ DONE
 - show raster position during sprite plot
 - use self-mod-code to update screen-pointer.
 - better: gen code for screen writes
+- 3rd object
 
 TODO:
-- 3rd object; 4th object
+- avoid code-repetition between multiple objects
+- 4th object
 - objects which move themselves
 - sprites with varing data in sprite column strips
 - small meteors
