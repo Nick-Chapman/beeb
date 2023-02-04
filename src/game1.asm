@@ -55,11 +55,10 @@ numObjects = 2
 .curr2 SKIP objectSize
 .last2 SKIP objectSize
 
-dataPrep = &2000 ; 16 pages (4k) here
+dataPrep = &2000 ; 16 pages (4k) here before screen starts
 
 ORG &1900
 GUARD &1e00
-GUARD dataPrep
 GUARD screenStart
 
 .start:
@@ -477,41 +476,6 @@ GUARD screenStart
     jmp afterDown
 
 
-;;; for each screen-write, we generate a code sequence following this 8-byte template
-.template:
-    lda &ffff
-    eor #&ff
-    sta &ffff
-
-.blitScreen:
-    lda rtsTemplate : ldy #0 : sta (ptr),y ; finalize generate-code
-    jsr dataPrep ; could jump
-    .rtsTemplate : rts
-
-.resetDataPrepPtr:
-    lda #0 : sta numDataObjects
-    lda #LO(dataPrep) : sta ptr
-    lda #HI(dataPrep) : sta ptr+1
-    rts
-
-;; value to eor in A; scrren-address in theA/+1
-.genCodeForScreenEor:
-    ldy #4 : sta (ptr),y
-    lda theA   : ldy #1 : sta (ptr),y : ldy #6 : sta (ptr),y
-    lda theA+1 : ldy #2 : sta (ptr),y : ldy #7 : sta (ptr),y
-    lda template   : ldy #0 : sta (ptr),y
-    lda template+3 : ldy #3 : sta (ptr),y
-    lda template+5 : ldy #5 : sta (ptr),y
-    jsr incPtr
-    rts
-
-.incPtr:
-    inc numDataObjects
-    lda ptr : clc : adc #8 : sta ptr
-    lda ptr+1     : adc #0 : sta ptr+1
-    rts
-
-
 .stripA: EQUW stripA0, stripA1, stripA2, stripA3
 .stripA0: EQUB &ff,&ff
 .stripA1: EQUB &77,&77
@@ -591,6 +555,41 @@ GUARD screenStart
     dex
     bne loopX
     rts }
+
+maxPreparedObjects = 256
+
+;;; prepare code generation for a new frame
+.resetDataPrepPtr:
+    lda #0 : sta numDataObjects
+    lda #LO(dataPrep) : sta ptr
+    lda #HI(dataPrep) : sta ptr+1
+    rts
+
+;;; code gen for screen-write: value to eor in A; screen-address in theA/+1
+.genCodeForScreenEor:
+    ldy #4 : sta (ptr),y
+    lda theA   : ldy #1 : sta (ptr),y : ldy #6 : sta (ptr),y
+    lda theA+1 : ldy #2 : sta (ptr),y : ldy #7 : sta (ptr),y
+    inc numDataObjects
+    lda ptr : clc : adc #8 : sta ptr
+    lda ptr+1     : adc #0 : sta ptr+1
+    rts
+
+;;; run the generated code
+.blitScreen:
+    lda rtsTemplate : ldy #0 : sta (ptr),y ; finalize generated-code with an rts
+    jsr dataPrep ; execute generated code
+    .ldaTemplate : lda ldaTemplate : ldy #0 : sta (ptr),y ; restore with lda
+    .rtsTemplate : rts
+
+;;; templates for 256x 8-byte generated code segments.
+;;; op-codes for lda/eor/sta are fixed; generation fills the other 5 bytes
+ORG dataPrep
+FOR n, 1, maxPreparedObjects
+    lda &ffff
+    eor #&ff
+    sta &ffff
+NEXT
 
 .end:
 SAVE "Code", start, end
