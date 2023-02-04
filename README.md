@@ -11,10 +11,21 @@ DONE
 - Have more than one object (test with tab-key to switch which is controlled by keys).
 - Support multi sprite columns, using rightCoarse(or the like) for adjust.
 - Support sprite columns of any depth
+- show raster position during sprite plot
+- use self-mod-code to update screen-pointer.
+- better: gen code for screen writes
 
 TODO:
-- show raster position during sprite plot
+- 3rd object; 4th object
+- objects which move themselves
+- sprites with varing data in sprite column strips
+- small meteors
+- different sprite data for diff objects
+- medium & large meteors
+- spaceship
+- bullets
+- collision detection
+
 - improve vsync with timer
 - Disconnect keys from direct position control; go via intermediate speed.
 - Code (initial) compute of A(hi/lo) from x/y-coarse.
-- use self-mod-code to update screen-pointer.
