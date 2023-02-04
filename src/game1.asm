@@ -462,18 +462,10 @@ GUARD screenStart
     lda theA : clc : adc theFY : sta theA
 .plotLoop:
     .pokeSprite : lda &BEEF ;,x
-    ldy #4 : sta (ptr),y
-    lda theA   : ldy #1 : sta (ptr),y : ldy #6 : sta (ptr),y
-    lda theA+1 : ldy #2 : sta (ptr),y : ldy #7 : sta (ptr),y
-
-    lda template   : ldy #0 : sta (ptr),y
-    lda template+3 : ldy #3 : sta (ptr),y
-    lda template+5 : ldy #5 : sta (ptr),y
-
+    jsr genCodeForScreenEor
     inc theA
     inc theFY
     lda theFY : cmp #8 : beq down : .afterDown
-    jsr incPtr
     inx
     cpx #13 ; column height
     bne plotLoop
@@ -502,9 +494,20 @@ GUARD screenStart
     lda #HI(dataPrep) : sta ptr+1
     rts
 
+;; value to eor in A; scrren-address in theA/+1
+.genCodeForScreenEor:
+    ldy #4 : sta (ptr),y
+    lda theA   : ldy #1 : sta (ptr),y : ldy #6 : sta (ptr),y
+    lda theA+1 : ldy #2 : sta (ptr),y : ldy #7 : sta (ptr),y
+    lda template   : ldy #0 : sta (ptr),y
+    lda template+3 : ldy #3 : sta (ptr),y
+    lda template+5 : ldy #5 : sta (ptr),y
+    jsr incPtr
+    rts
+
 .incPtr:
     inc numDataObjects
-    lda ptr : clc : adc #8 : sta ptr ; was 3
+    lda ptr : clc : adc #8 : sta ptr
     lda ptr+1     : adc #0 : sta ptr+1
     rts
 
