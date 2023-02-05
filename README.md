@@ -18,11 +18,11 @@ DONE
 - sprites with varing data in sprite column strips
 - avoid code-repetition between multiple objects
 - different sprite data for diff objects
+- allow objects with a 3rd strip
+- diffent objects can have diff nummber of strips
+- small meteor sprite data
 
 TODO:
-- allow objects with a 3rd strip
-- small meteors
-- 4th object
 - objects which move themselves
 - medium & large meteors
 - spaceship

@@ -203,8 +203,8 @@ GUARD screenStart
 ;;     rts
 
 .initCurr2: ; 19,17
-    lda #LO(spriteData2) : sta theSpriteData
-    lda #HI(spriteData2) : sta theSpriteData+1
+    lda #LO(spriteDataM) : sta theSpriteData
+    lda #HI(spriteDataM) : sta theSpriteData+1
     lda #4 : sta theCX
     lda #3 : sta theFX
     lda #2 : sta theCY
@@ -611,6 +611,25 @@ GUARD screenStart
 .stripB1: EQUB &cc,&cc,&cc,&44,&cc,&cc,&cc
 .stripB2: EQUB &ee,&ee,&66,&22,&66,&ee,&ee
 .stripB3: EQUB &ff,&ff,&bb,&11,&bb,&ff,&ff
+}
+
+
+.spriteDataM: { EQUB 7 : EQUW stripA, stripB, stripC
+.stripA: EQUW atPoint : EQUB 8 : EQUW stripA0, stripA1, stripA2, stripA3
+.stripA0: EQUB &33,&44,&88,&88,&44,&22,&44,&33
+.stripA1: EQUB &11,&22,&44,&44,&22,&11,&22,&11
+.stripA2: EQUB &00,&11,&22,&22,&11,&00,&11,&00
+.stripA3: EQUB &00,&00,&11,&11,&00,&00,&00,&00
+.stripB: EQUW rightCoarse : EQUB 8 : EQUW stripB0, stripB1, stripB2, stripB3
+.stripB0: EQUB &66,&99,&11,&00,&00,&11,&99,&66
+.stripB1: EQUB &bb,&44,&00,&00,&00,&00,&44,&bb
+.stripB2: EQUB &dd,&22,&00,&00,&00,&88,&22,&dd
+.stripB3: EQUB &66,&99,&00,&00,&88,&44,&99,&66
+.stripC: EQUW rightCoarse2 : EQUB 8 : EQUW stripC0, stripC1, stripC2, stripC3
+.stripC0: EQUB &00,&00,&00,&88,&88,&00,&00,&00
+.stripC1: EQUB &00,&88,&88,&44,&44,&88,&88,&00
+.stripC2: EQUB &88,&44,&44,&22,&22,&44,&44,&88
+.stripC3: EQUB &cc,&22,&22,&11,&11,&22,&22,&cc
 }
 
 
