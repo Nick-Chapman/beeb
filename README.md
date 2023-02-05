@@ -16,13 +16,14 @@ DONE
 - better: gen code for screen writes
 - 3rd object
 - sprites with varing data in sprite column strips
+- avoid code-repetition between multiple objects
+- different sprite data for diff objects
 
 TODO:
-- avoid code-repetition between multiple objects
+- allow objects with a 3rd strip
+- small meteors
 - 4th object
 - objects which move themselves
-- small meteors
-- different sprite data for diff objects
 - medium & large meteors
 - spaceship
 - bullets

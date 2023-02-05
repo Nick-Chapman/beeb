@@ -30,12 +30,15 @@ ORG &70
 .lastKeyR SKIP 1
 .lastKeyTab SKIP 1
 
-.write SKIP 2 ; pointer for indirect-indexed addresing
+.gridPtr SKIP 2
 .ptr SKIP 2
 .numDataObjects SKIP 1
+.theStrip SKIP 2
+.theObj SKIP 2
 
-;;; object in focus... 6 bytes
+;;; object in focus...
 .theObjectStart
+.theSpriteData SKIP 2
 .theCX SKIP 1 ; coarse-X : 0..79
 .theCY SKIP 1 ; coarse-Y : 0..31
 .theFX SKIP 1 ; fine-X   : 0..3
@@ -60,7 +63,7 @@ numObjects = 2
 dataPrep = &2000 ; 16 pages (4k) here before screen starts
 
 ORG &1900
-GUARD &1f00
+GUARD &1fc0
 GUARD screenStart
 
 .start:
@@ -69,7 +72,7 @@ GUARD screenStart
 .focusObject: {
     ldy #0
 .loop:
-    lda (write),y
+    lda (theObj),y
     sta theObjectStart,y
     iny
     cpy #objectSize
@@ -80,7 +83,7 @@ GUARD screenStart
     ldy #0
 .loop:
     lda theObjectStart,y
-    sta (write),y
+    sta (theObj),y
     iny
     cpy #objectSize
     bne loop
@@ -88,64 +91,64 @@ GUARD screenStart
 
 
 .focusCurr1:
-    lda #LO(curr1) : sta write
-    lda #HI(curr1) : sta write+1
+    lda #LO(curr1) : sta theObj
+    lda #HI(curr1) : sta theObj+1
     jmp focusObject
 
 .focusLast1:
-    lda #LO(last1) : sta write
-    lda #HI(last1) : sta write+1
+    lda #LO(last1) : sta theObj
+    lda #HI(last1) : sta theObj+1
     jmp focusObject
 
 .saveCurr1:
-    lda #LO(curr1) : sta write
-    lda #HI(curr1) : sta write+1
+    lda #LO(curr1) : sta theObj
+    lda #HI(curr1) : sta theObj+1
     jmp saveObject
 
 .saveLast1:
-    lda #LO(last1) : sta write
-    lda #HI(last1) : sta write+1
+    lda #LO(last1) : sta theObj
+    lda #HI(last1) : sta theObj+1
     jmp saveObject
 
 .focusCurr2:
-    lda #LO(curr2) : sta write
-    lda #HI(curr2) : sta write+1
+    lda #LO(curr2) : sta theObj
+    lda #HI(curr2) : sta theObj+1
     jmp focusObject
 
 .focusLast2:
-    lda #LO(last2) : sta write
-    lda #HI(last2) : sta write+1
+    lda #LO(last2) : sta theObj
+    lda #HI(last2) : sta theObj+1
     jmp focusObject
 
 .saveCurr2:
-    lda #LO(curr2) : sta write
-    lda #HI(curr2) : sta write+1
+    lda #LO(curr2) : sta theObj
+    lda #HI(curr2) : sta theObj+1
     jmp saveObject
 
 .saveLast2:
-    lda #LO(last2) : sta write
-    lda #HI(last2) : sta write+1
+    lda #LO(last2) : sta theObj
+    lda #HI(last2) : sta theObj+1
     jmp saveObject
 
 
 .focusCurr3:
-    lda #LO(curr3) : sta write
-    lda #HI(curr3) : sta write+1
+    lda #LO(curr3) : sta theObj
+    lda #HI(curr3) : sta theObj+1
     jmp focusObject
 
 .focusLast3:
-    lda #LO(last3) : sta write
-    lda #HI(last3) : sta write+1
+    lda #LO(last3) : sta theObj
+    lda #HI(last3) : sta theObj+1
     jmp focusObject
 
 .saveCurr3:
-    lda #LO(curr3) : sta write
-    lda #HI(curr3) : sta write+1
+    lda #LO(curr3) : sta theObj
+    lda #HI(curr3) : sta theObj+1
     jmp saveObject
 
 .saveLast3:
-    lda #LO(last3) : sta write
-    lda #HI(last3) : sta write+1
+    lda #LO(last3) : sta theObj
+    lda #HI(last3) : sta theObj+1
     jmp saveObject
 
 
@@ -185,7 +188,7 @@ GUARD screenStart
 
 
 .initVars:
-    lda #1 : sta selectedObj
+    lda #0 : sta selectedObj
     lda #0 : sta keyTab
     lda #0 : sta keyEscape
     lda #0 : sta keyU
@@ -196,16 +199,21 @@ GUARD screenStart
 
 
 .initCurr1:
+    lda #LO(spriteData1) : sta theSpriteData
+    lda #HI(spriteData1) : sta theSpriteData+1
     lda #0 : sta theCX
     lda #0 : sta theFX
     lda #0 : sta theCY
     lda #0 : sta theFY
     lda #HI(screenStart) : sta theA+1
     lda #LO(screenStart) : sta theA
+
     jsr saveCurr1
     rts
 
 .initCurr2: ; 19,17
+    lda #LO(spriteData2) : sta theSpriteData
+    lda #HI(spriteData2) : sta theSpriteData+1
     lda #4 : sta theCX
     lda #3 : sta theFX
     lda #2 : sta theCY
@@ -216,6 +224,8 @@ GUARD screenStart
     rts
 
 .initCurr3:
+    lda #LO(spriteData3) : sta theSpriteData
+    lda #HI(spriteData3) : sta theSpriteData+1
     lda #0 : sta theCX
     lda #0 : sta theFX
     lda #4 : sta theCY
@@ -241,13 +251,13 @@ GUARD screenStart
 
 .focusSelected: {
     lda selectedObj : bne two
-    jmp focusCurr1  : .two
-    jmp focusCurr2 }
+    jmp focusCurr2  : .two
+    jmp focusCurr3 }
 
 .saveSelected: {
     lda selectedObj : bne two
-    jmp saveCurr1  : .two
-    jmp saveCurr2 }
+    jmp saveCurr2  : .two
+    jmp saveCurr3 }
 
 
 .saveLastKeys:
@@ -461,36 +471,74 @@ GUARD screenStart
 
 
 .prepErase:
-    jsr focusLast1 : jsr drawStripA
-    jsr focusLast1 : jsr drawStripB
-    jsr focusLast2 : jsr drawStripA
-    jsr focusLast2 : jsr drawStripB
-    jsr focusLast3 : jsr drawStripA
-    jsr focusLast3 : jsr drawStripB
+    jsr drawStripsLast1
+    jsr drawStripsLast2
+    jsr drawStripsLast3
     rts
 
 .prepDraw:
-    jsr focusCurr1 : jsr drawStripA
-    jsr focusCurr1 : jsr drawStripB
-    jsr focusCurr2 : jsr drawStripB
-    jsr focusCurr2 : jsr drawStripA
-    jsr focusCurr3 : jsr drawStripB
-    jsr focusCurr3 : jsr drawStripA
+    jsr drawStripsCurr1
+    jsr drawStripsCurr2
+    jsr drawStripsCurr3
     rts
 
 
-.drawStripA:
-    lda theFX : asl a : tax
-    lda stripA,x : sta pokeSprite+1
-    lda stripA+1,x : sta pokeSprite+2
-    jsr eorWrite
+.drawStripsLast1:
+    lda #LO(last1) : sta theObj
+    lda #HI(last1) : sta theObj+1
+    jsr drawStrips
+    rts
+.drawStripsLast2:
+    lda #LO(last2) : sta theObj
+    lda #HI(last2) : sta theObj+1
+    jsr drawStrips
+    rts
+.drawStripsLast3:
+    lda #LO(last3) : sta theObj
+    lda #HI(last3) : sta theObj+1
+    jsr drawStrips
+    rts
+.drawStripsCurr1:
+    lda #LO(curr1) : sta theObj
+    lda #HI(curr1) : sta theObj+1
+    jsr drawStrips
+    rts
+.drawStripsCurr2:
+    lda #LO(curr2) : sta theObj
+    lda #HI(curr2) : sta theObj+1
+    jsr drawStrips
+    rts
+.drawStripsCurr3:
+    lda #LO(curr3) : sta theObj
+    lda #HI(curr3) : sta theObj+1
+    jsr drawStrips
     rts
 
-.drawStripB:
-    jsr rightCoarse
-    lda theFX : asl a : tax
-    lda stripB,x : sta pokeSprite+1
-    lda stripB+1,x : sta pokeSprite+2
+
+.drawStrips: {
+    jsr focusObject
+    ldy #0
+.loop:
+    lda (theSpriteData),y : sta theStrip : iny
+    lda (theSpriteData),y : sta theStrip+1 : iny
+    cpy #4 ; twice num-strips (2 bytes per strip)
+    beq done
+    tya : pha
+    jsr drawTheStrip
+    jsr focusObject
+    jsr rightCoarse ; this wont generalize to 3 strips! (3rd strips need to step right twice)
+    pla : tay
+    jmp loop
+.done:
+    jsr drawTheStrip
+    rts }
+
+
+.drawTheStrip:
+    ldy #0 : lda (theStrip),y : sta pokeStripHeight+1
+    lda theFX : asl a : tay
+    iny : lda (theStrip),y : sta pokeSprite+1
+    iny : lda (theStrip),y : sta pokeSprite+2
     jsr eorWrite
     rts
 
@@ -505,7 +553,7 @@ GUARD screenStart
     inc theFY
     lda theFY : cmp #8 : beq down : .afterDown
     inx
-    cpx #9 ; column height
+    .pokeStripHeight : cpx #&ff
     bne plotLoop
     rts
 .down:
@@ -515,29 +563,56 @@ GUARD screenStart
     jmp afterDown
 
 
-.stripA: EQUW stripA0, stripA1, stripA2, stripA3
+.spriteData1: { EQUW stripA, stripB
+.stripA: EQUB 9 : EQUW stripA0, stripA1, stripA2, stripA3
 .stripA0: EQUB &ff,&ff,&ff,&dd,&88,&dd,&ff,&ff,&ff
 .stripA1: EQUB &77,&77,&77,&66,&44,&66,&77,&77,&77
 .stripA2: EQUB &33,&33,&33,&33,&22,&33,&33,&33,&33
 .stripA3: EQUB &11,&11,&11,&11,&11,&11,&11,&11,&11
-
-.stripB: EQUW stripB0, stripB1, stripB2, stripB3
+.stripB: EQUB 9 : EQUW stripB0, stripB1, stripB2, stripB3
 .stripB0: EQUB &88,&88,&88,&88,&88,&88,&88,&88,&88
 .stripB1: EQUB &cc,&cc,&cc,&cc,&44,&cc,&cc,&cc,&cc
 .stripB2: EQUB &ee,&ee,&ee,&66,&22,&66,&ee,&ee,&ee
 .stripB3: EQUB &ff,&ff,&ff,&bb,&11,&bb,&ff,&ff,&ff
+}
+
+.spriteData2: { EQUW stripA, stripB
+.stripA: EQUB 13 : EQUW stripA0, stripA1, stripA2, stripA3
+.stripA0: EQUB &ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff
+.stripA1: EQUB &77,&77,&77,&77,&77,&77,&77,&77,&77,&77,&77,&77,&77
+.stripA2: EQUB &33,&33,&33,&33,&33,&33,&33,&33,&33,&33,&33,&33,&33
+.stripA3: EQUB &11,&11,&11,&11,&11,&11,&11,&11,&11,&11,&11,&11,&11
+.stripB: EQUB 13 : EQUW stripB0, stripB1, stripB2, stripB3
+.stripB0: EQUB &88,&88,&88,&88,&88,&88,&88,&88,&88,&88,&88,&88,&88
+.stripB1: EQUB &cc,&cc,&cc,&cc,&cc,&cc,&cc,&cc,&cc,&cc,&cc,&cc,&cc
+.stripB2: EQUB &ee,&ee,&ee,&ee,&ee,&ee,&ee,&ee,&ee,&ee,&ee,&ee,&ee
+.stripB3: EQUB &ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff
+}
+
+.spriteData3: { EQUW stripA, stripB
+.stripA: EQUB 7 : EQUW stripA0, stripA1, stripA2, stripA3
+.stripA0: EQUB &ff,&ff,&dd,&88,&dd,&ff,&ff
+.stripA1: EQUB &77,&77,&66,&44,&66,&77,&77
+.stripA2: EQUB &33,&33,&33,&22,&33,&33,&33
+.stripA3: EQUB &11,&11,&11,&11,&11,&11,&11
+.stripB: EQUB 7 : EQUW stripB0, stripB1, stripB2, stripB3
+.stripB0: EQUB &88,&88,&88,&88,&88,&88,&88
+.stripB1: EQUB &cc,&cc,&cc,&44,&cc,&cc,&cc
+.stripB2: EQUB &ee,&ee,&66,&22,&66,&ee,&ee
+.stripB3: EQUB &ff,&ff,&bb,&11,&bb,&ff,&ff
+}
 
 
 .drawGrid: {
-    lda #LO(screenStart) : sta write
-    lda #HI(screenStart) : sta write+1
+    lda #LO(screenStart) : sta gridPtr
+    lda #HI(screenStart) : sta gridPtr+1
     ldy #0
 .next:
     lda #&08
-    sta (write),y
+    sta (gridPtr),y
     clc
-    lda write : adc #8 : sta write
-    lda write+1 : adc #0 : sta write+1
+    lda gridPtr : adc #8 : sta gridPtr
+    lda gridPtr+1 : adc #0 : sta gridPtr+1
     cmp #&80
     bmi next
     rts }
