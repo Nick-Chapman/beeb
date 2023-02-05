@@ -27,7 +27,6 @@ TODO:
 - spaceship
 - bullets
 - collision detection
-
 - improve vsync with timer
 - Disconnect keys from direct position control; go via intermediate speed.
 - Code (initial) compute of A(hi/lo) from x/y-coarse.
