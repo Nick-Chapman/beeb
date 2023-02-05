@@ -54,8 +54,8 @@ objectSize = theObjectEnd - theObjectStart
 numObjects = 2
 
 ;;; objects dont need to be in zero-page
-;.curr1 SKIP objectSize
-;.last1 SKIP objectSize
+.curr1 SKIP objectSize
+.last1 SKIP objectSize
 .curr2 SKIP objectSize
 .last2 SKIP objectSize
 .curr3 SKIP objectSize
@@ -91,22 +91,22 @@ GUARD screenStart
     rts }
 
 
-;; .focusCurr1:
-;;     lda #LO(curr1) : sta theObj
-;;     lda #HI(curr1) : sta theObj+1
-;;     jmp focusObject
-;; .focusLast1:
-;;     lda #LO(last1) : sta theObj
-;;     lda #HI(last1) : sta theObj+1
-;;     jmp focusObject
-;; .saveCurr1:
-;;     lda #LO(curr1) : sta theObj
-;;     lda #HI(curr1) : sta theObj+1
-;;     jmp saveObject
-;; .saveLast1:
-;;     lda #LO(last1) : sta theObj
-;;     lda #HI(last1) : sta theObj+1
-;;     jmp saveObject
+.focusCurr1:
+    lda #LO(curr1) : sta theObj
+    lda #HI(curr1) : sta theObj+1
+    jmp focusObject
+.focusLast1:
+    lda #LO(last1) : sta theObj
+    lda #HI(last1) : sta theObj+1
+    jmp focusObject
+.saveCurr1:
+    lda #LO(curr1) : sta theObj
+    lda #HI(curr1) : sta theObj+1
+    jmp saveObject
+.saveLast1:
+    lda #LO(last1) : sta theObj
+    lda #HI(last1) : sta theObj+1
+    jmp saveObject
 
 .focusCurr2:
     lda #LO(curr2) : sta theObj
@@ -147,10 +147,10 @@ GUARD screenStart
 .main: {
     jsr setupMachine
     jsr initVars
-    ;jsr initCurr1
+    jsr initCurr1
     jsr initCurr2
     jsr initCurr3
-    jsr drawGrid
+    ;jsr drawGrid
 
     jsr resetDataPrepPtr
     jsr prepDraw
@@ -168,7 +168,7 @@ GUARD screenStart
     jsr prepErase
     jsr prepDraw
 
-    lda #3 : sta ula ; blue
+    ;lda #3 : sta ula ; blue
     jsr syncDelay
     lda #4 : sta ula ; yellow
     jsr blitScreen
@@ -190,17 +190,17 @@ GUARD screenStart
     rts
 
 
-;; .initCurr1:
-;;     lda #LO(spriteData2) : sta theSpriteData
-;;     lda #HI(spriteData2) : sta theSpriteData+1
-;;     lda #0 : sta theCX
-;;     lda #0 : sta theFX
-;;     lda #0 : sta theCY
-;;     lda #0 : sta theFY
-;;     lda #HI(screenStart) : sta theA+1
-;;     lda #LO(screenStart) : sta theA
-;;     jsr saveCurr1
-;;     rts
+.initCurr1:
+    lda #LO(spriteDataM) : sta theSpriteData
+    lda #HI(spriteDataM) : sta theSpriteData+1
+    lda #0 : sta theCX
+    lda #0 : sta theFX
+    lda #0 : sta theCY
+    lda #0 : sta theFY
+    lda #HI(screenStart) : sta theA+1
+    lda #LO(screenStart) : sta theA
+    jsr saveCurr1
+    rts
 
 .initCurr2: ; 19,17
     lda #LO(spriteDataM) : sta theSpriteData
@@ -215,8 +215,8 @@ GUARD screenStart
     rts
 
 .initCurr3:
-    lda #LO(spriteData3) : sta theSpriteData
-    lda #HI(spriteData3) : sta theSpriteData+1
+    lda #LO(spriteDataM) : sta theSpriteData
+    lda #HI(spriteDataM) : sta theSpriteData+1
     lda #0 : sta theCX
     lda #0 : sta theFX
     lda #4 : sta theCY
@@ -228,7 +228,7 @@ GUARD screenStart
 
 
 .saveLastScreenAddr:
-    ;jsr focusCurr1 : jsr saveLast1
+    jsr focusCurr1 : jsr saveLast1
     jsr focusCurr2 : jsr saveLast2
     jsr focusCurr3 : jsr saveLast3
     rts
@@ -468,23 +468,23 @@ GUARD screenStart
 
 
 .prepErase:
-    ;jsr drawStripsLast1
+    jsr drawStripsLast1
     jsr drawStripsLast2
     jsr drawStripsLast3
     rts
 
 .prepDraw:
-    ;jsr drawStripsCurr1
+    jsr drawStripsCurr1
     jsr drawStripsCurr2
     jsr drawStripsCurr3
     rts
 
 
-;; .drawStripsLast1:
-;;     lda #LO(last1) : sta theObj
-;;     lda #HI(last1) : sta theObj+1
-;;     jsr drawStrips
-;;     rts
+.drawStripsLast1:
+    lda #LO(last1) : sta theObj
+    lda #HI(last1) : sta theObj+1
+    jsr drawStrips
+    rts
 .drawStripsLast2:
     lda #LO(last2) : sta theObj
     lda #HI(last2) : sta theObj+1
@@ -495,11 +495,11 @@ GUARD screenStart
     lda #HI(last3) : sta theObj+1
     jsr drawStrips
     rts
-;; .drawStripsCurr1:
-;;     lda #LO(curr1) : sta theObj
-;;     lda #HI(curr1) : sta theObj+1
-;;     jsr drawStrips
-;;     rts
+.drawStripsCurr1:
+    lda #LO(curr1) : sta theObj
+    lda #HI(curr1) : sta theObj+1
+    jsr drawStrips
+    rts
 .drawStripsCurr2:
     lda #LO(curr2) : sta theObj
     lda #HI(curr2) : sta theObj+1
