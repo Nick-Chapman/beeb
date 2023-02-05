@@ -499,13 +499,13 @@ GUARD screenStart
     ldx #0
     lda theA : clc : adc theFY : sta theA
 .plotLoop:
-    .pokeSprite : lda &BEEF ;,x
+    .pokeSprite : lda &BEEF,x
     jsr genCodeForScreenEor
     inc theA
     inc theFY
     lda theFY : cmp #8 : beq down : .afterDown
     inx
-    cpx #13 ; column height
+    cpx #9 ; column height
     bne plotLoop
     rts
 .down:
@@ -516,16 +516,16 @@ GUARD screenStart
 
 
 .stripA: EQUW stripA0, stripA1, stripA2, stripA3
-.stripA0: EQUB &ff,&ff
-.stripA1: EQUB &77,&77
-.stripA2: EQUB &33,&33
-.stripA3: EQUB &11,&11
+.stripA0: EQUB &ff,&ff,&ff,&dd,&88,&dd,&ff,&ff,&ff
+.stripA1: EQUB &77,&77,&77,&66,&44,&66,&77,&77,&77
+.stripA2: EQUB &33,&33,&33,&33,&22,&33,&33,&33,&33
+.stripA3: EQUB &11,&11,&11,&11,&11,&11,&11,&11,&11
 
 .stripB: EQUW stripB0, stripB1, stripB2, stripB3
-.stripB0: EQUB &88,&88
-.stripB1: EQUB &cc,&cc
-.stripB2: EQUB &ee,&ee
-.stripB3: EQUB &ff,&ff
+.stripB0: EQUB &88,&88,&88,&88,&88,&88,&88,&88,&88
+.stripB1: EQUB &cc,&cc,&cc,&cc,&44,&cc,&cc,&cc,&cc
+.stripB2: EQUB &ee,&ee,&ee,&66,&22,&66,&ee,&ee,&ee
+.stripB3: EQUB &ff,&ff,&ff,&bb,&11,&bb,&ff,&ff,&ff
 
 
 .drawGrid: {

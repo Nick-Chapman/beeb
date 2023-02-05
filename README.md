@@ -15,12 +15,12 @@ DONE
 - use self-mod-code to update screen-pointer.
 - better: gen code for screen writes
 - 3rd object
+- sprites with varing data in sprite column strips
 
 TODO:
 - avoid code-repetition between multiple objects
 - 4th object
 - objects which move themselves
-- sprites with varing data in sprite column strips
 - small meteors
 - different sprite data for diff objects
 - medium & large meteors
