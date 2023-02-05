@@ -35,6 +35,7 @@ ORG &70
 .numDataObjects SKIP 1
 .theStrip SKIP 2
 .theObj SKIP 2
+.funcPtr SKIP 2
 
 ;;; object in focus...
 .theObjectStart
@@ -53,8 +54,8 @@ objectSize = theObjectEnd - theObjectStart
 numObjects = 2
 
 ;;; objects dont need to be in zero-page
-.curr1 SKIP objectSize
-.last1 SKIP objectSize
+;.curr1 SKIP objectSize
+;.last1 SKIP objectSize
 .curr2 SKIP objectSize
 .last2 SKIP objectSize
 .curr3 SKIP objectSize
@@ -62,7 +63,7 @@ numObjects = 2
 
 dataPrep = &2000 ; 16 pages (4k) here before screen starts
 
-ORG &1900
+ORG &1800
 GUARD &1fc0
 GUARD screenStart
 
@@ -90,41 +91,35 @@ GUARD screenStart
     rts }
 
 
-.focusCurr1:
-    lda #LO(curr1) : sta theObj
-    lda #HI(curr1) : sta theObj+1
-    jmp focusObject
-
-.focusLast1:
-    lda #LO(last1) : sta theObj
-    lda #HI(last1) : sta theObj+1
-    jmp focusObject
-
-.saveCurr1:
-    lda #LO(curr1) : sta theObj
-    lda #HI(curr1) : sta theObj+1
-    jmp saveObject
-
-.saveLast1:
-    lda #LO(last1) : sta theObj
-    lda #HI(last1) : sta theObj+1
-    jmp saveObject
+;; .focusCurr1:
+;;     lda #LO(curr1) : sta theObj
+;;     lda #HI(curr1) : sta theObj+1
+;;     jmp focusObject
+;; .focusLast1:
+;;     lda #LO(last1) : sta theObj
+;;     lda #HI(last1) : sta theObj+1
+;;     jmp focusObject
+;; .saveCurr1:
+;;     lda #LO(curr1) : sta theObj
+;;     lda #HI(curr1) : sta theObj+1
+;;     jmp saveObject
+;; .saveLast1:
+;;     lda #LO(last1) : sta theObj
+;;     lda #HI(last1) : sta theObj+1
+;;     jmp saveObject
 
 .focusCurr2:
     lda #LO(curr2) : sta theObj
     lda #HI(curr2) : sta theObj+1
     jmp focusObject
-
 .focusLast2:
     lda #LO(last2) : sta theObj
     lda #HI(last2) : sta theObj+1
     jmp focusObject
-
 .saveCurr2:
     lda #LO(curr2) : sta theObj
     lda #HI(curr2) : sta theObj+1
     jmp saveObject
-
 .saveLast2:
     lda #LO(last2) : sta theObj
     lda #HI(last2) : sta theObj+1
@@ -135,17 +130,14 @@ GUARD screenStart
     lda #LO(curr3) : sta theObj
     lda #HI(curr3) : sta theObj+1
     jmp focusObject
-
 .focusLast3:
     lda #LO(last3) : sta theObj
     lda #HI(last3) : sta theObj+1
     jmp focusObject
-
 .saveCurr3:
     lda #LO(curr3) : sta theObj
     lda #HI(curr3) : sta theObj+1
     jmp saveObject
-
 .saveLast3:
     lda #LO(last3) : sta theObj
     lda #HI(last3) : sta theObj+1
@@ -155,7 +147,7 @@ GUARD screenStart
 .main: {
     jsr setupMachine
     jsr initVars
-    jsr initCurr1
+    ;jsr initCurr1
     jsr initCurr2
     jsr initCurr3
     jsr drawGrid
@@ -198,18 +190,17 @@ GUARD screenStart
     rts
 
 
-.initCurr1:
-    lda #LO(spriteData1) : sta theSpriteData
-    lda #HI(spriteData1) : sta theSpriteData+1
-    lda #0 : sta theCX
-    lda #0 : sta theFX
-    lda #0 : sta theCY
-    lda #0 : sta theFY
-    lda #HI(screenStart) : sta theA+1
-    lda #LO(screenStart) : sta theA
-
-    jsr saveCurr1
-    rts
+;; .initCurr1:
+;;     lda #LO(spriteData2) : sta theSpriteData
+;;     lda #HI(spriteData2) : sta theSpriteData+1
+;;     lda #0 : sta theCX
+;;     lda #0 : sta theFX
+;;     lda #0 : sta theCY
+;;     lda #0 : sta theFY
+;;     lda #HI(screenStart) : sta theA+1
+;;     lda #LO(screenStart) : sta theA
+;;     jsr saveCurr1
+;;     rts
 
 .initCurr2: ; 19,17
     lda #LO(spriteData2) : sta theSpriteData
@@ -237,7 +228,7 @@ GUARD screenStart
 
 
 .saveLastScreenAddr:
-    jsr focusCurr1 : jsr saveLast1
+    ;jsr focusCurr1 : jsr saveLast1
     jsr focusCurr2 : jsr saveLast2
     jsr focusCurr3 : jsr saveLast3
     rts
@@ -415,6 +406,12 @@ GUARD screenStart
     jsr wrapLine
     rts
 
+.rightCoarse2:
+    jsr rightCoarse
+    jsr rightCoarse
+    rts
+.atPoint:
+    rts
 
 .unwrapScreen: {
     lda theCY
@@ -471,23 +468,23 @@ GUARD screenStart
 
 
 .prepErase:
-    jsr drawStripsLast1
+    ;jsr drawStripsLast1
     jsr drawStripsLast2
     jsr drawStripsLast3
     rts
 
 .prepDraw:
-    jsr drawStripsCurr1
+    ;jsr drawStripsCurr1
     jsr drawStripsCurr2
     jsr drawStripsCurr3
     rts
 
 
-.drawStripsLast1:
-    lda #LO(last1) : sta theObj
-    lda #HI(last1) : sta theObj+1
-    jsr drawStrips
-    rts
+;; .drawStripsLast1:
+;;     lda #LO(last1) : sta theObj
+;;     lda #HI(last1) : sta theObj+1
+;;     jsr drawStrips
+;;     rts
 .drawStripsLast2:
     lda #LO(last2) : sta theObj
     lda #HI(last2) : sta theObj+1
@@ -498,11 +495,11 @@ GUARD screenStart
     lda #HI(last3) : sta theObj+1
     jsr drawStrips
     rts
-.drawStripsCurr1:
-    lda #LO(curr1) : sta theObj
-    lda #HI(curr1) : sta theObj+1
-    jsr drawStrips
-    rts
+;; .drawStripsCurr1:
+;;     lda #LO(curr1) : sta theObj
+;;     lda #HI(curr1) : sta theObj+1
+;;     jsr drawStrips
+;;     rts
 .drawStripsCurr2:
     lda #LO(curr2) : sta theObj
     lda #HI(curr2) : sta theObj+1
@@ -518,15 +515,16 @@ GUARD screenStart
 .drawStrips: {
     jsr focusObject
     ldy #0
+    lda (theSpriteData),y : sta pokeNumStrips+1
+    iny
 .loop:
     lda (theSpriteData),y : sta theStrip : iny
     lda (theSpriteData),y : sta theStrip+1 : iny
-    cpy #4 ; twice num-strips (2 bytes per strip)
+    .pokeNumStrips : cpy #&f
     beq done
     tya : pha
     jsr drawTheStrip
     jsr focusObject
-    jsr rightCoarse ; this wont generalize to 3 strips! (3rd strips need to step right twice)
     pla : tay
     jmp loop
 .done:
@@ -535,12 +533,18 @@ GUARD screenStart
 
 
 .drawTheStrip:
-    ldy #0 : lda (theStrip),y : sta pokeStripHeight+1
-    lda theFX : asl a : tay
+    jsr offsetPositionForTheStrip
+    ldy #2 : lda (theStrip),y : sta pokeStripHeight+1
+    lda theFX : asl a : tay : iny : iny
     iny : lda (theStrip),y : sta pokeSprite+1
     iny : lda (theStrip),y : sta pokeSprite+2
     jsr eorWrite
     rts
+
+.offsetPositionForTheStrip:
+    ldy #0 : lda (theStrip),y : sta funcPtr
+    ldy #1 : lda (theStrip),y : sta funcPtr+1
+    jmp (funcPtr)
 
 
 .eorWrite:
@@ -563,39 +567,46 @@ GUARD screenStart
     jmp afterDown
 
 
-.spriteData1: { EQUW stripA, stripB
-.stripA: EQUB 9 : EQUW stripA0, stripA1, stripA2, stripA3
+.spriteData1: {
+    EQUB 5 ; 2*num-strips+1
+    EQUW stripA, stripB
+.stripA: EQUW atPoint : EQUB 9 : EQUW stripA0, stripA1, stripA2, stripA3
 .stripA0: EQUB &ff,&ff,&ff,&dd,&88,&dd,&ff,&ff,&ff
 .stripA1: EQUB &77,&77,&77,&66,&44,&66,&77,&77,&77
 .stripA2: EQUB &33,&33,&33,&33,&22,&33,&33,&33,&33
 .stripA3: EQUB &11,&11,&11,&11,&11,&11,&11,&11,&11
-.stripB: EQUB 9 : EQUW stripB0, stripB1, stripB2, stripB3
+.stripB: EQUW rightCoarse : EQUB 9 : EQUW stripB0, stripB1, stripB2, stripB3
 .stripB0: EQUB &88,&88,&88,&88,&88,&88,&88,&88,&88
 .stripB1: EQUB &cc,&cc,&cc,&cc,&44,&cc,&cc,&cc,&cc
 .stripB2: EQUB &ee,&ee,&ee,&66,&22,&66,&ee,&ee,&ee
 .stripB3: EQUB &ff,&ff,&ff,&bb,&11,&bb,&ff,&ff,&ff
 }
 
-.spriteData2: { EQUW stripA, stripB
-.stripA: EQUB 13 : EQUW stripA0, stripA1, stripA2, stripA3
+.spriteData2: { EQUB 7 : EQUW stripA, stripB, stripC
+.stripA: EQUW atPoint : EQUB 13 : EQUW stripA0, stripA1, stripA2, stripA3
 .stripA0: EQUB &ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff
 .stripA1: EQUB &77,&77,&77,&77,&77,&77,&77,&77,&77,&77,&77,&77,&77
 .stripA2: EQUB &33,&33,&33,&33,&33,&33,&33,&33,&33,&33,&33,&33,&33
 .stripA3: EQUB &11,&11,&11,&11,&11,&11,&11,&11,&11,&11,&11,&11,&11
-.stripB: EQUB 13 : EQUW stripB0, stripB1, stripB2, stripB3
-.stripB0: EQUB &88,&88,&88,&88,&88,&88,&88,&88,&88,&88,&88,&88,&88
-.stripB1: EQUB &cc,&cc,&cc,&cc,&cc,&cc,&cc,&cc,&cc,&cc,&cc,&cc,&cc
-.stripB2: EQUB &ee,&ee,&ee,&ee,&ee,&ee,&ee,&ee,&ee,&ee,&ee,&ee,&ee
+.stripB: EQUW rightCoarse : EQUB 13 : EQUW stripB0, stripB1, stripB2, stripB3
+.stripB0: EQUB &ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff
+.stripB1: EQUB &ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff
+.stripB2: EQUB &ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff
 .stripB3: EQUB &ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff
+.stripC: EQUW rightCoarse2 : EQUB 13 : EQUW stripC0, stripC1, stripC2, stripC3
+.stripC0: EQUB &88,&88,&88,&88,&88,&88,&88,&88,&88,&88,&88,&88,&88
+.stripC1: EQUB &cc,&cc,&cc,&cc,&cc,&cc,&cc,&cc,&cc,&cc,&cc,&cc,&cc
+.stripC2: EQUB &ee,&ee,&ee,&ee,&ee,&ee,&ee,&ee,&ee,&ee,&ee,&ee,&ee
+.stripC3: EQUB &ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff
 }
 
-.spriteData3: { EQUW stripA, stripB
-.stripA: EQUB 7 : EQUW stripA0, stripA1, stripA2, stripA3
+.spriteData3: { EQUB 5 : EQUW stripA, stripB
+.stripA: EQUW atPoint : EQUB 7 : EQUW stripA0, stripA1, stripA2, stripA3
 .stripA0: EQUB &ff,&ff,&dd,&88,&dd,&ff,&ff
 .stripA1: EQUB &77,&77,&66,&44,&66,&77,&77
 .stripA2: EQUB &33,&33,&33,&22,&33,&33,&33
 .stripA3: EQUB &11,&11,&11,&11,&11,&11,&11
-.stripB: EQUB 7 : EQUW stripB0, stripB1, stripB2, stripB3
+.stripB: EQUW rightCoarse : EQUB 7 : EQUW stripB0, stripB1, stripB2, stripB3
 .stripB0: EQUB &88,&88,&88,&88,&88,&88,&88
 .stripB1: EQUB &cc,&cc,&cc,&44,&cc,&cc,&cc
 .stripB2: EQUB &ee,&ee,&66,&22,&66,&ee,&ee
