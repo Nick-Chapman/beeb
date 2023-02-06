@@ -10,7 +10,7 @@ keyCodeD = -42
 keyCodeL = -26
 keyCodeR = -122
 keyCodeEscape = -113
-keyCodeTab = -97
+;keyCodeTab = -97
 
 screenStart = &3000
 screenEnd = &8000
@@ -21,14 +21,14 @@ ORG &70
 .keyD SKIP 1
 .keyL SKIP 1
 .keyR SKIP 1
-.keyTab SKIP 1
+;.keyTab SKIP 1
 .keyEscape SKIP 1
 
 .lastKeyU SKIP 1
 .lastKeyD SKIP 1
 .lastKeyL SKIP 1
 .lastKeyR SKIP 1
-.lastKeyTab SKIP 1
+;.lastKeyTab SKIP 1
 
 .gridPtr SKIP 2
 .ptr SKIP 2
@@ -49,7 +49,7 @@ ORG &70
 
 objectSize = theObjectEnd - theObjectStart
 
-.selectedObj SKIP 1 ; using tab key
+;.selectedObj SKIP 1 ; using tab key
 
 numObjects = 2
 
@@ -160,16 +160,19 @@ GUARD screenStart
     jsr saveLastKeys
     jsr readKeys
     lda keyEscape : bne quit
-    { lda keyTab : beq no : lda lastKeyTab : bne no : jsr onTab : .no }
+    ;{ lda keyTab : beq no : lda lastKeyTab : bne no : jsr onTab : .no }
     jsr saveLastScreenAddr
-    jsr updateSelected
+    ;jsr updateSelected
 
+    ;lda #2 : sta ula ; magenta
     jsr resetDataPrepPtr
     jsr prepErase
     jsr prepDraw
+;lda #7 : sta ula ; black
 
     ;lda #3 : sta ula ; blue
     jsr syncDelay
+    ;jsr syncDelay ; TODO : explore half speed
     lda #4 : sta ula ; yellow
     jsr blitScreen
     lda #7 : sta ula ; black
@@ -180,8 +183,8 @@ GUARD screenStart
 
 
 .initVars:
-    lda #0 : sta selectedObj
-    lda #0 : sta keyTab
+    ;lda #0 : sta selectedObj
+    ;lda #0 : sta keyTab
     lda #0 : sta keyEscape
     lda #0 : sta keyU
     lda #1 : sta keyD
@@ -234,25 +237,25 @@ GUARD screenStart
     rts
 
 
-.updateSelected:
-    jsr focusSelected
-    jsr updateFocussedWithRepeat
-    jsr saveSelected
-    rts
+;; .updateSelected:
+;;     jsr focusSelected
+;;     ;jsr updateFocussedWithRepeat
+;;     jsr saveSelected
+;;     rts
 
-.focusSelected: {
-    lda selectedObj : bne two
-    jmp focusCurr2  : .two
-    jmp focusCurr3 }
+;; .focusSelected: {
+;;     lda selectedObj : bne two
+;;     jmp focusCurr2  : .two
+;;     jmp focusCurr3 }
 
-.saveSelected: {
-    lda selectedObj : bne two
-    jmp saveCurr2  : .two
-    jmp saveCurr3 }
+;; .saveSelected: {
+;;     lda selectedObj : bne two
+;;     jmp saveCurr2  : .two
+;;     jmp saveCurr3 }
 
 
 .saveLastKeys:
-    lda keyTab : sta lastKeyTab
+    ;lda keyTab : sta lastKeyTab
     lda keyU : sta lastKeyU
     lda keyD : sta lastKeyD
     lda keyL : sta lastKeyL
@@ -264,7 +267,7 @@ GUARD screenStart
     jsr checkD
     jsr checkL
     jsr checkR
-    jsr checkTab
+    ;jsr checkTab
     jsr checkEscape
     rts
 
@@ -308,15 +311,15 @@ GUARD screenStart
     lda #1 : sta keyR : .no:
     rts }
 
-.checkTab: {
-    lda #0 : sta keyTab
-    lda #&81
-    ldx #(keyCodeTab AND &ff)
-    ldy #(keyCodeTab AND &ff00) DIV 256
-    jsr osbyte
-    cpx #&ff : bne no
-    lda #1 : sta keyTab : .no:
-    rts }
+;; .checkTab: {
+;;     lda #0 : sta keyTab
+;;     lda #&81
+;;     ldx #(keyCodeTab AND &ff)
+;;     ldy #(keyCodeTab AND &ff00) DIV 256
+;;     jsr osbyte
+;;     cpx #&ff : bne no
+;;     lda #1 : sta keyTab : .no:
+;;     rts }
 
 .checkEscape: {
     lda #0 : sta keyEscape
@@ -343,14 +346,14 @@ GUARD screenStart
     { lda keyR : beq no : jsr onR : .no }
     rts
 
-.onTab: {
-    inc selectedObj
-    lda selectedObj
-    cmp #numObjects
-    bne done
-    lda #0 : sta selectedObj
-.done:
-    rts }
+;; .onTab: {
+;;     inc selectedObj
+;;     lda selectedObj
+;;     cmp #numObjects
+;;     bne done
+;;     lda #0 : sta selectedObj
+;; .done:
+;;     rts }
 
 .onU: {
     lda theFY : bne no
@@ -495,22 +498,46 @@ GUARD screenStart
     lda #HI(last3) : sta theObj+1
     jsr drawStrips
     rts
+
 .drawStripsCurr1:
     lda #LO(curr1) : sta theObj
     lda #HI(curr1) : sta theObj+1
+    jsr focusObject
+    ;jsr updateFocussedWithRepeat
+    jsr move1
+    jsr saveObject
     jsr drawStrips
     rts
 .drawStripsCurr2:
     lda #LO(curr2) : sta theObj
     lda #HI(curr2) : sta theObj+1
+    jsr focusObject
+    ;jsr updateFocussedWithRepeat
+    jsr move2
+    jsr saveObject
     jsr drawStrips
     rts
 .drawStripsCurr3:
     lda #LO(curr3) : sta theObj
     lda #HI(curr3) : sta theObj+1
+    jsr focusObject
+    ;jsr updateFocussedWithRepeat
+    jsr move3
+    jsr saveObject
     jsr drawStrips
     rts
 
+.move1:
+    jsr onR : jsr onD
+    rts
+
+.move2:
+    jsr onR : jsr onR : jsr onD
+    rts
+
+.move3:
+    jsr onL : jsr onD : jsr onD
+    rts
 
 .drawStrips: {
     jsr focusObject

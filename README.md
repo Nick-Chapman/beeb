@@ -21,9 +21,9 @@ DONE
 - allow objects with a 3rd strip
 - diffent objects can have diff nummber of strips
 - small meteor sprite data
+- objects with independent movement; different speeds
 
 TODO:
-- objects which move themselves
 - medium & large meteors
 - spaceship
 - bullets
