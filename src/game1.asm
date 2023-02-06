@@ -196,7 +196,7 @@ NEXT
 
 .main: {
     jsr setupMachine
-    jsr initVars
+    jsr initKeyVars
     jsr initCurr1
     jsr initCurr2
     jsr initCurr3
@@ -237,13 +237,6 @@ NEXT
     }
 
 
-.initVars:
-    lda #0 : sta keyEscape
-    lda #0 : sta keyU
-    lda #1 : sta keyD
-    lda #0 : sta keyL
-    lda #1 : sta keyR
-    rts
 
 .initCurr1:
     lda #LO(spriteDataM) : sta theSpriteData
@@ -289,85 +282,6 @@ NEXT
     rts
 
 
-.saveLastKeys:
-    lda keyU : sta lastKeyU
-    lda keyD : sta lastKeyD
-    lda keyL : sta lastKeyL
-    lda keyR : sta lastKeyR
-    rts
-
-.readKeys:
-    jsr checkU
-    jsr checkD
-    jsr checkL
-    jsr checkR
-    jsr checkEscape
-    rts
-
-.checkU: {
-    lda #0 : sta keyU
-    lda #&81
-    ldx #(keyCodeU AND &ff)
-    ldy #(keyCodeU AND &ff00) DIV 256
-    jsr osbyte
-    cpx #&ff : bne no
-    lda #1 : sta keyU : .no:
-    rts }
-
-.checkD: {
-    lda #0 : sta keyD
-    lda #&81
-    ldx #(keyCodeD AND &ff)
-    ldy #(keyCodeD AND &ff00) DIV 256
-    jsr osbyte
-    cpx #&ff : bne no
-    lda #1 : sta keyD : .no:
-    rts }
-
-.checkL: {
-    lda #0 : sta keyL
-    lda #&81
-    ldx #(keyCodeL AND &ff)
-    ldy #(keyCodeL AND &ff00) DIV 256
-    jsr osbyte
-    cpx #&ff : bne no
-    lda #1 : sta keyL : .no:
-    rts }
-
-.checkR: {
-    lda #0 : sta keyR
-    lda #&81
-    ldx #(keyCodeR AND &ff)
-    ldy #(keyCodeR AND &ff00) DIV 256
-    jsr osbyte
-    cpx #&ff : bne no
-    lda #1 : sta keyR : .no:
-    rts }
-
-.checkEscape: {
-    lda #0 : sta keyEscape
-    lda #&81
-    ldx #(keyCodeEscape AND &ff)
-    ldy #(keyCodeEscape AND &ff00) DIV 256
-    jsr osbyte
-    cpx #&ff : bne no
-    lda #1 : sta keyEscape : .no:
-    rts }
-
-
-.updateFocussed:
-    { lda keyU : beq no : lda lastKeyU : bne no : jsr onU : .no }
-    { lda keyD : beq no : lda lastKeyD : bne no : jsr onD : .no }
-    { lda keyL : beq no : lda lastKeyL : bne no : jsr onL : .no }
-    { lda keyR : beq no : lda lastKeyR : bne no : jsr onR : .no }
-    rts
-
-.updateFocussedWithRepeat:
-    { lda keyU : beq no : jsr onU : .no }
-    { lda keyD : beq no : jsr onD : .no }
-    { lda keyL : beq no : jsr onL : .no }
-    { lda keyR : beq no : jsr onR : .no }
-    rts
 
 .onU: {
     lda theFY : bne no
@@ -608,72 +522,6 @@ NEXT
     jmp afterDown
 
 
-.spriteData1: {
-    EQUB 5 ; 2*num-strips+1
-    EQUW stripA, stripB
-.stripA: EQUW atPoint : EQUB 9 : EQUW stripA0, stripA1, stripA2, stripA3
-.stripA0: EQUB &ff,&ff,&ff,&dd,&88,&dd,&ff,&ff,&ff
-.stripA1: EQUB &77,&77,&77,&66,&44,&66,&77,&77,&77
-.stripA2: EQUB &33,&33,&33,&33,&22,&33,&33,&33,&33
-.stripA3: EQUB &11,&11,&11,&11,&11,&11,&11,&11,&11
-.stripB: EQUW rightCoarse : EQUB 9 : EQUW stripB0, stripB1, stripB2, stripB3
-.stripB0: EQUB &88,&88,&88,&88,&88,&88,&88,&88,&88
-.stripB1: EQUB &cc,&cc,&cc,&cc,&44,&cc,&cc,&cc,&cc
-.stripB2: EQUB &ee,&ee,&ee,&66,&22,&66,&ee,&ee,&ee
-.stripB3: EQUB &ff,&ff,&ff,&bb,&11,&bb,&ff,&ff,&ff
-}
-
-.spriteData2: { EQUB 7 : EQUW stripA, stripB, stripC
-.stripA: EQUW atPoint : EQUB 13 : EQUW stripA0, stripA1, stripA2, stripA3
-.stripA0: EQUB &ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff
-.stripA1: EQUB &77,&77,&77,&77,&77,&77,&77,&77,&77,&77,&77,&77,&77
-.stripA2: EQUB &33,&33,&33,&33,&33,&33,&33,&33,&33,&33,&33,&33,&33
-.stripA3: EQUB &11,&11,&11,&11,&11,&11,&11,&11,&11,&11,&11,&11,&11
-.stripB: EQUW rightCoarse : EQUB 13 : EQUW stripB0, stripB1, stripB2, stripB3
-.stripB0: EQUB &ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff
-.stripB1: EQUB &ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff
-.stripB2: EQUB &ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff
-.stripB3: EQUB &ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff
-.stripC: EQUW rightCoarse2 : EQUB 13 : EQUW stripC0, stripC1, stripC2, stripC3
-.stripC0: EQUB &88,&88,&88,&88,&88,&88,&88,&88,&88,&88,&88,&88,&88
-.stripC1: EQUB &cc,&cc,&cc,&cc,&cc,&cc,&cc,&cc,&cc,&cc,&cc,&cc,&cc
-.stripC2: EQUB &ee,&ee,&ee,&ee,&ee,&ee,&ee,&ee,&ee,&ee,&ee,&ee,&ee
-.stripC3: EQUB &ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff
-}
-
-.spriteData3: { EQUB 5 : EQUW stripA, stripB
-.stripA: EQUW atPoint : EQUB 7 : EQUW stripA0, stripA1, stripA2, stripA3
-.stripA0: EQUB &ff,&ff,&dd,&88,&dd,&ff,&ff
-.stripA1: EQUB &77,&77,&66,&44,&66,&77,&77
-.stripA2: EQUB &33,&33,&33,&22,&33,&33,&33
-.stripA3: EQUB &11,&11,&11,&11,&11,&11,&11
-.stripB: EQUW rightCoarse : EQUB 7 : EQUW stripB0, stripB1, stripB2, stripB3
-.stripB0: EQUB &88,&88,&88,&88,&88,&88,&88
-.stripB1: EQUB &cc,&cc,&cc,&44,&cc,&cc,&cc
-.stripB2: EQUB &ee,&ee,&66,&22,&66,&ee,&ee
-.stripB3: EQUB &ff,&ff,&bb,&11,&bb,&ff,&ff
-}
-
-
-.spriteDataM: { EQUB 7 : EQUW stripA, stripB, stripC
-.stripA: EQUW atPoint : EQUB 8 : EQUW stripA0, stripA1, stripA2, stripA3
-.stripA0: EQUB &33,&44,&88,&88,&44,&22,&44,&33
-.stripA1: EQUB &11,&22,&44,&44,&22,&11,&22,&11
-.stripA2: EQUB &00,&11,&22,&22,&11,&00,&11,&00
-.stripA3: EQUB &00,&00,&11,&11,&00,&00,&00,&00
-.stripB: EQUW rightCoarse : EQUB 8 : EQUW stripB0, stripB1, stripB2, stripB3
-.stripB0: EQUB &66,&99,&11,&00,&00,&11,&99,&66
-.stripB1: EQUB &bb,&44,&00,&00,&00,&00,&44,&bb
-.stripB2: EQUB &dd,&22,&00,&00,&00,&88,&22,&dd
-.stripB3: EQUB &66,&99,&00,&00,&88,&44,&99,&66
-.stripC: EQUW rightCoarse2 : EQUB 8 : EQUW stripC0, stripC1, stripC2, stripC3
-.stripC0: EQUB &00,&00,&00,&88,&88,&00,&00,&00
-.stripC1: EQUB &00,&88,&88,&44,&44,&88,&88,&00
-.stripC2: EQUB &88,&44,&44,&22,&22,&44,&44,&88
-.stripC3: EQUB &cc,&22,&22,&11,&11,&22,&22,&cc
-}
-
-
 .drawGrid: {
     lda #LO(screenStart) : sta gridPtr
     lda #HI(screenStart) : sta gridPtr+1
@@ -724,6 +572,165 @@ NEXT
 .syncDelay:
     lda #19 : jsr osbyte
     rts
+
+
+;;; reading keyboard...
+
+.initKeyVars:
+    lda #0 : sta keyEscape
+    lda #0 : sta keyU
+    lda #1 : sta keyD
+    lda #0 : sta keyL
+    lda #1 : sta keyR
+    rts
+
+.saveLastKeys:
+    lda keyU : sta lastKeyU
+    lda keyD : sta lastKeyD
+    lda keyL : sta lastKeyL
+    lda keyR : sta lastKeyR
+    rts
+
+.readKeys:
+    jsr checkU
+    jsr checkD
+    jsr checkL
+    jsr checkR
+    jsr checkEscape
+    rts
+
+.checkU: {
+    lda #0 : sta keyU
+    lda #&81
+    ldx #(keyCodeU AND &ff)
+    ldy #(keyCodeU AND &ff00) DIV 256
+    jsr osbyte
+    cpx #&ff : bne no
+    lda #1 : sta keyU : .no:
+    rts }
+
+.checkD: {
+    lda #0 : sta keyD
+    lda #&81
+    ldx #(keyCodeD AND &ff)
+    ldy #(keyCodeD AND &ff00) DIV 256
+    jsr osbyte
+    cpx #&ff : bne no
+    lda #1 : sta keyD : .no:
+    rts }
+
+.checkL: {
+    lda #0 : sta keyL
+    lda #&81
+    ldx #(keyCodeL AND &ff)
+    ldy #(keyCodeL AND &ff00) DIV 256
+    jsr osbyte
+    cpx #&ff : bne no
+    lda #1 : sta keyL : .no:
+    rts }
+
+.checkR: {
+    lda #0 : sta keyR
+    lda #&81
+    ldx #(keyCodeR AND &ff)
+    ldy #(keyCodeR AND &ff00) DIV 256
+    jsr osbyte
+    cpx #&ff : bne no
+    lda #1 : sta keyR : .no:
+    rts }
+
+.checkEscape: {
+    lda #0 : sta keyEscape
+    lda #&81
+    ldx #(keyCodeEscape AND &ff)
+    ldy #(keyCodeEscape AND &ff00) DIV 256
+    jsr osbyte
+    cpx #&ff : bne no
+    lda #1 : sta keyEscape : .no:
+    rts }
+
+
+.updateFocussed:
+    { lda keyU : beq no : lda lastKeyU : bne no : jsr onU : .no }
+    { lda keyD : beq no : lda lastKeyD : bne no : jsr onD : .no }
+    { lda keyL : beq no : lda lastKeyL : bne no : jsr onL : .no }
+    { lda keyR : beq no : lda lastKeyR : bne no : jsr onR : .no }
+    rts
+
+.updateFocussedWithRepeat:
+    { lda keyU : beq no : jsr onU : .no }
+    { lda keyD : beq no : jsr onD : .no }
+    { lda keyL : beq no : jsr onL : .no }
+    { lda keyR : beq no : jsr onR : .no }
+    rts
+
+
+;;; sprite data...
+
+.spriteData1: {
+    EQUB 5 ; 2*num-strips+1
+    EQUW stripA, stripB
+.stripA: EQUW atPoint : EQUB 9 : EQUW stripA0, stripA1, stripA2, stripA3
+.stripA0: EQUB &ff,&ff,&ff,&dd,&88,&dd,&ff,&ff,&ff
+.stripA1: EQUB &77,&77,&77,&66,&44,&66,&77,&77,&77
+.stripA2: EQUB &33,&33,&33,&33,&22,&33,&33,&33,&33
+.stripA3: EQUB &11,&11,&11,&11,&11,&11,&11,&11,&11
+.stripB: EQUW rightCoarse : EQUB 9 : EQUW stripB0, stripB1, stripB2, stripB3
+.stripB0: EQUB &88,&88,&88,&88,&88,&88,&88,&88,&88
+.stripB1: EQUB &cc,&cc,&cc,&cc,&44,&cc,&cc,&cc,&cc
+.stripB2: EQUB &ee,&ee,&ee,&66,&22,&66,&ee,&ee,&ee
+.stripB3: EQUB &ff,&ff,&ff,&bb,&11,&bb,&ff,&ff,&ff
+}
+
+.spriteData2: { EQUB 7 : EQUW stripA, stripB, stripC
+.stripA: EQUW atPoint : EQUB 13 : EQUW stripA0, stripA1, stripA2, stripA3
+.stripA0: EQUB &ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff
+.stripA1: EQUB &77,&77,&77,&77,&77,&77,&77,&77,&77,&77,&77,&77,&77
+.stripA2: EQUB &33,&33,&33,&33,&33,&33,&33,&33,&33,&33,&33,&33,&33
+.stripA3: EQUB &11,&11,&11,&11,&11,&11,&11,&11,&11,&11,&11,&11,&11
+.stripB: EQUW rightCoarse : EQUB 13 : EQUW stripB0, stripB1, stripB2, stripB3
+.stripB0: EQUB &ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff
+.stripB1: EQUB &ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff
+.stripB2: EQUB &ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff
+.stripB3: EQUB &ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff
+.stripC: EQUW rightCoarse2 : EQUB 13 : EQUW stripC0, stripC1, stripC2, stripC3
+.stripC0: EQUB &88,&88,&88,&88,&88,&88,&88,&88,&88,&88,&88,&88,&88
+.stripC1: EQUB &cc,&cc,&cc,&cc,&cc,&cc,&cc,&cc,&cc,&cc,&cc,&cc,&cc
+.stripC2: EQUB &ee,&ee,&ee,&ee,&ee,&ee,&ee,&ee,&ee,&ee,&ee,&ee,&ee
+.stripC3: EQUB &ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff
+}
+
+.spriteData3: { EQUB 5 : EQUW stripA, stripB
+.stripA: EQUW atPoint : EQUB 7 : EQUW stripA0, stripA1, stripA2, stripA3
+.stripA0: EQUB &ff,&ff,&dd,&88,&dd,&ff,&ff
+.stripA1: EQUB &77,&77,&66,&44,&66,&77,&77
+.stripA2: EQUB &33,&33,&33,&22,&33,&33,&33
+.stripA3: EQUB &11,&11,&11,&11,&11,&11,&11
+.stripB: EQUW rightCoarse : EQUB 7 : EQUW stripB0, stripB1, stripB2, stripB3
+.stripB0: EQUB &88,&88,&88,&88,&88,&88,&88
+.stripB1: EQUB &cc,&cc,&cc,&44,&cc,&cc,&cc
+.stripB2: EQUB &ee,&ee,&66,&22,&66,&ee,&ee
+.stripB3: EQUB &ff,&ff,&bb,&11,&bb,&ff,&ff
+}
+
+.spriteDataM: { EQUB 7 : EQUW stripA, stripB, stripC
+.stripA: EQUW atPoint : EQUB 8 : EQUW stripA0, stripA1, stripA2, stripA3
+.stripA0: EQUB &33,&44,&88,&88,&44,&22,&44,&33
+.stripA1: EQUB &11,&22,&44,&44,&22,&11,&22,&11
+.stripA2: EQUB &00,&11,&22,&22,&11,&00,&11,&00
+.stripA3: EQUB &00,&00,&11,&11,&00,&00,&00,&00
+.stripB: EQUW rightCoarse : EQUB 8 : EQUW stripB0, stripB1, stripB2, stripB3
+.stripB0: EQUB &66,&99,&11,&00,&00,&11,&99,&66
+.stripB1: EQUB &bb,&44,&00,&00,&00,&00,&44,&bb
+.stripB2: EQUB &dd,&22,&00,&00,&00,&88,&22,&dd
+.stripB3: EQUB &66,&99,&00,&00,&88,&44,&99,&66
+.stripC: EQUW rightCoarse2 : EQUB 8 : EQUW stripC0, stripC1, stripC2, stripC3
+.stripC0: EQUB &00,&00,&00,&88,&88,&00,&00,&00
+.stripC1: EQUB &00,&88,&88,&44,&44,&88,&88,&00
+.stripC2: EQUB &88,&44,&44,&22,&22,&44,&44,&88
+.stripC3: EQUB &cc,&22,&22,&11,&11,&22,&22,&cc
+}
+
 
 .end:
 SAVE "Code", start, end
