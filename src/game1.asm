@@ -41,6 +41,7 @@ ORG &70
 
 ;;; object in focus...
 .theObjectStart
+.theBehaviour SKIP 2
 .theSpriteData SKIP 2
 .theCX SKIP 1 ; coarse-X : 0..79
 .theCY SKIP 1 ; coarse-Y : 0..31
@@ -152,16 +153,16 @@ NEXT
 
 .main: {
     jsr setupMachine
+    ;jsr drawGrid
     jsr initKeyVars
     jsr initCurr1
     jsr initCurr2
     jsr initCurr3
-    ;jsr drawGrid
 
-    jsr resetDataPrepPtr
-    jsr prepDraw
+    jsr initialDraw
     jsr syncDelay
     jsr blitScreen
+
     sei
 .loop:
     jsr saveLastKeys
@@ -169,9 +170,7 @@ NEXT
     lda keyEscape : bne escaped
 
     ;lda #2 : sta ula ; magenta
-    jsr resetDataPrepPtr
-    jsr prepErase
-    jsr prepDraw
+    jsr redraw
     ;lda #7 : sta ula ; black
 
     lda #3 : sta ula ; blue
@@ -312,6 +311,8 @@ NEXT
 ;;; object creation...
 
 .initCurr1:
+    lda #LO(move1) : sta theBehaviour
+    lda #HI(move1) : sta theBehaviour+1
     lda #LO(spriteDataM) : sta theSpriteData
     lda #HI(spriteDataM) : sta theSpriteData+1
     lda #0 : sta theCX
@@ -326,6 +327,8 @@ NEXT
     rts
 
 .initCurr2: ; 19,17
+    lda #LO(move2) : sta theBehaviour
+    lda #HI(move2) : sta theBehaviour+1
     lda #LO(spriteDataM) : sta theSpriteData
     lda #HI(spriteDataM) : sta theSpriteData+1
     lda #4 : sta theCX
@@ -340,6 +343,8 @@ NEXT
     rts
 
 .initCurr3:
+    lda #LO(move3) : sta theBehaviour
+    lda #HI(move3) : sta theBehaviour+1
     lda #LO(spriteDataM) : sta theSpriteData
     lda #HI(spriteDataM) : sta theSpriteData+1
     lda #0 : sta theCX
@@ -353,62 +358,6 @@ NEXT
     jmp saveObject
     rts
 
-
-;;;----------------------------------------------------------------------
-;;; object drawing (prepare screen writes)...
-
-.prepErase:
-    jsr drawStripsLast1
-    jsr drawStripsLast2
-    jsr drawStripsLast3
-    rts
-
-.prepDraw:
-    jsr drawStripsCurr1
-    jsr drawStripsCurr2
-    jsr drawStripsCurr3
-    rts
-
-.drawStripsLast1:
-    lda #LO(curr1) : sta theObj
-    lda #HI(curr1) : sta theObj+1
-    jsr drawStrips
-    rts
-.drawStripsLast2:
-    lda #LO(curr2) : sta theObj
-    lda #HI(curr2) : sta theObj+1
-    jsr drawStrips
-    rts
-.drawStripsLast3:
-    lda #LO(curr3) : sta theObj
-    lda #HI(curr3) : sta theObj+1
-    jsr drawStrips
-    rts
-
-.drawStripsCurr1:
-    lda #LO(curr1) : sta theObj
-    lda #HI(curr1) : sta theObj+1
-    jsr focusObject
-    jsr move1
-    jsr saveObject
-    jsr drawStrips
-    rts
-.drawStripsCurr2:
-    lda #LO(curr2) : sta theObj
-    lda #HI(curr2) : sta theObj+1
-    jsr focusObject
-    jsr move2
-    jsr saveObject
-    jsr drawStrips
-    rts
-.drawStripsCurr3:
-    lda #LO(curr3) : sta theObj
-    lda #HI(curr3) : sta theObj+1
-    jsr focusObject
-    jsr move3
-    jsr saveObject
-    jsr drawStrips
-    rts
 
 .move1:
     jsr onR : jsr onD
@@ -424,8 +373,57 @@ NEXT
     rts
 
 
-.drawStrips: {
+;;;----------------------------------------------------------------------
+;;; initial draw & redraw
+
+.initialDraw:
+    jsr resetDataPrepPtr
+    lda #LO(curr1) : sta theObj
+    lda #HI(curr1) : sta theObj+1
+    jsr id1
+    lda #LO(curr2) : sta theObj
+    lda #HI(curr2) : sta theObj+1
+    jsr id1
+    lda #LO(curr3) : sta theObj
+    lda #HI(curr3) : sta theObj+1
+    jsr id1
+    rts
+
+.id1:
     jsr focusObject
+    jsr plotObjectStrips
+    rts
+
+
+.redraw:
+    jsr resetDataPrepPtr
+    lda #LO(curr1) : sta theObj
+    lda #HI(curr1) : sta theObj+1
+    jsr ed1
+    lda #LO(curr2) : sta theObj
+    lda #HI(curr2) : sta theObj+1
+    jsr ed1
+    lda #LO(curr3) : sta theObj
+    lda #HI(curr3) : sta theObj+1
+    jsr ed1
+    rts
+
+.ed1:
+    jsr focusObject
+    jsr plotObjectStrips
+    jsr focusObject
+    jsr dispatchBehavior
+    jsr saveObject
+    jsr plotObjectStrips
+    rts
+.dispatchBehavior:
+    jmp (theBehaviour)
+
+
+;;;----------------------------------------------------------------------
+;;; sprite plotting
+
+.plotObjectStrips: {
     ldy #0
     lda (theSpriteData),y : sta pokeNumStrips+1
     iny
@@ -435,16 +433,16 @@ NEXT
     .pokeNumStrips : cpy #&f
     beq done
     tya : pha
-    jsr drawTheStrip
+    jsr plotTheStrip
     jsr focusObject
     pla : tay
     jmp loop
 .done:
-    jsr drawTheStrip
+    jsr plotTheStrip
     rts }
 
 
-.drawTheStrip:
+.plotTheStrip:
     jsr offsetPositionForTheStrip
     ldy #2 : lda (theStrip),y : sta pokeStripHeight+1
     lda theFX : asl a : tay : iny : iny
@@ -480,19 +478,8 @@ NEXT
     jmp afterDown
 
 
-.drawGrid: {
-    lda #LO(screenStart) : sta gridPtr
-    lda #HI(screenStart) : sta gridPtr+1
-    ldy #0
-.next:
-    lda #&08
-    sta (gridPtr),y
-    clc
-    lda gridPtr : adc #8 : sta gridPtr
-    lda gridPtr+1 : adc #0 : sta gridPtr+1
-    cmp #&80
-    bmi next
-    rts }
+;;;----------------------------------------------------------------------
+;;; initial screen setup
 
 .setupMachine:
     jsr mode1
@@ -526,6 +513,24 @@ NEXT
     lda #0 : jsr oswrch
     lda #0 : jsr oswrch
     rts
+
+.drawGrid: {
+    lda #LO(screenStart) : sta gridPtr
+    lda #HI(screenStart) : sta gridPtr+1
+    ldy #0
+.next:
+    lda #&08
+    sta (gridPtr),y
+    clc
+    lda gridPtr : adc #8 : sta gridPtr
+    lda gridPtr+1 : adc #0 : sta gridPtr+1
+    cmp #&80
+    bmi next
+    rts }
+
+
+;;;----------------------------------------------------------------------
+;;; sync with vblank
 
 .syncDelay:
     lda #19 : jsr osbyte
