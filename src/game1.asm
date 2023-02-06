@@ -59,7 +59,7 @@ objectSize = theObjectEnd - theObjectStart
 .curr3 SKIP objectSize
 .last3 SKIP objectSize
 
-ORG &2000 ; could start at 1100 for loads of extra space!
+ORG &1900 ; could start at 1100 for loads of extra space!
 
 .start:
     jmp main
@@ -75,7 +75,7 @@ ORG &2000 ; could start at 1100 for loads of extra space!
 .spin:
     jmp spin }
 
-maxPreparedObjects = 144 ; 3*2*24 -- three small meteors
+maxPreparedObjects = 360
 
 ;;; template for 8-byte generated code segments to perform screen-eor-write
 ;;; op-codes for lda/eor/sta are fixed; generation fills the other 5 bytes
@@ -204,6 +204,7 @@ NEXT
 
     jsr resetDataPrepPtr
     jsr prepDraw
+    jsr syncDelay
     jsr blitScreen
     sei
 .loop:
@@ -212,12 +213,16 @@ NEXT
     lda keyEscape : bne escaped
     jsr saveLastScreenAddr
 
+    ;lda #2 : sta ula ; magenta
     jsr resetDataPrepPtr
     jsr prepErase
     jsr prepDraw
+    ;lda #7 : sta ula ; black
 
-    lda #3 : sta ula ; blue
+    ;lda #3 : sta ula ; blue
     jsr syncDelay ; TODO : explore half speed
+    ;jsr syncDelay ; TODO : explore half speed
+    lda #7 : sta ula ; black
 
     lda #4 : sta ula ; yellow
     jsr blitScreen
@@ -528,8 +533,7 @@ NEXT
     lda #LO(curr3) : sta theObj
     lda #HI(curr3) : sta theObj+1
     jsr focusObject
-    jsr updateFocussedWithRepeat
-    ;jsr move3
+    jsr move3
     jsr saveObject
     jsr drawStrips
     rts
@@ -544,7 +548,9 @@ NEXT
 
 .move3:
     jsr onL : jsr onD : jsr onD
+    ;jsr updateFocussedWithRepeat
     rts
+
 
 .drawStrips: {
     jsr focusObject
