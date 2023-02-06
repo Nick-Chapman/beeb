@@ -53,11 +53,11 @@ objectSize = theObjectEnd - theObjectStart
 
 ;;; TODO: objects are in zero-page, but perhas dont need to be
 .curr1 SKIP objectSize
-.last1 SKIP objectSize
 .curr2 SKIP objectSize
-.last2 SKIP objectSize
 .curr3 SKIP objectSize
-.last3 SKIP objectSize
+
+;.allObjectsStart: EQUW curr1, curr2, curr3
+;.allObjectsEnd
 
 ORG &1900 ; could start at 1100 for loads of extra space!
 
@@ -74,6 +74,33 @@ ORG &1900 ; could start at 1100 for loads of extra space!
     bne loop
 .spin:
     jmp spin }
+
+;;;----------------------------------------------------------------------
+;;; object focus/save...
+
+.focusObject: {
+    ldy #0
+.loop:
+    lda (theObj),y
+    sta theObjectStart,y
+    iny
+    cpy #objectSize
+    bne loop
+    rts }
+
+.saveObject: {
+    ldy #0
+.loop:
+    lda theObjectStart,y
+    sta (theObj),y
+    iny
+    cpy #objectSize
+    bne loop
+    rts }
+
+
+;;;----------------------------------------------------------------------
+;;; screen blitting...
 
 maxPreparedObjects = 360
 
@@ -120,79 +147,8 @@ NEXT
     .rtsTemplate : rts
 
 
-.focusObject: {
-    ldy #0
-.loop:
-    lda (theObj),y
-    sta theObjectStart,y
-    iny
-    cpy #objectSize
-    bne loop
-    rts }
-
-.saveObject: {
-    ldy #0
-.loop:
-    lda theObjectStart,y
-    sta (theObj),y
-    iny
-    cpy #objectSize
-    bne loop
-    rts }
-
-
-.focusCurr1:
-    lda #LO(curr1) : sta theObj
-    lda #HI(curr1) : sta theObj+1
-    jmp focusObject
-.focusLast1:
-    lda #LO(last1) : sta theObj
-    lda #HI(last1) : sta theObj+1
-    jmp focusObject
-.saveCurr1:
-    lda #LO(curr1) : sta theObj
-    lda #HI(curr1) : sta theObj+1
-    jmp saveObject
-.saveLast1:
-    lda #LO(last1) : sta theObj
-    lda #HI(last1) : sta theObj+1
-    jmp saveObject
-
-.focusCurr2:
-    lda #LO(curr2) : sta theObj
-    lda #HI(curr2) : sta theObj+1
-    jmp focusObject
-.focusLast2:
-    lda #LO(last2) : sta theObj
-    lda #HI(last2) : sta theObj+1
-    jmp focusObject
-.saveCurr2:
-    lda #LO(curr2) : sta theObj
-    lda #HI(curr2) : sta theObj+1
-    jmp saveObject
-.saveLast2:
-    lda #LO(last2) : sta theObj
-    lda #HI(last2) : sta theObj+1
-    jmp saveObject
-
-
-.focusCurr3:
-    lda #LO(curr3) : sta theObj
-    lda #HI(curr3) : sta theObj+1
-    jmp focusObject
-.focusLast3:
-    lda #LO(last3) : sta theObj
-    lda #HI(last3) : sta theObj+1
-    jmp focusObject
-.saveCurr3:
-    lda #LO(curr3) : sta theObj
-    lda #HI(curr3) : sta theObj+1
-    jmp saveObject
-.saveLast3:
-    lda #LO(last3) : sta theObj
-    lda #HI(last3) : sta theObj+1
-    jmp saveObject
-
+;;;----------------------------------------------------------------------
+;;; main loop
 
 .main: {
     jsr setupMachine
@@ -211,7 +167,6 @@ NEXT
     jsr saveLastKeys
     jsr readKeys
     lda keyEscape : bne escaped
-    jsr saveLastScreenAddr
 
     ;lda #2 : sta ula ; magenta
     jsr resetDataPrepPtr
@@ -219,7 +174,7 @@ NEXT
     jsr prepDraw
     ;lda #7 : sta ula ; black
 
-    ;lda #3 : sta ula ; blue
+    lda #3 : sta ula ; blue
     jsr syncDelay ; TODO : explore half speed
     ;jsr syncDelay ; TODO : explore half speed
     lda #7 : sta ula ; black
@@ -236,52 +191,8 @@ NEXT
 .msg EQUS "Escape pressed.", 13, 0
     }
 
-
-
-.initCurr1:
-    lda #LO(spriteDataM) : sta theSpriteData
-    lda #HI(spriteDataM) : sta theSpriteData+1
-    lda #0 : sta theCX
-    lda #0 : sta theFX
-    lda #0 : sta theCY
-    lda #0 : sta theFY
-    lda #HI(screenStart) : sta theA+1
-    lda #LO(screenStart) : sta theA
-    jsr saveCurr1
-    rts
-
-.initCurr2: ; 19,17
-    lda #LO(spriteDataM) : sta theSpriteData
-    lda #HI(spriteDataM) : sta theSpriteData+1
-    lda #4 : sta theCX
-    lda #3 : sta theFX
-    lda #2 : sta theCY
-    lda #1 : sta theFY
-    lda #HI(screenStart)+5 : sta theA+1
-    lda #LO(screenStart)+32 : sta theA
-    jsr saveCurr2
-    rts
-
-.initCurr3:
-    lda #LO(spriteDataM) : sta theSpriteData
-    lda #HI(spriteDataM) : sta theSpriteData+1
-    lda #0 : sta theCX
-    lda #0 : sta theFX
-    lda #4 : sta theCY
-    lda #0 : sta theFY
-    lda #HI(screenStart)+10 : sta theA+1
-    lda #LO(screenStart) : sta theA
-    jsr saveCurr3
-    rts
-
-
-.saveLastScreenAddr:
-    jsr focusCurr1 : jsr saveLast1
-    jsr focusCurr2 : jsr saveLast2
-    jsr focusCurr3 : jsr saveLast3
-    rts
-
-
+;;;----------------------------------------------------------------------
+;;; object movement calculation
 
 .onU: {
     lda theFY : bne no
@@ -376,7 +287,6 @@ NEXT
 .no:
     rts }
 
-
 .leftA:
     lda theA : sec : sbc #8 : sta theA
     lda theA+1     : sbc #0 : sta theA+1
@@ -398,6 +308,55 @@ NEXT
     rts
 
 
+;;;----------------------------------------------------------------------
+;;; object creation...
+
+.initCurr1:
+    lda #LO(spriteDataM) : sta theSpriteData
+    lda #HI(spriteDataM) : sta theSpriteData+1
+    lda #0 : sta theCX
+    lda #0 : sta theFX
+    lda #0 : sta theCY
+    lda #0 : sta theFY
+    lda #HI(screenStart) : sta theA+1
+    lda #LO(screenStart) : sta theA
+    lda #LO(curr1) : sta theObj
+    lda #HI(curr1) : sta theObj+1
+    jmp saveObject
+    rts
+
+.initCurr2: ; 19,17
+    lda #LO(spriteDataM) : sta theSpriteData
+    lda #HI(spriteDataM) : sta theSpriteData+1
+    lda #4 : sta theCX
+    lda #3 : sta theFX
+    lda #2 : sta theCY
+    lda #1 : sta theFY
+    lda #HI(screenStart)+5 : sta theA+1
+    lda #LO(screenStart)+32 : sta theA
+    lda #LO(curr2) : sta theObj
+    lda #HI(curr2) : sta theObj+1
+    jmp saveObject
+    rts
+
+.initCurr3:
+    lda #LO(spriteDataM) : sta theSpriteData
+    lda #HI(spriteDataM) : sta theSpriteData+1
+    lda #0 : sta theCX
+    lda #0 : sta theFX
+    lda #4 : sta theCY
+    lda #0 : sta theFY
+    lda #HI(screenStart)+10 : sta theA+1
+    lda #LO(screenStart) : sta theA
+    lda #LO(curr3) : sta theObj
+    lda #HI(curr3) : sta theObj+1
+    jmp saveObject
+    rts
+
+
+;;;----------------------------------------------------------------------
+;;; object drawing (prepare screen writes)...
+
 .prepErase:
     jsr drawStripsLast1
     jsr drawStripsLast2
@@ -410,20 +369,19 @@ NEXT
     jsr drawStripsCurr3
     rts
 
-
 .drawStripsLast1:
-    lda #LO(last1) : sta theObj
-    lda #HI(last1) : sta theObj+1
+    lda #LO(curr1) : sta theObj
+    lda #HI(curr1) : sta theObj+1
     jsr drawStrips
     rts
 .drawStripsLast2:
-    lda #LO(last2) : sta theObj
-    lda #HI(last2) : sta theObj+1
+    lda #LO(curr2) : sta theObj
+    lda #HI(curr2) : sta theObj+1
     jsr drawStrips
     rts
 .drawStripsLast3:
-    lda #LO(last3) : sta theObj
-    lda #HI(last3) : sta theObj+1
+    lda #LO(curr3) : sta theObj
+    lda #HI(curr3) : sta theObj+1
     jsr drawStrips
     rts
 
@@ -574,6 +532,7 @@ NEXT
     rts
 
 
+;;;----------------------------------------------------------------------
 ;;; reading keyboard...
 
 .initKeyVars:
@@ -665,6 +624,7 @@ NEXT
     rts
 
 
+;;;----------------------------------------------------------------------
 ;;; sprite data...
 
 .spriteData1: {
