@@ -57,8 +57,6 @@ objectSize = theObjectEnd - theObjectStart
 .curr2 SKIP objectSize
 .curr3 SKIP objectSize
 
-;.allObjectsStart: EQUW curr1, curr2, curr3
-;.allObjectsEnd
 
 ORG &1900 ; could start at 1100 for loads of extra space!
 
@@ -376,37 +374,37 @@ NEXT
 ;;;----------------------------------------------------------------------
 ;;; initial draw & redraw
 
-.initialDraw:
-    jsr resetDataPrepPtr
-    lda #LO(curr1) : sta theObj
-    lda #HI(curr1) : sta theObj+1
-    jsr id1
-    lda #LO(curr2) : sta theObj
-    lda #HI(curr2) : sta theObj+1
-    jsr id1
-    lda #LO(curr3) : sta theObj
-    lda #HI(curr3) : sta theObj+1
-    jsr id1
-    rts
+.allObjectsStart: EQUW curr1, curr2, curr3
+.allObjectsEnd
+numberObjects = (allObjectsEnd - allObjectsStart) DIV 2
 
-.id1:
+.initialDraw: {
+    jsr resetDataPrepPtr
+    ldx #0
+.loop:
+    lda allObjectsStart,x : sta theObj
+    lda allObjectsStart+1,x : sta theObj+1
+    txa : pha
     jsr focusObject
     jsr plotObjectStrips
-    rts
+    pla : tax
+    inx : inx
+    cpx #(2 * numberObjects) : bne loop
+    rts }
 
 
-.redraw:
+.redraw: {
     jsr resetDataPrepPtr
-    lda #LO(curr1) : sta theObj
-    lda #HI(curr1) : sta theObj+1
+    ldx #0
+.loop:
+    lda allObjectsStart,x : sta theObj
+    lda allObjectsStart+1,x : sta theObj+1
+    txa : pha
     jsr ed1
-    lda #LO(curr2) : sta theObj
-    lda #HI(curr2) : sta theObj+1
-    jsr ed1
-    lda #LO(curr3) : sta theObj
-    lda #HI(curr3) : sta theObj+1
-    jsr ed1
-    rts
+    pla : tax
+    inx : inx
+    cpx #(2 * numberObjects) : bne loop
+    rts }
 
 .ed1:
     jsr focusObject
