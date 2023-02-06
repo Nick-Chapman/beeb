@@ -10,10 +10,14 @@ keyCodeD = -42
 keyCodeL = -26
 keyCodeR = -122
 keyCodeEscape = -113
-;keyCodeTab = -97
 
 screenStart = &3000
 screenEnd = &8000
+
+stack = &100
+
+GUARD stack
+GUARD screenStart
 
 ORG &70
 
@@ -21,21 +25,19 @@ ORG &70
 .keyD SKIP 1
 .keyL SKIP 1
 .keyR SKIP 1
-;.keyTab SKIP 1
 .keyEscape SKIP 1
 
 .lastKeyU SKIP 1
 .lastKeyD SKIP 1
 .lastKeyL SKIP 1
 .lastKeyR SKIP 1
-;.lastKeyTab SKIP 1
 
 .gridPtr SKIP 2
 .ptr SKIP 2
-.numDataObjects SKIP 1
 .theStrip SKIP 2
 .theObj SKIP 2
 .funcPtr SKIP 2
+.mesPtr SKIP 2
 
 ;;; object in focus...
 .theObjectStart
@@ -49,11 +51,7 @@ ORG &70
 
 objectSize = theObjectEnd - theObjectStart
 
-;.selectedObj SKIP 1 ; using tab key
-
-numObjects = 2
-
-;;; objects dont need to be in zero-page
+;;; TODO: objects are in zero-page, but perhas dont need to be
 .curr1 SKIP objectSize
 .last1 SKIP objectSize
 .curr2 SKIP objectSize
@@ -61,14 +59,66 @@ numObjects = 2
 .curr3 SKIP objectSize
 .last3 SKIP objectSize
 
-dataPrep = &2000 ; 16 pages (4k) here before screen starts
-
-ORG &1800
-GUARD &1fc0
-GUARD screenStart
+ORG &2000 ; could start at 1100 for loads of extra space!
 
 .start:
     jmp main
+
+.writeMessageAndSpin: {
+    ldy #0
+.loop
+    lda (mesPtr),y
+    beq spin
+    jsr osasci
+    iny
+    bne loop
+.spin:
+    jmp spin }
+
+maxPreparedObjects = 144 ; 3*2*24 -- three small meteors
+
+;;; template for 8-byte generated code segments to perform screen-eor-write
+;;; op-codes for lda/eor/sta are fixed; generation fills the other 5 bytes
+.blitCodeStart:
+FOR n, 1, maxPreparedObjects
+    lda &ffff
+    eor #&ff
+    sta &ffff
+NEXT
+.blitCodeEnd:
+    rts
+
+.resetDataPrepPtr:
+    lda #LO(blitCodeStart) : sta ptr
+    lda #HI(blitCodeStart) : sta ptr+1
+    rts
+
+.checkEnoughBlitSpace: {
+    lda ptr+1 : cmp #HI(blitCodeEnd) : bcc ok : bne fail
+    lda ptr   : cmp #LO(blitCodeEnd) : bcs fail
+.ok:
+    rts
+.fail:
+    lda #LO(msg) : sta mesPtr
+    lda #HI(msg) : sta mesPtr+1
+    jmp writeMessageAndSpin
+.msg EQUS "Blit overflow.", 13, 0 }
+
+.genCodeForScreenEor:
+    ldy #4 : sta (ptr),y
+    lda theA   : ldy #1 : sta (ptr),y : ldy #6 : sta (ptr),y
+    lda theA+1 : ldy #2 : sta (ptr),y : ldy #7 : sta (ptr),y
+    lda ptr : clc : adc #8 : sta ptr
+    lda ptr+1     : adc #0 : sta ptr+1
+    rts
+
+;;; run the generated code
+.blitScreen:
+    lda rtsTemplate : ldy #0 : sta (ptr),y ; finalize generated-code with an rts
+    jsr blitCodeStart ; execute generated code
+    .ldaTemplate : lda ldaTemplate : ldy #0 : sta (ptr),y ; restore with lda
+    .rtsTemplate : rts
+
 
 .focusObject: {
     ldy #0
@@ -159,39 +209,36 @@ GUARD screenStart
 .loop:
     jsr saveLastKeys
     jsr readKeys
-    lda keyEscape : bne quit
-    ;{ lda keyTab : beq no : lda lastKeyTab : bne no : jsr onTab : .no }
+    lda keyEscape : bne escaped
     jsr saveLastScreenAddr
-    ;jsr updateSelected
 
-    ;lda #2 : sta ula ; magenta
     jsr resetDataPrepPtr
     jsr prepErase
     jsr prepDraw
-;lda #7 : sta ula ; black
 
-    ;lda #3 : sta ula ; blue
-    jsr syncDelay
-    ;jsr syncDelay ; TODO : explore half speed
+    lda #3 : sta ula ; blue
+    jsr syncDelay ; TODO : explore half speed
+
     lda #4 : sta ula ; yellow
     jsr blitScreen
     lda #7 : sta ula ; black
+
     jmp loop
-.quit:
-    rts
+.escaped:
+    lda #LO(msg) : sta mesPtr
+    lda #HI(msg) : sta mesPtr+1
+    jmp writeMessageAndSpin
+.msg EQUS "Escape pressed.", 13, 0
     }
 
 
 .initVars:
-    ;lda #0 : sta selectedObj
-    ;lda #0 : sta keyTab
     lda #0 : sta keyEscape
     lda #0 : sta keyU
     lda #1 : sta keyD
     lda #0 : sta keyL
     lda #1 : sta keyR
     rts
-
 
 .initCurr1:
     lda #LO(spriteDataM) : sta theSpriteData
@@ -237,25 +284,7 @@ GUARD screenStart
     rts
 
 
-;; .updateSelected:
-;;     jsr focusSelected
-;;     ;jsr updateFocussedWithRepeat
-;;     jsr saveSelected
-;;     rts
-
-;; .focusSelected: {
-;;     lda selectedObj : bne two
-;;     jmp focusCurr2  : .two
-;;     jmp focusCurr3 }
-
-;; .saveSelected: {
-;;     lda selectedObj : bne two
-;;     jmp saveCurr2  : .two
-;;     jmp saveCurr3 }
-
-
 .saveLastKeys:
-    ;lda keyTab : sta lastKeyTab
     lda keyU : sta lastKeyU
     lda keyD : sta lastKeyD
     lda keyL : sta lastKeyL
@@ -267,7 +296,6 @@ GUARD screenStart
     jsr checkD
     jsr checkL
     jsr checkR
-    ;jsr checkTab
     jsr checkEscape
     rts
 
@@ -311,16 +339,6 @@ GUARD screenStart
     lda #1 : sta keyR : .no:
     rts }
 
-;; .checkTab: {
-;;     lda #0 : sta keyTab
-;;     lda #&81
-;;     ldx #(keyCodeTab AND &ff)
-;;     ldy #(keyCodeTab AND &ff00) DIV 256
-;;     jsr osbyte
-;;     cpx #&ff : bne no
-;;     lda #1 : sta keyTab : .no:
-;;     rts }
-
 .checkEscape: {
     lda #0 : sta keyEscape
     lda #&81
@@ -345,15 +363,6 @@ GUARD screenStart
     { lda keyL : beq no : jsr onL : .no }
     { lda keyR : beq no : jsr onR : .no }
     rts
-
-;; .onTab: {
-;;     inc selectedObj
-;;     lda selectedObj
-;;     cmp #numObjects
-;;     bne done
-;;     lda #0 : sta selectedObj
-;; .done:
-;;     rts }
 
 .onU: {
     lda theFY : bne no
@@ -503,7 +512,6 @@ GUARD screenStart
     lda #LO(curr1) : sta theObj
     lda #HI(curr1) : sta theObj+1
     jsr focusObject
-    ;jsr updateFocussedWithRepeat
     jsr move1
     jsr saveObject
     jsr drawStrips
@@ -512,7 +520,6 @@ GUARD screenStart
     lda #LO(curr2) : sta theObj
     lda #HI(curr2) : sta theObj+1
     jsr focusObject
-    ;jsr updateFocussedWithRepeat
     jsr move2
     jsr saveObject
     jsr drawStrips
@@ -521,8 +528,8 @@ GUARD screenStart
     lda #LO(curr3) : sta theObj
     lda #HI(curr3) : sta theObj+1
     jsr focusObject
-    ;jsr updateFocussedWithRepeat
-    jsr move3
+    jsr updateFocussedWithRepeat
+    ;jsr move3
     jsr saveObject
     jsr drawStrips
     rts
@@ -578,6 +585,7 @@ GUARD screenStart
     ldx #0
     lda theA : clc : adc theFY : sta theA
 .plotLoop:
+    jsr checkEnoughBlitSpace
     .pokeSprite : lda &BEEF,x
     jsr genCodeForScreenEor
     inc theA
@@ -708,59 +716,8 @@ GUARD screenStart
     rts
 
 .syncDelay:
-    ;lda #1 : jsr pause
-    jsr vsyncReal
-    rts
-
-.vsyncReal
     lda #19 : jsr osbyte
     rts
-
-.pause: {
-    tax
-.loopX:
-    ldy #255
-.loopY:
-    dey
-    bne loopY
-    dex
-    bne loopX
-    rts }
-
-maxPreparedObjects = 256
-
-;;; prepare code generation for a new frame
-.resetDataPrepPtr:
-    lda #0 : sta numDataObjects
-    lda #LO(dataPrep) : sta ptr
-    lda #HI(dataPrep) : sta ptr+1
-    rts
-
-;;; code gen for screen-write: value to eor in A; screen-address in theA/+1
-.genCodeForScreenEor:
-    ldy #4 : sta (ptr),y
-    lda theA   : ldy #1 : sta (ptr),y : ldy #6 : sta (ptr),y
-    lda theA+1 : ldy #2 : sta (ptr),y : ldy #7 : sta (ptr),y
-    inc numDataObjects
-    lda ptr : clc : adc #8 : sta ptr
-    lda ptr+1     : adc #0 : sta ptr+1
-    rts
-
-;;; run the generated code
-.blitScreen:
-    lda rtsTemplate : ldy #0 : sta (ptr),y ; finalize generated-code with an rts
-    jsr dataPrep ; execute generated code
-    .ldaTemplate : lda ldaTemplate : ldy #0 : sta (ptr),y ; restore with lda
-    .rtsTemplate : rts
-
-;;; templates for 256x 8-byte generated code segments.
-;;; op-codes for lda/eor/sta are fixed; generation fills the other 5 bytes
-ORG dataPrep
-FOR n, 1, maxPreparedObjects
-    lda &ffff
-    eor #&ff
-    sta &ffff
-NEXT
 
 .end:
 SAVE "Code", start, end
