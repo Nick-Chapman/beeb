@@ -102,7 +102,7 @@ ORG &1900 ; could start at 1100 for loads of extra space!
 ;;;----------------------------------------------------------------------
 ;;; screen blitting...
 
-maxPreparedObjects = 500 ;360
+maxPreparedObjects = 360
 
 ;;; template for 8-byte generated code segments to perform screen-eor-write
 ;;; op-codes for lda/eor/sta are fixed; generation fills the other 5 bytes
@@ -496,7 +496,7 @@ numberObjects = (allObjectsEnd - allObjectsStart) DIV 2
 .plotLoop:
     jsr checkEnoughBlitSpace
     .pokeSprite : lda &BEEF,x
-    jsr genCodeForScreenEor
+    beq nogen : jsr genCodeForScreenEor : .nogen
     inc theA
     inc theFY
     lda theFY : cmp #8 : beq down : .afterDown
