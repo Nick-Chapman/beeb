@@ -170,8 +170,8 @@ NEXT
     jsr redraw
     ;lda #7 : sta ula ; black
 
-    lda #3 : sta ula ; blue
-    ;jsr syncDelay ; TODO : explore half speed
+    ;lda #3 : sta ula ; blue
+    jsr syncDelay ; TODO : explore half speed
     jsr syncDelay ; TODO : explore half speed
     lda #7 : sta ula ; black
 
@@ -186,6 +186,31 @@ NEXT
     jmp writeMessageAndSpin
 .msg EQUS "Escape pressed.", 13, 0
     }
+
+;;;----------------------------------------------------------------------
+
+.calculateAfromXY:
+    ;; (coarse)X                    0..79
+    ;; (coarse)Y                    0..31
+    ;; hbOnRow = X/16               0..4
+    ;; hi(A) = (5*Y+hbOnRow)/2+&30
+    lda theCX : lsr a : lsr a : lsr a : lsr a
+    sta hbOnRow+1
+    lda theCY : asl a : asl a : clc : adc theCY
+    .hbOnRow : adc #0
+    lsr a
+    clc : adc #HI(screenStart)
+    sta theA+1
+    ;; oddRow = Y % 2               0,1
+    ;; Xoffset = oddRow * 16        0,16
+    ;; Xmod = X ^ Xoffset           0..79
+    ;; lo(A) = Xmod * 8
+    lda theCY : and #1              ; oddRow
+    asl a : asl a : asl a : asl a   ; Xoffset
+    eor theCX                       ; Xmod
+    asl a : asl a : asl a           ; Xmod*8
+    sta theA
+    rts
 
 ;;;----------------------------------------------------------------------
 ;;; object movement calculation
@@ -324,8 +349,7 @@ NEXT
     lda #0 : sta theFX
     lda #0 : sta theCY
     lda #0 : sta theFY
-    lda #HI(screenStart) : sta theA+1
-    lda #LO(screenStart) : sta theA
+    jsr calculateAfromXY
     lda #LO(curr1) : sta theObj
     lda #HI(curr1) : sta theObj+1
     jmp saveObject
@@ -339,8 +363,7 @@ NEXT
     lda #3 : sta theFX
     lda #2 : sta theCY
     lda #1 : sta theFY
-    lda #HI(screenStart)+5 : sta theA+1
-    lda #LO(screenStart)+32 : sta theA
+    jsr calculateAfromXY
     lda #LO(curr2) : sta theObj
     lda #HI(curr2) : sta theObj+1
     jmp saveObject
@@ -354,8 +377,7 @@ NEXT
     lda #0 : sta theFX
     lda #4 : sta theCY
     lda #0 : sta theFY
-    lda #HI(screenStart)+10 : sta theA+1
-    lda #LO(screenStart) : sta theA
+    jsr calculateAfromXY
     lda #LO(curr3) : sta theObj
     lda #HI(curr3) : sta theObj+1
     jmp saveObject
@@ -363,41 +385,16 @@ NEXT
 .initCurr4:
     lda #LO(move4) : sta theBehaviour
     lda #HI(move4) : sta theBehaviour+1
-    lda #LO(block9x13) : sta theSpriteData
-    lda #HI(block9x13) : sta theSpriteData+1
-    lda #0 : sta theCX
+    lda #LO(shield5x7) : sta theSpriteData
+    lda #HI(shield5x7) : sta theSpriteData+1
+    lda #39 : sta theCX
     lda #0 : sta theFX
-    lda #0 : sta theCY
+    lda #15 : sta theCY
     lda #0 : sta theFY
-    ;lda #HI(screenStart) : sta theA+1
-    ;lda #LO(screenStart) : sta theA
     jsr calculateAfromXY
     lda #LO(curr4) : sta theObj
     lda #HI(curr4) : sta theObj+1
     jmp saveObject
-
-.calculateAfromXY:
-    ;; (coarse)X                    0..79
-    ;; (coarse)Y                    0..31
-    ;; hbOnRow = X/16               0..4
-    ;; hi(A) = (5*Y+hbOnRow)/2+&30
-    lda theCX : lsr a : lsr a : lsr a : lsr a
-    sta hbOnRow+1
-    lda theCY : asl a : asl a : clc : adc theCY
-    .hbOnRow : adc #0
-    lsr a
-    clc : adc #HI(screenStart)
-    sta theA+1
-    ;; oddRow = Y % 2               0,1
-    ;; Xoffset = oddRow * 16        0,16
-    ;; Xmod = X ^ Xoffset           0..79
-    ;; lo(A) = Xmod * 8
-    lda theCY : and #1              ; oddRow
-    asl a : asl a : asl a : asl a   ; Xoffset
-    eor theCX                       ; Xmod
-    asl a : asl a : asl a           ; Xmod*8
-    sta theA
-    rts
 
 .move1:
     jsr right1 : jsr up1 : jsr up1
@@ -409,16 +406,15 @@ NEXT
     jsr left1 : jsr down1 : jsr down1
     rts
 .move4:
-    ;jsr right1 : jsr down1
-    jsr onArrowWithRepeat
-    jsr calculateAfromXY ; TEMP
+    jsr right1 : jsr down1
+    ;jsr onArrowWithRepeat
     rts
 
 ;;;----------------------------------------------------------------------
 ;;; draw & redraw
 
-;.allObjectsStart: EQUW curr1, curr2, curr3, curr4 ; LIST OBJECTS HERE
-.allObjectsStart: EQUW curr4
+.allObjectsStart: EQUW curr1, curr2, curr3, curr4 ; LIST OBJECTS HERE
+;.allObjectsStart: EQUW curr4
 .allObjectsEnd
 numberObjects = (allObjectsEnd - allObjectsStart) DIV 2
 
