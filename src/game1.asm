@@ -58,10 +58,17 @@ ORG &70
 
 objectSize = theObjectEnd - theObjectStart
 
-ORG &1900 ; could start at 1100 for loads of extra space!
+ORG &1800 ; could start at 1100 for loads of extra space!
 
 .start:
     jmp main
+
+.getRandom:
+    inc frames
+    inc frames
+    ldx frames
+    lda randomBytes,x
+    rts
 
 .writeMessageAndSpin: {
     ldy #0
@@ -340,7 +347,7 @@ NEXT
 ;;;----------------------------------------------------------------------
 ;;; object list
 
-maxObjects = 5
+maxObjects = 8
 
 .objectsSpace:
 FOR i, 0, maxObjects-1
@@ -372,63 +379,48 @@ NEXT
 ;;; object creation
 
 .initObjects:
-    jsr initBlock
-    jsr initShield
+    ;jsr initBlock
+    ;jsr initShield
     jsr initSmallMeteor
+    jsr initSmallMeteor
+    jsr initSmallMeteor
+    jsr initMediumMeteor
+    jsr initMediumMeteor
     jsr initMediumMeteor
     rts
 
 .initBlock:
     jsr allocateObject
-    lda #LO(move1) : sta theBehaviour
-    lda #HI(move1) : sta theBehaviour+1
     lda #LO(block9x13) : sta theSpriteData
     lda #HI(block9x13) : sta theSpriteData+1
     jsr randomizePos
+    jsr randomizeMoveDirection
     jmp saveObject
 
 .initShield:
     jsr allocateObject
-    lda #LO(move2) : sta theBehaviour
-    lda #HI(move2) : sta theBehaviour+1
     lda #LO(shield5x9) : sta theSpriteData
     lda #HI(shield5x9) : sta theSpriteData+1
     jsr randomizePos
+    jsr randomizeMoveDirection
     jmp saveObject
 
 .initSmallMeteor:
     jsr allocateObject
-    lda #LO(move3) : sta theBehaviour
-    lda #HI(move3) : sta theBehaviour+1
     lda #LO(smallMeteor) : sta theSpriteData
     lda #HI(smallMeteor) : sta theSpriteData+1
     jsr randomizePos
+    jsr randomizeMoveDirection
     jmp saveObject
 
 .initMediumMeteor:
     jsr allocateObject
-    lda #LO(move4) : sta theBehaviour
-    lda #HI(move4) : sta theBehaviour+1
     lda #LO(mediumMeteor) : sta theSpriteData
     lda #HI(mediumMeteor) : sta theSpriteData+1
     jsr randomizePos
+    jsr randomizeMoveDirection
     jmp saveObject
 
-.move1:
-    jsr right1 : jsr up1 : jsr up1
-    rts
-.move2:
-    jsr right1 : jsr right1 : jsr down1
-    rts
-.move3:
-    jsr left1 : jsr down1 : jsr down1
-    rts
-.move4:
-    { lda keyTab : beq no : lda lastKeyTab : bne no : jmp randomizePos : .no }
-    ;{ lda keyTab : beq no : jmp randomizePos : .no }
-    jsr right1 : jsr down1
-    ;jsr onArrowWithRepeat
-    rts
 
 .randomizePos:
     jsr getRandom : and #63 : sta theCX ; really should be %80
@@ -438,11 +430,37 @@ NEXT
     jsr calculateAfromXY
     rts
 
-.getRandom:
-    inc frames
-    ldx frames
-    lda randomBytes,x
+.randomizeMoveDirection: {
+    jsr getRandom : and #7 : asl a : tax
+    lda moves,x   : sta theBehaviour
+    lda moves+1,x : sta theBehaviour+1
     rts
+.moves: EQUW UL, UR, DL, DR, UUL, URR, DLL, DDR
+.UL: jsr up1 : jsr left1 : rts
+.UR: jsr up1 : jsr right1 : rts
+.DL: jsr down1 : jsr left1 : rts
+.DR: jsr down1 : jsr right1 : rts
+.UUL: jsr up1 : jsr up1 : jsr left1 : rts
+.URR: jsr up1 : jsr right1 : jsr right1 : rts
+.DLL: jsr down1 : jsr left1 : jsr left1 : rts
+.DDR: jsr down1 : jsr down1 : jsr right1 : rts
+}
+
+;; .move1:
+;;     jsr right1 : jsr up1 : jsr up1
+;;     rts
+;; .move2:
+;;     jsr right1 : jsr right1 : jsr down1
+;;     rts
+;; .move3:
+;;     jsr left1 : jsr down1 : jsr down1
+;;     rts
+;; .move4:
+;;     { lda keyTab : beq no : lda lastKeyTab : bne no : jmp randomizePos : .no }
+;;     ;{ lda keyTab : beq no : jmp randomizePos : .no }
+;;     jsr right1 : jsr down1
+;;     ;jsr onArrowWithRepeat
+;;     rts
 
 ;;;----------------------------------------------------------------------
 ;;; draw & redraw
