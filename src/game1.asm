@@ -43,7 +43,6 @@ ORG &70
 .theObj SKIP 2
 .funcPtr SKIP 2
 .mesPtr SKIP 2
-.nextObjPtr SKIP 2
 .numberObjects SKIP 1
 
 ;;; the object in focus
@@ -77,11 +76,6 @@ ORG &1900 ; could start at 1100 for loads of extra space!
 
 ;;;----------------------------------------------------------------------
 ;;; object focus/save
-
-.curr1 SKIP objectSize
-.curr2 SKIP objectSize
-.curr3 SKIP objectSize
-.curr4 SKIP objectSize
 
 .focusObject: {
     ldy #0
@@ -158,12 +152,8 @@ NEXT
     ;jsr drawGrid
     jsr initKeyVars
     lda #0 : sta frames
+    jsr initObjectList
     jsr initObjects
-
-    jsr initCurr1
-    jsr initCurr2
-    jsr initCurr3
-    jsr initCurr4
 
     jsr initialDraw
     jsr syncDelay
@@ -348,21 +338,28 @@ NEXT
     rts }
 
 ;;;----------------------------------------------------------------------
-;;; object creation...
+;;; object list
 
 maxObjects = 5
-.objectsStart: SKIP (2*maxObjects)
 
-.initObjects:
+.objectsSpace:
+FOR i, 0, maxObjects-1
+    SKIP objectSize
+NEXT
+
+.objectRefs:
+FOR i, 0, maxObjects-1
+    EQUW objectsSpace + i*objectSize
+NEXT
+
+.initObjectList:
     lda #0 : sta numberObjects
-    lda #LO(objectsStart) : sta nextObjPtr
-    lda #HI(objectsStart) : sta nextObjPtr+1
     rts
 
-.pushTheObject: {
+.allocateObject: {
     lda numberObjects : cmp #maxObjects : beq fail : asl a
-    tay : lda theObj   : sta (nextObjPtr),y
-    iny : lda theObj+1 : sta (nextObjPtr),y
+    tay : lda objectRefs,y : sta theObj
+    iny : lda objectRefs,y : sta theObj+1
     inc numberObjects
     rts
 .fail:
@@ -371,64 +368,50 @@ maxObjects = 5
     jmp writeMessageAndSpin
 .msg EQUS "Too many objects.", 13, 0 }
 
-.initCurr1:
+;;;----------------------------------------------------------------------
+;;; object creation
+
+.initObjects:
+    jsr initBlock
+    jsr initShield
+    jsr initSmallMeteor
+    jsr initMediumMeteor
+    rts
+
+.initBlock:
+    jsr allocateObject
     lda #LO(move1) : sta theBehaviour
     lda #HI(move1) : sta theBehaviour+1
-    lda #LO(mediumMeteor) : sta theSpriteData
-    lda #HI(mediumMeteor) : sta theSpriteData+1
-    lda #0 : sta theCX
-    lda #0 : sta theFX
-    lda #0 : sta theCY
-    lda #0 : sta theFY
-    jsr calculateAfromXY
-    lda #LO(curr1) : sta theObj
-    lda #HI(curr1) : sta theObj+1
-    jsr pushTheObject
+    lda #LO(block9x13) : sta theSpriteData
+    lda #HI(block9x13) : sta theSpriteData+1
+    jsr randomizePos
     jmp saveObject
 
-.initCurr2:
+.initShield:
+    jsr allocateObject
     lda #LO(move2) : sta theBehaviour
     lda #HI(move2) : sta theBehaviour+1
     lda #LO(shield5x9) : sta theSpriteData
     lda #HI(shield5x9) : sta theSpriteData+1
-    lda #4 : sta theCX
-    lda #3 : sta theFX
-    lda #2 : sta theCY
-    lda #1 : sta theFY
-    jsr calculateAfromXY
-    lda #LO(curr2) : sta theObj
-    lda #HI(curr2) : sta theObj+1
-    jsr pushTheObject
+    jsr randomizePos
     jmp saveObject
 
-.initCurr3:
+.initSmallMeteor:
+    jsr allocateObject
     lda #LO(move3) : sta theBehaviour
     lda #HI(move3) : sta theBehaviour+1
     lda #LO(smallMeteor) : sta theSpriteData
     lda #HI(smallMeteor) : sta theSpriteData+1
-    lda #0 : sta theCX
-    lda #0 : sta theFX
-    lda #4 : sta theCY
-    lda #0 : sta theFY
-    jsr calculateAfromXY
-    lda #LO(curr3) : sta theObj
-    lda #HI(curr3) : sta theObj+1
-    jsr pushTheObject
+    jsr randomizePos
     jmp saveObject
 
-.initCurr4:
+.initMediumMeteor:
+    jsr allocateObject
     lda #LO(move4) : sta theBehaviour
     lda #HI(move4) : sta theBehaviour+1
-    lda #LO(block9x13) : sta theSpriteData
-    lda #HI(block9x13) : sta theSpriteData+1
-    lda #39 : sta theCX
-    lda #0 : sta theFX
-    lda #15 : sta theCY
-    lda #0 : sta theFY
-    jsr calculateAfromXY
-    lda #LO(curr4) : sta theObj
-    lda #HI(curr4) : sta theObj+1
-    jsr pushTheObject
+    lda #LO(mediumMeteor) : sta theSpriteData
+    lda #HI(mediumMeteor) : sta theSpriteData+1
+    jsr randomizePos
     jmp saveObject
 
 .move1:
@@ -468,8 +451,8 @@ maxObjects = 5
     jsr resetDataPrepPtr
     ldx #0
 .loop:
-    lda objectsStart,x : sta theObj
-    lda objectsStart+1,x : sta theObj+1
+    lda objectRefs,x : sta theObj
+    lda objectRefs+1,x : sta theObj+1
     txa : pha
     jsr focusObject
     jsr plotObjectStrips
@@ -482,8 +465,8 @@ maxObjects = 5
     jsr resetDataPrepPtr
     ldx #0
 .loop:
-    lda objectsStart,x : sta theObj
-    lda objectsStart+1,x : sta theObj+1
+    lda objectRefs,x : sta theObj
+    lda objectRefs+1,x : sta theObj+1
     txa : pha
     jsr ed1
     pla : tax
