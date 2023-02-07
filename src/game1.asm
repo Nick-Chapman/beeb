@@ -170,7 +170,7 @@ NEXT
     jsr redraw
     ;lda #7 : sta ula ; black
 
-    ;lda #3 : sta ula ; blue
+    lda #3 : sta ula ; blue
     ;jsr syncDelay ; TODO : explore half speed
     jsr syncDelay ; TODO : explore half speed
     lda #7 : sta ula ; black
@@ -329,7 +329,6 @@ NEXT
     lda #LO(curr1) : sta theObj
     lda #HI(curr1) : sta theObj+1
     jmp saveObject
-    rts
 
 .initCurr2: ; 19,17
     lda #LO(move2) : sta theBehaviour
@@ -345,7 +344,6 @@ NEXT
     lda #LO(curr2) : sta theObj
     lda #HI(curr2) : sta theObj+1
     jmp saveObject
-    rts
 
 .initCurr3:
     lda #LO(move3) : sta theBehaviour
@@ -361,7 +359,6 @@ NEXT
     lda #LO(curr3) : sta theObj
     lda #HI(curr3) : sta theObj+1
     jmp saveObject
-    rts
 
 .initCurr4:
     lda #LO(move4) : sta theBehaviour
@@ -372,11 +369,34 @@ NEXT
     lda #0 : sta theFX
     lda #0 : sta theCY
     lda #0 : sta theFY
-    lda #HI(screenStart) : sta theA+1
-    lda #LO(screenStart) : sta theA
+    ;lda #HI(screenStart) : sta theA+1
+    ;lda #LO(screenStart) : sta theA
+    jsr calculateAfromXY
     lda #LO(curr4) : sta theObj
     lda #HI(curr4) : sta theObj+1
     jmp saveObject
+
+.calculateAfromXY:
+    ;; (coarse)X                    0..79
+    ;; (coarse)Y                    0..31
+    ;; hbOnRow = X/16               0..4
+    ;; hi(A) = (5*Y+hbOnRow)/2+&30
+    lda theCX : lsr a : lsr a : lsr a : lsr a
+    sta hbOnRow+1
+    lda theCY : asl a : asl a : clc : adc theCY
+    .hbOnRow : adc #0
+    lsr a
+    clc : adc #HI(screenStart)
+    sta theA+1
+    ;; oddRow = Y % 2               0,1
+    ;; Xoffset = oddRow * 16        0,16
+    ;; Xmod = X ^ Xoffset           0..79
+    ;; lo(A) = Xmod * 8
+    lda theCY : and #1              ; oddRow
+    asl a : asl a : asl a : asl a   ; Xoffset
+    eor theCX                       ; Xmod
+    asl a : asl a : asl a           ; Xmod*8
+    sta theA
     rts
 
 .move1:
@@ -391,6 +411,7 @@ NEXT
 .move4:
     ;jsr right1 : jsr down1
     jsr onArrowWithRepeat
+    jsr calculateAfromXY ; TEMP
     rts
 
 ;;;----------------------------------------------------------------------
