@@ -22,12 +22,16 @@ DONE
 - diffent objects can have diff nummber of strips
 - small meteor sprite data
 - objects with independent movement; different speeds
+- Code (initial) compute of A(hi/lo) from x/y-coarse.
+- medium meteor sprite data
+- dynamic object creation
+- random position and direction
 
 TODO:
-- medium & large meteors
-- spaceship
-- bullets
 - collision detection
-- improve vsync with timer
-- Disconnect keys from direct position control; go via intermediate speed.
-- Code (initial) compute of A(hi/lo) from x/y-coarse.
+- bullets
+- large meteors
+- spaceship with thrust & rotation control, and crash detection
+- slow object movement; interesting angles
+- split object update into two halfs; each at 25fps
+- improve vsync with timer?
