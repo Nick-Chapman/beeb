@@ -39,7 +39,7 @@ ORG &70
 .funcPtr SKIP 2
 .mesPtr SKIP 2
 
-;;; object in focus...
+;;; the object in focus
 .theObjectStart
 .theBehaviour SKIP 2
 .theSpriteData SKIP 2
@@ -51,13 +51,6 @@ ORG &70
 .theObjectEnd
 
 objectSize = theObjectEnd - theObjectStart
-
-;;; TODO: objects are in zero-page, but perhas dont need to be
-.curr1 SKIP objectSize
-.curr2 SKIP objectSize
-.curr3 SKIP objectSize
-.curr4 SKIP objectSize
-
 
 ORG &1900 ; could start at 1100 for loads of extra space!
 
@@ -76,7 +69,12 @@ ORG &1900 ; could start at 1100 for loads of extra space!
     jmp spin }
 
 ;;;----------------------------------------------------------------------
-;;; object focus/save...
+;;; object focus/save
+
+.curr1 SKIP objectSize
+.curr2 SKIP objectSize
+.curr3 SKIP objectSize
+.curr4 SKIP objectSize
 
 .focusObject: {
     ldy #0
@@ -98,9 +96,8 @@ ORG &1900 ; could start at 1100 for loads of extra space!
     bne loop
     rts }
 
-
 ;;;----------------------------------------------------------------------
-;;; screen blitting...
+;;; screen blitting
 
 maxPreparedObjects = 360
 
@@ -141,9 +138,9 @@ NEXT
 
 ;;; run the generated code
 .blitScreen:
-    lda rtsTemplate : ldy #0 : sta (ptr),y ; finalize generated-code with an rts
-    jsr blitCodeStart ; execute generated code
-    .ldaTemplate : lda ldaTemplate : ldy #0 : sta (ptr),y ; restore with lda
+    lda rtsTemplate : ldy #0 : sta (ptr),y ; finalize with rts
+    jsr blitCodeStart ; dispatch to generated code
+    .ldaTemplate : lda ldaTemplate : ldy #0 : sta (ptr),y ; restore lda
     .rtsTemplate : rts
 
 
@@ -174,7 +171,7 @@ NEXT
     ;lda #7 : sta ula ; black
 
     ;lda #3 : sta ula ; blue
-    jsr syncDelay ; TODO : explore half speed
+    ;jsr syncDelay ; TODO : explore half speed
     jsr syncDelay ; TODO : explore half speed
     lda #7 : sta ula ; black
 
@@ -193,77 +190,95 @@ NEXT
 ;;;----------------------------------------------------------------------
 ;;; object movement calculation
 
-.onU: {
-    lda theFY : bne no
-    lda #8 : sta theFY
-    jsr upCoarse
-.no:
-    dec theFY
-    rts }
+.nothing:
+    rts
 
-.onD: {
-    inc theFY
-    lda theFY : cmp #8 : bne no
-    lda #0 : sta theFY
-    jsr downCoarse
-.no:
-    rts }
+.right8:
+    jsr right4
+    jsr right4
+    rts
+.right12:
+    jsr right4
+    jsr right4
+    jsr right4
+    rts
+.right16:
+    jsr right4
+    jsr right4
+    jsr right4
+    jsr right4
+    rts
 
-.onL: {
-    lda theFX : bne no
-    jsr leftCoarse
-    lda #4 : sta theFX
-.no:
-    dec theFX
-    rts }
-
-.onR: {
-    inc theFX
-    lda theFX : cmp #4 : bne no
-    lda #0 : sta theFX
-    jsr rightCoarse
-.no:
-    rts }
-
-
-.upCoarse:
+.up8:
     jsr unwrapScreen
     dec theCY
     jsr upA
     rts
-.downCoarse:
+.down8:
     inc theCY
     jsr downA
     jsr wrapScreen
     rts
-.leftCoarse:
+.left4:
     jsr unwrapLine
     dec theCX
     jsr leftA
     rts
-.rightCoarse:
+.right4:
     inc theCX
     jsr rightA
     jsr wrapLine
     rts
 
-.rightCoarse2:
-    jsr rightCoarse
-    jsr rightCoarse
+.leftA:
+    lda theA : sec : sbc #8 : sta theA
+    lda theA+1     : sbc #0 : sta theA+1
     rts
-.rightCoarse3:
-    jsr rightCoarse
-    jsr rightCoarse
-    jsr rightCoarse
+.rightA:
+    lda theA : clc : adc #8 : sta theA
+    lda theA+1     : adc #0 : sta theA+1
     rts
-.rightCoarse4:
-    jsr rightCoarse
-    jsr rightCoarse
-    jsr rightCoarse
-    jsr rightCoarse
+.upA:
+    lda theA : sec : sbc #&80 : sta theA
+    lda theA+1     : sbc #2   : sta theA+1
     rts
-.atPoint:
+.downA:
+    lda theA : clc : adc #&80 : sta theA
+    lda theA+1     : adc #2   : sta theA+1
     rts
+
+
+.up1: {
+    lda theFY : bne no
+    lda #8 : sta theFY
+    jsr up8
+.no:
+    dec theFY
+    rts }
+
+.down1: {
+    inc theFY
+    lda theFY : cmp #8 : bne no
+    lda #0 : sta theFY
+    jsr down8
+.no:
+    rts }
+
+.left1: {
+    lda theFX : bne no
+    jsr left4
+    lda #4 : sta theFX
+.no:
+    dec theFX
+    rts }
+
+.right1: {
+    inc theFX
+    lda theFX : cmp #4 : bne no
+    lda #0 : sta theFX
+    jsr right4
+.no:
+    rts }
 
 .unwrapScreen: {
     lda theCY
@@ -296,27 +311,6 @@ NEXT
     jsr upA
 .no:
     rts }
-
-.leftA:
-    lda theA : sec : sbc #8 : sta theA
-    lda theA+1     : sbc #0 : sta theA+1
-    rts
-
-.rightA:
-    lda theA : clc : adc #8 : sta theA
-    lda theA+1     : adc #0 : sta theA+1
-    rts
-
-.upA:
-    lda theA : sec : sbc #&80 : sta theA
-    lda theA+1     : sbc #2   : sta theA+1
-    rts
-
-.downA:
-    lda theA : clc : adc #&80 : sta theA
-    lda theA+1     : adc #2   : sta theA+1
-    rts
-
 
 ;;;----------------------------------------------------------------------
 ;;; object creation...
@@ -372,8 +366,8 @@ NEXT
 .initCurr4:
     lda #LO(move4) : sta theBehaviour
     lda #HI(move4) : sta theBehaviour+1
-    lda #LO(smallMeteor) : sta theSpriteData
-    lda #HI(smallMeteor) : sta theSpriteData+1
+    lda #LO(block9x13) : sta theSpriteData
+    lda #HI(block9x13) : sta theSpriteData+1
     lda #0 : sta theCX
     lda #0 : sta theFX
     lda #0 : sta theCY
@@ -385,31 +379,25 @@ NEXT
     jmp saveObject
     rts
 
-
 .move1:
-    jsr onR : jsr onU : jsr onU
+    jsr right1 : jsr up1 : jsr up1
     rts
-
 .move2:
-    jsr onR : jsr onR : jsr onD
+    jsr right1 : jsr right1 : jsr down1
     rts
-
 .move3:
-    jsr onL : jsr onD : jsr onD
-    ;jsr updateFocussedWithRepeat
+    jsr left1 : jsr down1 : jsr down1
     rts
-
 .move4:
-    jsr onR : jsr onD
-    ;jsr updateFocussedWithRepeat
+    ;jsr right1 : jsr down1
+    jsr onArrowWithRepeat
     rts
-
-
 
 ;;;----------------------------------------------------------------------
-;;; initial draw & redraw
+;;; draw & redraw
 
-.allObjectsStart: EQUW curr1, curr2, curr3, curr4 ; LIST OBJECTS HERE
+;.allObjectsStart: EQUW curr1, curr2, curr3, curr4 ; LIST OBJECTS HERE
+.allObjectsStart: EQUW curr4
 .allObjectsEnd
 numberObjects = (allObjectsEnd - allObjectsStart) DIV 2
 
@@ -426,7 +414,6 @@ numberObjects = (allObjectsEnd - allObjectsStart) DIV 2
     inx : inx
     cpx #(2 * numberObjects) : bne loop
     rts }
-
 
 .redraw: {
     jsr resetDataPrepPtr
@@ -452,7 +439,6 @@ numberObjects = (allObjectsEnd - allObjectsStart) DIV 2
 .dispatchBehavior:
     jmp (theBehaviour)
 
-
 ;;;----------------------------------------------------------------------
 ;;; sprite plotting
 
@@ -474,8 +460,7 @@ numberObjects = (allObjectsEnd - allObjectsStart) DIV 2
     jsr plotTheStrip
     rts }
 
-
-.plotTheStrip:
+.plotTheStrip: {
     jsr offsetPositionForTheStrip
     ldy #2 : lda (theStrip),y : sta pokeStripHeight+1
     lda theFX : asl a : tay : iny : iny
@@ -488,7 +473,6 @@ numberObjects = (allObjectsEnd - allObjectsStart) DIV 2
     ldy #0 : lda (theStrip),y : sta funcPtr
     ldy #1 : lda (theStrip),y : sta funcPtr+1
     jmp (funcPtr)
-
 
 .eorWrite:
     ldx #0
@@ -506,10 +490,9 @@ numberObjects = (allObjectsEnd - allObjectsStart) DIV 2
     rts
 .down:
     lda theA : sec : sbc #8 : sta theA
-    jsr downCoarse
+    jsr down8
     lda #0 : sta theFY
-    jmp afterDown
-
+    jmp afterDown }
 
 ;;;----------------------------------------------------------------------
 ;;; initial screen setup
@@ -561,7 +544,6 @@ numberObjects = (allObjectsEnd - allObjectsStart) DIV 2
     bmi next
     rts }
 
-
 ;;;----------------------------------------------------------------------
 ;;; sync with vblank
 
@@ -569,9 +551,8 @@ numberObjects = (allObjectsEnd - allObjectsStart) DIV 2
     lda #19 : jsr osbyte
     rts
 
-
 ;;;----------------------------------------------------------------------
-;;; reading keyboard...
+;;; keyboard
 
 .initKeyVars:
     lda #0 : sta keyEscape
@@ -646,120 +627,112 @@ numberObjects = (allObjectsEnd - allObjectsStart) DIV 2
     lda #1 : sta keyEscape : .no:
     rts }
 
-
-.updateFocussed:
-    { lda keyU : beq no : lda lastKeyU : bne no : jsr onU : .no }
-    { lda keyD : beq no : lda lastKeyD : bne no : jsr onD : .no }
-    { lda keyL : beq no : lda lastKeyL : bne no : jsr onL : .no }
-    { lda keyR : beq no : lda lastKeyR : bne no : jsr onR : .no }
+.onArrow:
+    { lda keyU : beq no : lda lastKeyU : bne no : jsr up1 : .no }
+    { lda keyD : beq no : lda lastKeyD : bne no : jsr down1 : .no }
+    { lda keyL : beq no : lda lastKeyL : bne no : jsr left1 : .no }
+    { lda keyR : beq no : lda lastKeyR : bne no : jsr right1 : .no }
     rts
 
-.updateFocussedWithRepeat:
-    { lda keyU : beq no : jsr onU : .no }
-    { lda keyD : beq no : jsr onD : .no }
-    { lda keyL : beq no : jsr onL : .no }
-    { lda keyR : beq no : jsr onR : .no }
+.onArrowWithRepeat:
+    { lda keyU : beq no : jsr up1 : .no }
+    { lda keyD : beq no : jsr down1 : .no }
+    { lda keyL : beq no : jsr left1 : .no }
+    { lda keyR : beq no : jsr right1 : .no }
     rts
-
 
 ;;;----------------------------------------------------------------------
-;;; sprite data...
+;;; sprite data
 
-;; .spriteData1: {
-;;     EQUB 5 ; 2*num-strips+1
-;;     EQUW stripA, stripB
-;; .stripA: EQUW atPoint : EQUB 9 : EQUW stripA0, stripA1, stripA2, stripA3
-;; .stripA0: EQUB &ff,&ff,&ff,&dd,&88,&dd,&ff,&ff,&ff
-;; .stripA1: EQUB &77,&77,&77,&66,&44,&66,&77,&77,&77
-;; .stripA2: EQUB &33,&33,&33,&33,&22,&33,&33,&33,&33
-;; .stripA3: EQUB &11,&11,&11,&11,&11,&11,&11,&11,&11
-;; .stripB: EQUW rightCoarse : EQUB 9 : EQUW stripB0, stripB1, stripB2, stripB3
-;; .stripB0: EQUB &88,&88,&88,&88,&88,&88,&88,&88,&88
-;; .stripB1: EQUB &cc,&cc,&cc,&cc,&44,&cc,&cc,&cc,&cc
-;; .stripB2: EQUB &ee,&ee,&ee,&66,&22,&66,&ee,&ee,&ee
-;; .stripB3: EQUB &ff,&ff,&ff,&bb,&11,&bb,&ff,&ff,&ff
-;; }
-
-;; .spriteData2: { EQUB 7 : EQUW stripA, stripB, stripC
-;; .stripA: EQUW atPoint : EQUB 13 : EQUW stripA0, stripA1, stripA2, stripA3
-;; .stripA0: EQUB &ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff
-;; .stripA1: EQUB &77,&77,&77,&77,&77,&77,&77,&77,&77,&77,&77,&77,&77
-;; .stripA2: EQUB &33,&33,&33,&33,&33,&33,&33,&33,&33,&33,&33,&33,&33
-;; .stripA3: EQUB &11,&11,&11,&11,&11,&11,&11,&11,&11,&11,&11,&11,&11
-;; .stripB: EQUW rightCoarse : EQUB 13 : EQUW stripB0, stripB1, stripB2, stripB3
-;; .stripB0: EQUB &ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff
-;; .stripB1: EQUB &ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff
-;; .stripB2: EQUB &ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff
-;; .stripB3: EQUB &ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff
-;; .stripC: EQUW rightCoarse2 : EQUB 13 : EQUW stripC0, stripC1, stripC2, stripC3
-;; .stripC0: EQUB &88,&88,&88,&88,&88,&88,&88,&88,&88,&88,&88,&88,&88
-;; .stripC1: EQUB &cc,&cc,&cc,&cc,&cc,&cc,&cc,&cc,&cc,&cc,&cc,&cc,&cc
-;; .stripC2: EQUB &ee,&ee,&ee,&ee,&ee,&ee,&ee,&ee,&ee,&ee,&ee,&ee,&ee
-;; .stripC3: EQUB &ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff
-;; }
-
-;; .spriteData3: { EQUB 5 : EQUW stripA, stripB
-;; .stripA: EQUW atPoint : EQUB 7 : EQUW stripA0, stripA1, stripA2, stripA3
-;; .stripA0: EQUB &ff,&ff,&dd,&88,&dd,&ff,&ff
-;; .stripA1: EQUB &77,&77,&66,&44,&66,&77,&77
-;; .stripA2: EQUB &33,&33,&33,&22,&33,&33,&33
-;; .stripA3: EQUB &11,&11,&11,&11,&11,&11,&11
-;; .stripB: EQUW rightCoarse : EQUB 7 : EQUW stripB0, stripB1, stripB2, stripB3
-;; .stripB0: EQUB &88,&88,&88,&88,&88,&88,&88
-;; .stripB1: EQUB &cc,&cc,&cc,&44,&cc,&cc,&cc
-;; .stripB2: EQUB &ee,&ee,&66,&22,&66,&ee,&ee
-;; .stripB3: EQUB &ff,&ff,&bb,&11,&bb,&ff,&ff
-;; }
-
-.smallMeteor: { EQUB 7 : EQUW stripA, stripB, stripC
-.stripA: EQUW atPoint : EQUB 8 : EQUW stripA0, stripA1, stripA2, stripA3
-.stripA0: EQUB &33,&44,&88,&88,&44,&22,&44,&33
-.stripA1: EQUB &11,&22,&44,&44,&22,&11,&22,&11
-.stripA2: EQUB &00,&11,&22,&22,&11,&00,&11,&00
-.stripA3: EQUB &00,&00,&11,&11,&00,&00,&00,&00
-.stripB: EQUW rightCoarse : EQUB 8 : EQUW stripB0, stripB1, stripB2, stripB3
-.stripB0: EQUB &66,&99,&11,&00,&00,&11,&99,&66
-.stripB1: EQUB &bb,&44,&00,&00,&00,&00,&44,&bb
-.stripB2: EQUB &dd,&22,&00,&00,&00,&88,&22,&dd
-.stripB3: EQUB &66,&99,&00,&00,&88,&44,&99,&66
-.stripC: EQUW rightCoarse2 : EQUB 8 : EQUW stripC0, stripC1, stripC2, stripC3
-.stripC0: EQUB &00,&00,&00,&88,&88,&00,&00,&00
-.stripC1: EQUB &00,&88,&88,&44,&44,&88,&88,&00
-.stripC2: EQUB &88,&44,&44,&22,&22,&44,&44,&88
-.stripC3: EQUB &cc,&22,&22,&11,&11,&22,&22,&cc
+.shield5x7: { EQUB 5 : EQUW A, B
+.A: EQUW nothing : EQUB 7 : EQUW A0, A1, A2, A3
+.A0: EQUB &ff,&ff,&dd,&88,&dd,&ff,&ff
+.A1: EQUB &77,&77,&66,&44,&66,&77,&77
+.A2: EQUB &33,&33,&33,&22,&33,&33,&33
+.A3: EQUB &11,&11,&11,&11,&11,&11,&11
+.B: EQUW right4 : EQUB 7 : EQUW B0, B1, B2, B3
+.B0: EQUB &88,&88,&88,&88,&88,&88,&88
+.B1: EQUB &cc,&cc,&cc,&44,&cc,&cc,&cc
+.B2: EQUB &ee,&ee,&66,&22,&66,&ee,&ee
+.B3: EQUB &ff,&ff,&bb,&11,&bb,&ff,&ff
 }
 
-.mediumMeteor: { EQUB 11 : EQUW stripA, stripB, stripC, stripD, stripE
-.stripA: EQUW atPoint : EQUB 16 : EQUW stripA0, stripA1, stripA2, stripA3
-.stripA0: EQUB &00,&00,&11,&22,&44,&88,&88,&88,&44,&22,&11,&22,&44,&22,&11,&00
-.stripA1: EQUB &00,&00,&00,&11,&22,&44,&44,&44,&22,&11,&00,&11,&22,&11,&00,&00
-.stripA2: EQUB &00,&00,&00,&00,&11,&22,&22,&22,&11,&00,&00,&00,&11,&00,&00,&00
-.stripA3: EQUB &00,&00,&00,&00,&00,&11,&11,&11,&00,&00,&00,&00,&00,&00,&00,&00
-
-.stripB: EQUW rightCoarse : EQUB 16 : EQUW stripB0, stripB1, stripB2, stripB3
-.stripB0: EQUB &11,&22,&cc,&00,&00,&00,&00,&00,&00,&00,&00,&00,&00,&00,&00,&ff
-.stripB1: EQUB &00,&11,&ee,&00,&00,&00,&00,&00,&00,&00,&88,&00,&00,&00,&88,&77
-.stripB2: EQUB &00,&00,&77,&88,&00,&00,&00,&00,&00,&88,&44,&88,&00,&88,&44,&33
-.stripB3: EQUB &00,&00,&33,&44,&88,&00,&00,&00,&88,&44,&22,&44,&88,&44,&22,&11
-
-.stripC: EQUW rightCoarse2 : EQUB 16 : EQUW stripC0, stripC1, stripC2, stripC3
-.stripC0: EQUB &ff,&00,&00,&00,&00,&00,&00,&00,&00,&00,&00,&00,&00,&44,&aa,&11
-.stripC1: EQUB &ff,&00,&00,&00,&00,&00,&00,&00,&00,&00,&00,&00,&00,&22,&55,&88
-.stripC2: EQUB &77,&88,&00,&00,&00,&00,&00,&00,&00,&00,&00,&00,&00,&11,&22,&cc
-.stripC3: EQUB &33,&44,&88,&00,&00,&00,&00,&00,&00,&00,&00,&00,&00,&00,&11,&ee
-
-.stripD: EQUW rightCoarse3 : EQUB 16 : EQUW stripD0, stripD1, stripD2, stripD3
-.stripD0: EQUB &00,&88,&66,&11,&00,&11,&22,&44,&22,&11,&00,&00,&00,&11,&22,&cc
-.stripD1: EQUB &88,&44,&33,&00,&00,&00,&11,&22,&11,&00,&00,&00,&00,&00,&11,&ee
-.stripD2: EQUB &cc,&22,&11,&00,&00,&00,&00,&11,&00,&00,&00,&00,&00,&00,&88,&77
-.stripD3: EQUB &ee,&11,&00,&00,&00,&00,&00,&00,&00,&00,&00,&00,&00,&88,&44,&33
-
-.stripE: EQUW rightCoarse4 : EQUB 16 : EQUW stripE0, stripE1, stripE2, stripE3
-.stripE0: EQUB &00,&00,&00,&00,&88,&00,&00,&00,&00,&00,&88,&88,&88,&00,&00,&00
-.stripE1: EQUB &00,&00,&00,&88,&44,&88,&00,&00,&00,&88,&44,&44,&44,&88,&00,&00
-.stripE2: EQUB &00,&00,&88,&44,&22,&44,&88,&00,&88,&44,&22,&22,&22,&44,&88,&00
-.stripE3: EQUB &00,&00,&cc,&22,&11,&22,&44,&88,&44,&22,&11,&11,&11,&22,&44,&88
-
+.shield5x9: { EQUB 5 : EQUW A, B
+.A: EQUW nothing : EQUB 9 : EQUW A0, A1, A2, A3
+.A0: EQUB &ff,&ff,&ff,&dd,&88,&dd,&ff,&ff,&ff
+.A1: EQUB &77,&77,&77,&66,&44,&66,&77,&77,&77
+.A2: EQUB &33,&33,&33,&33,&22,&33,&33,&33,&33
+.A3: EQUB &11,&11,&11,&11,&11,&11,&11,&11,&11
+.B: EQUW right4 : EQUB 9 : EQUW B0, B1, B2, B3
+.B0: EQUB &88,&88,&88,&88,&88,&88,&88,&88,&88
+.B1: EQUB &cc,&cc,&cc,&cc,&44,&cc,&cc,&cc,&cc
+.B2: EQUB &ee,&ee,&ee,&66,&22,&66,&ee,&ee,&ee
+.B3: EQUB &ff,&ff,&ff,&bb,&11,&bb,&ff,&ff,&ff
 }
+
+.block9x13: { EQUB 7 : EQUW A, B, C
+.A: EQUW nothing : EQUB 13 : EQUW A0, A1, A2, A3
+.A0: EQUB &ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff
+.A1: EQUB &77,&77,&77,&77,&77,&77,&77,&77,&77,&77,&77,&77,&77
+.A2: EQUB &33,&33,&33,&33,&33,&33,&33,&33,&33,&33,&33,&33,&33
+.A3: EQUB &11,&11,&11,&11,&11,&11,&11,&11,&11,&11,&11,&11,&11
+.B: EQUW right4 : EQUB 13 : EQUW B0, B1, B2, B3
+.B0: EQUB &ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff
+.B1: EQUB &ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff
+.B2: EQUB &ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff
+.B3: EQUB &ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff
+.C: EQUW right8 : EQUB 13 : EQUW C0, C1, C2, C3
+.C0: EQUB &88,&88,&88,&88,&88,&88,&88,&88,&88,&88,&88,&88,&88
+.C1: EQUB &cc,&cc,&cc,&cc,&cc,&cc,&cc,&cc,&cc,&cc,&cc,&cc,&cc
+.C2: EQUB &ee,&ee,&ee,&ee,&ee,&ee,&ee,&ee,&ee,&ee,&ee,&ee,&ee
+.C3: EQUB &ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff,&ff
+}
+
+.smallMeteor: { EQUB 7 : EQUW A, B, C
+.A: EQUW nothing : EQUB 8 : EQUW A0, A1, A2, A3
+.A0: EQUB &33,&44,&88,&88,&44,&22,&44,&33
+.A1: EQUB &11,&22,&44,&44,&22,&11,&22,&11
+.A2: EQUB &00,&11,&22,&22,&11,&00,&11,&00
+.A3: EQUB &00,&00,&11,&11,&00,&00,&00,&00
+.B: EQUW right4 : EQUB 8 : EQUW B0, B1, B2, B3
+.B0: EQUB &66,&99,&11,&00,&00,&11,&99,&66
+.B1: EQUB &bb,&44,&00,&00,&00,&00,&44,&bb
+.B2: EQUB &dd,&22,&00,&00,&00,&88,&22,&dd
+.B3: EQUB &66,&99,&00,&00,&88,&44,&99,&66
+.C: EQUW right8 : EQUB 8 : EQUW C0, C1, C2, C3
+.C0: EQUB &00,&00,&00,&88,&88,&00,&00,&00
+.C1: EQUB &00,&88,&88,&44,&44,&88,&88,&00
+.C2: EQUB &88,&44,&44,&22,&22,&44,&44,&88
+.C3: EQUB &cc,&22,&22,&11,&11,&22,&22,&cc
+}
+
+.mediumMeteor: { EQUB 11 : EQUW A, B, C, D, E
+.A: EQUW nothing : EQUB 16 : EQUW A0, A1, A2, A3
+.A0: EQUB &00,&00,&11,&22,&44,&88,&88,&88,&44,&22,&11,&22,&44,&22,&11,&00
+.A1: EQUB &00,&00,&00,&11,&22,&44,&44,&44,&22,&11,&00,&11,&22,&11,&00,&00
+.A2: EQUB &00,&00,&00,&00,&11,&22,&22,&22,&11,&00,&00,&00,&11,&00,&00,&00
+.A3: EQUB &00,&00,&00,&00,&00,&11,&11,&11,&00,&00,&00,&00,&00,&00,&00,&00
+.B: EQUW right4 : EQUB 16 : EQUW B0, B1, B2, B3
+.B0: EQUB &11,&22,&cc,&00,&00,&00,&00,&00,&00,&00,&00,&00,&00,&00,&00,&ff
+.B1: EQUB &00,&11,&ee,&00,&00,&00,&00,&00,&00,&00,&88,&00,&00,&00,&88,&77
+.B2: EQUB &00,&00,&77,&88,&00,&00,&00,&00,&00,&88,&44,&88,&00,&88,&44,&33
+.B3: EQUB &00,&00,&33,&44,&88,&00,&00,&00,&88,&44,&22,&44,&88,&44,&22,&11
+.C: EQUW right8 : EQUB 16 : EQUW C0, C1, C2, C3
+.C0: EQUB &ff,&00,&00,&00,&00,&00,&00,&00,&00,&00,&00,&00,&00,&44,&aa,&11
+.C1: EQUB &ff,&00,&00,&00,&00,&00,&00,&00,&00,&00,&00,&00,&00,&22,&55,&88
+.C2: EQUB &77,&88,&00,&00,&00,&00,&00,&00,&00,&00,&00,&00,&00,&11,&22,&cc
+.C3: EQUB &33,&44,&88,&00,&00,&00,&00,&00,&00,&00,&00,&00,&00,&00,&11,&ee
+.D: EQUW right12 : EQUB 16 : EQUW D0, D1, D2, D3
+.D0: EQUB &00,&88,&66,&11,&00,&11,&22,&44,&22,&11,&00,&00,&00,&11,&22,&cc
+.D1: EQUB &88,&44,&33,&00,&00,&00,&11,&22,&11,&00,&00,&00,&00,&00,&11,&ee
+.D2: EQUB &cc,&22,&11,&00,&00,&00,&00,&11,&00,&00,&00,&00,&00,&00,&88,&77
+.D3: EQUB &ee,&11,&00,&00,&00,&00,&00,&00,&00,&00,&00,&00,&00,&88,&44,&33
+.E: EQUW right16 : EQUB 16 : EQUW E0, E1, E2, E3
+.E0: EQUB &00,&00,&00,&00,&88,&00,&00,&00,&00,&00,&88,&88,&88,&00,&00,&00
+.E1: EQUB &00,&00,&00,&88,&44,&88,&00,&00,&00,&88,&44,&44,&44,&88,&00,&00
+.E2: EQUB &00,&00,&88,&44,&22,&44,&88,&00,&88,&44,&22,&22,&22,&44,&88,&00
+.E3: EQUB &00,&00,&cc,&22,&11,&22,&44,&88,&44,&22,&11,&11,&11,&22,&44,&88
+}
+
 .end:
 SAVE "Code", start, end
