@@ -43,6 +43,8 @@ ORG &70
 .theObj SKIP 2
 .funcPtr SKIP 2
 .mesPtr SKIP 2
+.nextObjPtr SKIP 2
+.numberObjects SKIP 1
 
 ;;; the object in focus
 .theObjectStart
@@ -148,7 +150,6 @@ NEXT
     .ldaTemplate : lda ldaTemplate : ldy #0 : sta (ptr),y ; restore lda
     .rtsTemplate : rts
 
-
 ;;;----------------------------------------------------------------------
 ;;; main loop
 
@@ -157,6 +158,8 @@ NEXT
     ;jsr drawGrid
     jsr initKeyVars
     lda #0 : sta frames
+    jsr initObjects
+
     jsr initCurr1
     jsr initCurr2
     jsr initCurr3
@@ -347,6 +350,27 @@ NEXT
 ;;;----------------------------------------------------------------------
 ;;; object creation...
 
+maxObjects = 5
+.objectsStart: SKIP (2*maxObjects)
+
+.initObjects:
+    lda #0 : sta numberObjects
+    lda #LO(objectsStart) : sta nextObjPtr
+    lda #HI(objectsStart) : sta nextObjPtr+1
+    rts
+
+.pushTheObject: {
+    lda numberObjects : cmp #maxObjects : beq fail : asl a
+    tay : lda theObj   : sta (nextObjPtr),y
+    iny : lda theObj+1 : sta (nextObjPtr),y
+    inc numberObjects
+    rts
+.fail:
+    lda #LO(msg) : sta mesPtr
+    lda #HI(msg) : sta mesPtr+1
+    jmp writeMessageAndSpin
+.msg EQUS "Too many objects.", 13, 0 }
+
 .initCurr1:
     lda #LO(move1) : sta theBehaviour
     lda #HI(move1) : sta theBehaviour+1
@@ -359,9 +383,10 @@ NEXT
     jsr calculateAfromXY
     lda #LO(curr1) : sta theObj
     lda #HI(curr1) : sta theObj+1
+    jsr pushTheObject
     jmp saveObject
 
-.initCurr2: ; 19,17
+.initCurr2:
     lda #LO(move2) : sta theBehaviour
     lda #HI(move2) : sta theBehaviour+1
     lda #LO(shield5x9) : sta theSpriteData
@@ -373,6 +398,7 @@ NEXT
     jsr calculateAfromXY
     lda #LO(curr2) : sta theObj
     lda #HI(curr2) : sta theObj+1
+    jsr pushTheObject
     jmp saveObject
 
 .initCurr3:
@@ -387,6 +413,7 @@ NEXT
     jsr calculateAfromXY
     lda #LO(curr3) : sta theObj
     lda #HI(curr3) : sta theObj+1
+    jsr pushTheObject
     jmp saveObject
 
 .initCurr4:
@@ -401,6 +428,7 @@ NEXT
     jsr calculateAfromXY
     lda #LO(curr4) : sta theObj
     lda #HI(curr4) : sta theObj+1
+    jsr pushTheObject
     jmp saveObject
 
 .move1:
@@ -436,36 +464,31 @@ NEXT
 ;;;----------------------------------------------------------------------
 ;;; draw & redraw
 
-.allObjectsStart: EQUW curr1, curr2, curr3, curr4 ; LIST OBJECTS HERE
-;.allObjectsStart: EQUW curr4
-.allObjectsEnd
-numberObjects = (allObjectsEnd - allObjectsStart) DIV 2
-
 .initialDraw: {
     jsr resetDataPrepPtr
     ldx #0
 .loop:
-    lda allObjectsStart,x : sta theObj
-    lda allObjectsStart+1,x : sta theObj+1
+    lda objectsStart,x : sta theObj
+    lda objectsStart+1,x : sta theObj+1
     txa : pha
     jsr focusObject
     jsr plotObjectStrips
     pla : tax
     inx : inx
-    cpx #(2 * numberObjects) : bne loop
+    txa : lsr a : cmp numberObjects : bne loop
     rts }
 
 .redraw: {
     jsr resetDataPrepPtr
     ldx #0
 .loop:
-    lda allObjectsStart,x : sta theObj
-    lda allObjectsStart+1,x : sta theObj+1
+    lda objectsStart,x : sta theObj
+    lda objectsStart+1,x : sta theObj+1
     txa : pha
     jsr ed1
     pla : tax
     inx : inx
-    cpx #(2 * numberObjects) : bne loop
+    txa : lsr a : cmp numberObjects : bne loop
     rts }
 
 .ed1:
