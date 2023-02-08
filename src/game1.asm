@@ -20,7 +20,15 @@ stack = &100
 GUARD stack
 GUARD screenStart
 
+maxObjects = 8
+
 ORG &70
+
+.hitFlags SKIP maxObjects
+
+ORG &78
+
+.theObjectNum SKIP 1 ; so can see which object is hit
 
 .frames SKIP 1 ; used for poor man's randomizing
 
@@ -58,13 +66,13 @@ ORG &70
 
 objectSize = theObjectEnd - theObjectStart
 
-ORG &1800 ; could start at 1100 for loads of extra space!
+ORG &1100 ; could start at 1100 for loads of extra space!
 
 .start:
     jmp main
 
 .getRandom:
-    inc frames
+    ;inc frames
     inc frames
     ldx frames
     lda randomBytes,x
@@ -80,6 +88,20 @@ ORG &1800 ; could start at 1100 for loads of extra space!
     bne loop
 .spin:
     jmp spin }
+
+.printHexA: {
+    pha : lda #'[' : jsr osasci : pla
+    pha
+    and #&f0 : lsr a : lsr a : lsr a : lsr a : tax
+    lda digits,x
+    jsr osasci
+    pla
+    and #&f : tax
+    lda digits,x
+    jsr osasci
+    pha : lda #']' : jsr osasci : pla
+    rts
+.digits EQUS "0123456789abcdef" }
 
 ;;;----------------------------------------------------------------------
 ;;; object focus/save
@@ -107,17 +129,33 @@ ORG &1800 ; could start at 1100 for loads of extra space!
 ;;;----------------------------------------------------------------------
 ;;; screen blitting
 
-maxPreparedObjects = 360
+maxPreparedObjects = 240 ;360
 
-;;; template for 8-byte generated code segments to perform screen-eor-write
+;;; template for 16-byte generated code segments to perform screen-eor-write
+;;; and collision detection
 ;;; op-codes for lda/eor/sta are fixed; generation fills the other 5 bytes
 .blitCodeStart:
-FOR n, 1, maxPreparedObjects
-    lda &ffff
-    eor #&ff
-    sta &ffff
-NEXT
+FOR n, 1, maxPreparedObjects ; | size | time (cycles)
+    lda &ffff ;ScreenAddr(1,2) |  3   |  4us
+    eor #&ff  ;DataByte(4)     |  2   |  2us
+    sta &ffff ;ScreenAddr(6,7) |  3   |  4us
+    tax ;                      |  1   |  2us
+    lda hitTableY,x ;          |  3   |  4us
+    beq noHit ;                |  2   |  3us (noHit-taken), 2us(hit-not)
+    stx &ff   ;HitFlag(15)     |  2   |  3us (hit)
+    .noHit
+NEXT ; -------------------------------------
+;                              | 16   | 19us (noHit), 21(hit)
 .blitCodeEnd:
+    rts
+
+.genCodeForScreenEor: ; byte in Acc
+    ldy #4 : sta (ptr),y
+    lda theA   : ldy #1 : sta (ptr),y : ldy #6 : sta (ptr),y
+    lda theA+1 : ldy #2 : sta (ptr),y : ldy #7 : sta (ptr),y
+    lda #hitFlags : clc : adc theObjectNum : ldy #15 : sta (ptr),y
+    lda ptr : clc : adc #16 : sta ptr
+    lda ptr+1     : adc #0 : sta ptr+1
     rts
 
 .resetDataPrepPtr:
@@ -136,14 +174,6 @@ NEXT
     jmp writeMessageAndSpin
 .msg EQUS "Blit overflow.", 13, 0 }
 
-.genCodeForScreenEor:
-    ldy #4 : sta (ptr),y
-    lda theA   : ldy #1 : sta (ptr),y : ldy #6 : sta (ptr),y
-    lda theA+1 : ldy #2 : sta (ptr),y : ldy #7 : sta (ptr),y
-    lda ptr : clc : adc #8 : sta ptr
-    lda ptr+1     : adc #0 : sta ptr+1
-    rts
-
 ;;; run the generated code
 .blitScreen:
     lda rtsTemplate : ldy #0 : sta (ptr),y ; finalize with rts
@@ -159,12 +189,15 @@ NEXT
     ;jsr drawGrid
     jsr initKeyVars
     lda #0 : sta frames
+    jsr initHitFlags
     jsr initObjectList
     jsr initObjects
 
     jsr initialDraw
     jsr syncDelay
     jsr blitScreen
+
+    jsr checkIfHit
 
     sei
 .loop:
@@ -178,7 +211,7 @@ NEXT
     ;lda #7 : sta ula ; black
 
     ;lda #3 : sta ula ; blue
-    jsr syncDelay ; TODO : explore half speed
+    ;jsr syncDelay ; TODO : explore half speed
     jsr syncDelay ; TODO : explore half speed
     lda #7 : sta ula ; black
 
@@ -186,12 +219,44 @@ NEXT
     jsr blitScreen
     lda #7 : sta ula ; black
 
+    jsr checkIfHit
+
     jmp loop
 .escaped:
     lda #LO(msg) : sta mesPtr
     lda #HI(msg) : sta mesPtr+1
     jmp writeMessageAndSpin
 .msg EQUS "Escape pressed.", 13, 0
+    }
+
+;;;----------------------------------------------------------------------
+;;; collision detection
+
+.initHitFlags: {
+    lda #0
+    ldx #0
+.loop:
+    sta hitFlags,x
+    inx
+    cpx #maxObjects
+    bne loop
+    rts }
+
+.checkIfHit: {
+    ldx #0
+.loop:
+    lda hitFlags,x : bne isHit
+    inx
+    cpx #maxObjects
+    bne loop
+    rts
+.isHit:
+    txa
+    jsr printHexA
+    lda #LO(msg) : sta mesPtr
+    lda #HI(msg) : sta mesPtr+1
+    jmp writeMessageAndSpin
+.msg EQUS " Object Hit.", 13, 0
     }
 
 ;;;----------------------------------------------------------------------
@@ -347,8 +412,6 @@ NEXT
 ;;;----------------------------------------------------------------------
 ;;; object list
 
-maxObjects = 8
-
 .objectsSpace:
 FOR i, 0, maxObjects-1
     SKIP objectSize
@@ -379,48 +442,60 @@ NEXT
 ;;; object creation
 
 .initObjects:
-    ;jsr initBlock
-    ;jsr initShield
+    jsr initBullet
     jsr initSmallMeteor
-    jsr initSmallMeteor
-    jsr initSmallMeteor
-    jsr initMediumMeteor
-    jsr initMediumMeteor
     jsr initMediumMeteor
     rts
 
-.initBlock:
+.initBullet:
     jsr allocateObject
-    lda #LO(block9x13) : sta theSpriteData
-    lda #HI(block9x13) : sta theSpriteData+1
-    jsr randomizePos
-    jsr randomizeMoveDirection
-    jmp saveObject
-
-.initShield:
-    jsr allocateObject
-    lda #LO(shield5x9) : sta theSpriteData
-    lda #HI(shield5x9) : sta theSpriteData+1
-    jsr randomizePos
-    jsr randomizeMoveDirection
+    lda #LO(bullet3x3red) : sta theSpriteData
+    lda #HI(bullet3x3red) : sta theSpriteData+1
+    ldx #27: ldy #19 : jsr setPosXY
+    jsr arrowControlledWithRepeat
     jmp saveObject
 
 .initSmallMeteor:
     jsr allocateObject
     lda #LO(smallMeteor) : sta theSpriteData
     lda #HI(smallMeteor) : sta theSpriteData+1
-    jsr randomizePos
-    jsr randomizeMoveDirection
+    ;jsr randomizePos
+    ;jsr randomizeMoveDirection
+    ldx #20: ldy #20 : jsr setPosXY
+    jsr stationary
     jmp saveObject
 
 .initMediumMeteor:
     jsr allocateObject
     lda #LO(mediumMeteor) : sta theSpriteData
     lda #HI(mediumMeteor) : sta theSpriteData+1
-    jsr randomizePos
-    jsr randomizeMoveDirection
+    ldx #24: ldy #20 : jsr setPosXY
+    jsr stationary
     jmp saveObject
 
+
+.arrowControlled:
+    lda #LO(onArrow) : sta theBehaviour
+    lda #HI(onArrow) : sta theBehaviour+1
+    rts
+
+.arrowControlledWithRepeat:
+    lda #LO(onArrowWithRepeat) : sta theBehaviour
+    lda #HI(onArrowWithRepeat) : sta theBehaviour+1
+    rts
+
+.stationary: {
+    lda #LO(behav) : sta theBehaviour
+    lda #HI(behav) : sta theBehaviour+1
+.behav:
+    rts }
+
+.setPosXY:
+    txa : sta theCX
+    tya : sta theCY
+    lda #0 : sta theFX : sta theFY
+    jsr calculateAfromXY
+    rts
 
 .randomizePos:
     jsr getRandom : and #63 : sta theCX ; really should be %80
@@ -446,15 +521,6 @@ NEXT
 .DDR: jsr down1 : jsr down1 : jsr right1 : rts
 }
 
-;; .move1:
-;;     jsr right1 : jsr up1 : jsr up1
-;;     rts
-;; .move2:
-;;     jsr right1 : jsr right1 : jsr down1
-;;     rts
-;; .move3:
-;;     jsr left1 : jsr down1 : jsr down1
-;;     rts
 ;; .move4:
 ;;     { lda keyTab : beq no : lda lastKeyTab : bne no : jmp randomizePos : .no }
 ;;     ;{ lda keyTab : beq no : jmp randomizePos : .no }
@@ -468,10 +534,11 @@ NEXT
 .initialDraw: {
     jsr resetDataPrepPtr
     ldx #0
+    stx theObjectNum
 .loop:
     lda objectRefs,x : sta theObj
     lda objectRefs+1,x : sta theObj+1
-    txa : pha
+    txa : pha ; TODO: better: reinstate x from theObjectNum
     jsr focusObject
     jsr plotObjectStrips
     pla : tax
@@ -479,14 +546,21 @@ NEXT
     txa : lsr a : cmp numberObjects : bne loop
     rts }
 
+;;; TODO
+;;; Need to think about the order or erase/re-plot...
+;;; to allow the collision detection to deterine which rock is hit
+;;; Maybe the erase/re-plot needs to be interleaved
+;;; Maybe dont want collision detection when erasing
+;;; Maybe need different hit tables (Y / R) for diff objects
 .redraw: {
     jsr resetDataPrepPtr
-    ldx #0
+    ldx #0 : stx theObjectNum
 .loop:
     lda objectRefs,x : sta theObj
     lda objectRefs+1,x : sta theObj+1
     txa : pha
     jsr ed1
+    inc theObjectNum
     pla : tax
     inx : inx
     txa : lsr a : cmp numberObjects : bne loop
@@ -720,30 +794,56 @@ NEXT
 ;;;----------------------------------------------------------------------
 ;;; sprite data
 
-.shield5x7: { EQUB 5 : EQUW A, B
-.A: EQUW nothing : EQUB 7 : EQUW A0, A1, A2, A3
-.A0: EQUB &ff,&ff,&dd,&88,&dd,&ff,&ff
-.A1: EQUB &77,&77,&66,&44,&66,&77,&77
-.A2: EQUB &33,&33,&33,&22,&33,&33,&33
-.A3: EQUB &11,&11,&11,&11,&11,&11,&11
-.B: EQUW right4 : EQUB 7 : EQUW B0, B1, B2, B3
-.B0: EQUB &88,&88,&88,&88,&88,&88,&88
-.B1: EQUB &cc,&cc,&cc,&44,&cc,&cc,&cc
-.B2: EQUB &ee,&ee,&66,&22,&66,&ee,&ee
-.B3: EQUB &ff,&ff,&bb,&11,&bb,&ff,&ff
+.bullet3x3red: { EQUB 5 : EQUW A, B
+.A: EQUW nothing : EQUB 3 : EQUW A0, A1, A2, A3
+.A0: EQUB &04,&0e,&04
+.A1: EQUB &02,&07,&02
+.A2: EQUB &01,&03,&01
+.A3: EQUB &00,&01,&00
+.B: EQUW right4 : EQUB 3 : EQUW B0, B1, B2, B3
+.B0: EQUB &00,&00,&00
+.B1: EQUB &00,&00,&00
+.B2: EQUB &00,&08,&00
+.B3: EQUB &08,&0c,&08
 }
 
-.shield5x9: { EQUB 5 : EQUW A, B
+.shield5x7red: { EQUB 5 : EQUW A, B
+.A: EQUW nothing : EQUB 7 : EQUW A0, A1, A2, A3
+.A0: EQUB &0f,&0f,&0d,&08,&0d,&0f,&0f
+.A1: EQUB &07,&07,&06,&04,&06,&07,&07
+.A2: EQUB &03,&03,&03,&02,&03,&03,&03
+.A3: EQUB &01,&01,&01,&01,&01,&01,&01
+.B: EQUW right4 : EQUB 7 : EQUW B0, B1, B2, B3
+.B0: EQUB &08,&08,&08,&08,&08,&08,&08
+.B1: EQUB &0c,&0c,&0c,&04,&0c,&0c,&0c
+.B2: EQUB &0e,&0e,&06,&02,&06,&0e,&0e
+.B3: EQUB &0f,&0f,&0b,&01,&0b,&0f,&0f
+}
+
+.shield5x7yellow: { EQUB 5 : EQUW A, B
+.A: EQUW nothing : EQUB 7 : EQUW A0, A1, A2, A3
+.A0: EQUB &f0,&f0,&d0,&80,&d0,&f0,&f0
+.A1: EQUB &70,&70,&60,&40,&60,&70,&70
+.A2: EQUB &30,&30,&30,&20,&30,&30,&30
+.A3: EQUB &10,&10,&10,&10,&10,&10,&10
+.B: EQUW right4 : EQUB 7 : EQUW B0, B1, B2, B3
+.B0: EQUB &80,&80,&80,&80,&80,&80,&80
+.B1: EQUB &c0,&c0,&c0,&40,&c0,&c0,&c0
+.B2: EQUB &e0,&e0,&60,&20,&60,&e0,&e0
+.B3: EQUB &f0,&f0,&b0,&10,&b0,&f0,&f0
+}
+
+.shield5x9: { EQUB 5 : EQUW A, B ; red! like a bullet
 .A: EQUW nothing : EQUB 9 : EQUW A0, A1, A2, A3
-.A0: EQUB &ff,&ff,&ff,&dd,&88,&dd,&ff,&ff,&ff
-.A1: EQUB &77,&77,&77,&66,&44,&66,&77,&77,&77
-.A2: EQUB &33,&33,&33,&33,&22,&33,&33,&33,&33
-.A3: EQUB &11,&11,&11,&11,&11,&11,&11,&11,&11
+.A0: EQUB &0f,&0f,&0f,&0d,&08,&0d,&0f,&0f,&0f
+.A1: EQUB &07,&07,&07,&06,&04,&06,&07,&07,&07
+.A2: EQUB &03,&03,&03,&03,&02,&03,&03,&03,&03
+.A3: EQUB &01,&01,&01,&01,&01,&01,&01,&01,&01
 .B: EQUW right4 : EQUB 9 : EQUW B0, B1, B2, B3
-.B0: EQUB &88,&88,&88,&88,&88,&88,&88,&88,&88
-.B1: EQUB &cc,&cc,&cc,&cc,&44,&cc,&cc,&cc,&cc
-.B2: EQUB &ee,&ee,&ee,&66,&22,&66,&ee,&ee,&ee
-.B3: EQUB &ff,&ff,&ff,&bb,&11,&bb,&ff,&ff,&ff
+.B0: EQUB &08,&08,&08,&08,&08,&08,&08,&08,&08
+.B1: EQUB &0c,&0c,&0c,&0c,&04,&0c,&0c,&0c,&0c
+.B2: EQUB &0e,&0e,&0e,&06,&02,&06,&0e,&0e,&0e
+.B3: EQUB &0f,&0f,&0f,&0b,&01,&0b,&0f,&0f,&0f
 }
 
 .block9x13: { EQUB 7 : EQUW A, B, C
@@ -829,6 +929,28 @@ EQUB &1a,&c0,&ce,&41,&cc,&26,&13,&b8,&64,&c0,&77,&42,&00,&9f,&63,&e2
 EQUB &70,&3b,&a5,&0d,&f2,&13,&e8,&72,&9b,&e0,&ad,&7e,&aa,&8e,&d0,&f5
 .randomBytesEnd:
 ASSERT ((randomBytesEnd-randomBytes) = 256)
+
+x = 1
+ALIGN &100
+.hitTableY: ; if one of the 4 pixels is yellow
+    EQUB 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
+    EQUB x,0,x,0,x,0,x,0,x,0,x,0,x,0,x,0
+    EQUB x,x,0,0,x,x,0,0,x,x,0,0,x,x,0,0
+    EQUB x,x,x,0,x,x,x,0,x,x,x,0,x,x,x,0
+    EQUB x,x,x,x,0,0,0,0,x,x,x,x,0,0,0,0
+    EQUB x,x,x,x,x,0,x,0,x,x,x,x,x,0,x,0
+    EQUB x,x,x,x,x,x,0,0,x,x,x,x,x,x,0,0
+    EQUB x,x,x,x,x,x,x,0,x,x,x,x,x,x,x,0
+    EQUB x,x,x,x,x,x,x,x,0,0,0,0,0,0,0,0
+    EQUB x,x,x,x,x,x,x,x,x,0,x,0,x,0,x,0
+    EQUB x,x,x,x,x,x,x,x,x,x,0,0,x,x,0,0
+    EQUB x,x,x,x,x,x,x,x,x,x,x,0,x,x,x,0
+    EQUB x,x,x,x,x,x,x,x,x,x,x,x,0,0,0,0
+    EQUB x,x,x,x,x,x,x,x,x,x,x,x,x,0,x,0
+    EQUB x,x,x,x,x,x,x,x,x,x,x,x,x,x,0,0
+    EQUB x,x,x,x,x,x,x,x,x,x,x,x,x,x,x,0
+.hitTableYEnd:
+ASSERT ((hitTableYEnd-hitTableY) = 256)
 
 .end:
 SAVE "Code", start, end
