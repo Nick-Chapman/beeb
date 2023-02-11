@@ -3,6 +3,12 @@ osasci = &ffe3
 oswrch = &ffee
 osbyte = &fff4
 
+screenStart = &3000
+screenEnd = &8000
+stack = &100
+
+GUARD &80 ; keep an eye on zeropage space usage
+GUARD stack
 ORG &70
 
 .theA SKIP 2
@@ -15,6 +21,8 @@ ORG &70
 .eraseRunPtr SKIP 2
 .eraseSwitcher SKIP 2
 
+GUARD &2100 ; keep an eye on overall code size
+GUARD screenStart
 ORG &1900
 
 .start:
@@ -23,21 +31,22 @@ ORG &1900
 ;----------------------------------------------------------------------
 ; main loop
 
-.examplePos SKIP 1 ; for first example drive
-
 .main: {
-    lda #0 : sta examplePos
+    sei
     jsr setupMachine
     jsr eraseInit
 .loop:
+    ;lda #3 : sta ula ; blue (prepare time)
     jsr prepareScene
-
-    ;lda #3 : sta ula ; blue
-    jsr syncDelay
+    ;jsr prepareScene ; idempoent
+    jsr updateScene
     lda #7 : sta ula ; black
 
-    ;lda #2 : sta ula ; magenta
+    jsr syncDelay
+
+    lda #2 : sta ula ; magenta (shows we missed vblank)
     jsr blitScene
+    jsr blitScene ; idempoent ; magenta will show 50% vlank used
     lda #7 : sta ula ; black
 
     jsr eraseFlip
@@ -48,6 +57,12 @@ ORG &1900
     jsr eraseRun
     jsr overwriteRun
     jsr xorplotRun
+    rts
+
+.examplePos SKIP 1 ; for first example drive
+
+.updateScene:
+    inc examplePos
     rts
 
 .prepareScene:
@@ -69,7 +84,6 @@ ORG &1900
     lda #&ff : jsr xorplotGen : jsr eraseGen
     dex
     bne loop }
-    inc examplePos
     rts
 
 ;----------------------------------------------------------------------
@@ -133,7 +147,7 @@ ORG &1900
     lda #&0 ;50 ; yellow for dev
     jmp (eraseRunPtr)
 
-eraseNumberBlocks = 50
+eraseNumberBlocks = 100
 macro eraseTemplate
     sta SPLAT_TO_CRASH ; SCREEN-ADDRESS(1,2)
 endmacro
