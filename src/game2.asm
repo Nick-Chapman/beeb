@@ -9,6 +9,7 @@ ORG &70
 .mesPtr SKIP 2
 
 .overwritePtr SKIP 2
+.xorplotPtr SKIP 2
 
 .erasePtr SKIP 2
 .eraseRunPtr SKIP 2
@@ -46,14 +47,18 @@ ORG &1900
 .blitScene:
     jsr eraseRun
     jsr overwriteRun
+    jsr xorplotRun
     rts
 
 .prepareScene:
     jsr overwriteReInit
-    ;; red bar before
+    jsr xorplotReInit
+    ;; two fixed in place bars
     lda #&33 : sta theA : lda #&40 : sta theA+1
-    lda #&0f : jsr overwriteGen : jsr eraseGen
-    ;; cyan block
+    lda #&f0 : jsr overwriteGen : jsr eraseGen ; yellow
+    lda #&53 : sta theA : lda #&40 : sta theA+1
+    lda #&0f : jsr overwriteGen : jsr eraseGen ; red
+    ;; moving cyan block
     ldx #32
     jsr eraseGen
 .SPLAT_TO_CRASH:
@@ -61,12 +66,9 @@ ORG &1900
     txa
     clc : adc examplePos
     sta theA : lda #&40 : sta theA+1
-    lda #&ff : jsr overwriteGen : jsr eraseGen
+    lda #&ff : jsr xorplotGen : jsr eraseGen
     dex
     bne loop }
-    ;; red bar after
-    lda #&53 : sta theA : lda #&40 : sta theA+1
-    lda #&0f : jsr overwriteGen : jsr eraseGen
     inc examplePos
     rts
 
@@ -246,6 +248,55 @@ FOR i, 1, overwriteNumberBlocks-1 : overwriteTemplate : NEXT
 .overwriteReInit:
     lda #LO(overwriteSpaceEnd) : sta overwritePtr
     lda #HI(overwriteSpaceEnd) : sta overwritePtr+1
+    rts
+
+;----------------------------------------------------------------------
+; xorplot (WIP)
+
+.xorplotRun:
+    jmp (xorplotPtr)
+
+xorplotNumberBlocks = 50
+macro xorplotTemplate
+    lda SPLAT_TO_CRASH ; SCREEN-ADDRESS(1,2)
+    eor #&ff           ; DATA-BYTE(4)
+    sta SPLAT_TO_CRASH ; SCREEN-ADDRESS(6,7)
+endmacro
+
+.xorplotSpace:
+xorplotTemplate ; one copy for size
+xorplotBlockSize = *-xorplotSpace
+FOR i, 1, xorplotNumberBlocks-1 : xorplotTemplate : NEXT
+.xorplotSpaceEnd:
+    rts
+
+.xorplotGen: ; byte to xorplot in ACC
+    {sta DB+1 ; save byte to xorplot until after the ptr decrement
+    ;; decrement ptr one block
+    lda xorplotPtr : sec : sbc #xorplotBlockSize : sta xorplotPtr
+    { bcs noHiDec : dec xorplotPtr+1 : .noHiDec }
+    ;; check we are within the space
+    jsr xorplotSpaceCheck
+    ;; fill in the generated code
+    .DB}: lda #0 : ldy #4 : sta (xorplotPtr),y
+    lda theA     : ldy #1 : sta (xorplotPtr),y : ldy #6 : sta (xorplotPtr),y
+    lda theA+1   : ldy #2 : sta (xorplotPtr),y : ldy #7 : sta (xorplotPtr),y
+    rts
+
+.xorplotSpaceCheck: {
+    lda xorplotPtr+1 : cmp #HI(xorplotSpace) : bcc fail : bne ok
+    lda xorplotPtr   : cmp #LO(xorplotSpace) : bcc fail
+.ok:
+    rts
+.fail:
+    lda #LO(msg) : sta mesPtr
+    lda #HI(msg) : sta mesPtr+1
+    jmp printMessageAndSpin
+.msg EQUS "Xorplot Overflow", 13, 0 }
+
+.xorplotReInit:
+    lda #LO(xorplotSpaceEnd) : sta xorplotPtr
+    lda #HI(xorplotSpaceEnd) : sta xorplotPtr+1
     rts
 
 ;----------------------------------------------------------------------
