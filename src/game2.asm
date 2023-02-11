@@ -7,11 +7,12 @@ ORG &70
 
 .theA SKIP 2
 .mesPtr SKIP 2
-.eraseRunner SKIP 2
-.eraseCodeStart SKIP 2
-.eraseSpaceEnd SKIP 2
-.ptrE SKIP 2
-.ptrP SKIP 2
+
+.overwritePtr SKIP 2
+
+.erasePtr SKIP 2
+.eraseRunPtr SKIP 2
+.eraseSwitcher SKIP 2
 
 ORG &1900
 
@@ -26,183 +27,48 @@ ORG &1900
 .main: {
     lda #0 : sta examplePos
     jsr setupMachine
-    jsr initErase
-    jsr initPlot
+    jsr eraseInit
 .loop:
-
-    lda #2 : sta ula ; magenta
-    jsr prepare
-    inc examplePos
-    lda #7 : sta ula ; black
+    jsr prepareScene
 
     ;lda #3 : sta ula ; blue
     jsr syncDelay
     lda #7 : sta ula ; black
 
-    lda #4 : sta ula ; yellow
-    jsr runErase
-    jsr runPlot
+    ;lda #2 : sta ula ; magenta
+    jsr blitScene
     lda #7 : sta ula ; black
 
+    jsr eraseFlip
     jmp loop
     rts }
 
-.prepare:
-    lda examplePos : sta theA : lda #&40 : sta theA+1
-    lda #&ac : jsr genPlot : jsr genErase ; cyan/red/yellow/black
-    lda examplePos : sta theA : lda #&60 : sta theA+1
-    lda #&0e : jsr genPlot : jsr genErase ; cyan/red/yellow/black
+.blitScene:
+    jsr eraseRun
+    jsr overwriteRun
     rts
 
-;----------------------------------------------------------------------
-; dual-space erase
-
-.initErase:
-    jmp switchEraseA
-
-numberEraseBlocks = 50
-.eraseSpaceA:
-FOR i, 1, numberEraseBlocks
-    sta &BEEF ; SCREEN-ADDRESS(1,2)
-NEXT
-.eraseSpaceA_end:
+.prepareScene:
+    jsr overwriteReInit
+    ;; red bar before
+    lda #&33 : sta theA : lda #&40 : sta theA+1
+    lda #&0f : jsr overwriteGen : jsr eraseGen
+    ;; cyan block
+    ldx #32
+    jsr eraseGen
+.SPLAT_TO_CRASH:
+{ .loop:
+    txa
+    clc : adc examplePos
+    sta theA : lda #&40 : sta theA+1
+    lda #&ff : jsr overwriteGen : jsr eraseGen
+    dex
+    bne loop }
+    ;; red bar after
+    lda #&53 : sta theA : lda #&40 : sta theA+1
+    lda #&0f : jsr overwriteGen : jsr eraseGen
+    inc examplePos
     rts
-
-.eraseSpaceB:
-FOR i, 1, numberEraseBlocks
-    sta &BEEF ; SCREEN-ADDRESS(1,2)
-NEXT
-.eraseSpaceB_end:
-    rts
-
-.genErase:
-    jsr checkSpaceErase ; dev-time-debug
-    ;; 1,2 are offsets into "sta &BEEF", 3 is size
-    lda theA   : ldy #1 : sta (ptrE),y
-    lda theA+1 : ldy #2 : sta (ptrE),y
-    lda ptrE : clc : adc #3 : sta ptrE
-    bcs hi : rts : .hi : inc ptrE+1
-    rts
-
-.runErase: {
-    ;; Finalize the generated code with an "rts" at "ptrE"...
-    ;; First copy "ptr" into 3 places in the code. (marked BEEF)
-    lda ptrE   : sta A1+1 : sta A2+1 : sta A3+1
-    lda ptrE+1 : sta A1+2 : sta A2+2 : sta A3+2
-    ;; Save the byte we are about to overwrite.
-    .A1 : lda &BEEF
-    sta SavedByte+1
-    ;; Overwrite byte with an "rts" opcode.
-    lda Rts
-    .A2 : sta &BEEF
-    ;; Dispatch to the generated code.
-    lda #0
-    jsr dispatchEraseRunner
-    ;; Reinstate the saved byte.
-    .SavedByte : lda #0
-    .A3 : sta &BEEF
-    ;; Return
-    .Rts : rts }
-
-.dispatchEraseRunner:
-    jmp (eraseRunner)
-
-.eraseRunnerA:
-    ;; Run the finalized code (in A)
-    jsr eraseSpaceA
-.switchEraseA:
-    ;; Next gen in A; next run in B
-    lda #LO(eraseSpaceA) : sta ptrE
-    lda #HI(eraseSpaceA) : sta ptrE+1
-    lda #LO(eraseSpaceA_end) : sta eraseSpaceEnd
-    lda #HI(eraseSpaceA_end) : sta eraseSpaceEnd+1
-    lda #LO(eraseRunnerB) : sta eraseRunner
-    lda #HI(eraseRunnerB) : sta eraseRunner+1
-    rts
-
-.eraseRunnerB:
-    ;; Run the finalized code (in B)
-    jsr eraseSpaceB
-.switchEraseB:
-    ;; Next gen in B; next run in A
-    lda #LO(eraseSpaceB) : sta ptrE
-    lda #HI(eraseSpaceB) : sta ptrE+1
-    lda #LO(eraseSpaceB_end) : sta eraseSpaceEnd
-    lda #HI(eraseSpaceB_end) : sta eraseSpaceEnd+1
-    lda #LO(eraseRunnerA) : sta eraseRunner
-    lda #HI(eraseRunnerA) : sta eraseRunner+1
-    rts
-
-.checkSpaceErase: {
-    lda ptrE+1 : cmp eraseSpaceEnd+1 : bcc ok : bne fail
-    lda ptrE   : cmp eraseSpaceEnd   : bcs fail
-.ok:
-    rts
-.fail:
-    lda #LO(msg) : sta mesPtr
-    lda #HI(msg) : sta mesPtr+1
-    jmp writeMessageAndSpin
-.msg EQUS "Erase Overflow", 13, 0 }
-
-;----------------------------------------------------------------------
-; plot
-
-.initPlot:
-    lda #LO(plotSpace) : sta ptrP
-    lda #HI(plotSpace) : sta ptrP+1
-    rts
-
-numberPlotBlocks = 50
-.plotSpace:
-FOR i, 1, numberPlotBlocks
-    lda #0
-    sta &BEEF ; SCREEN-ADDRESS(3,4)
-    ;; size=5
-NEXT
-.plotSpace_end:
-    rts
-
-.genPlot: ; data byte to plot in A
-    sta DB+1
-    jsr checkSpacePlot ; dev-time-debug
-    .DB : lda #0 : ldy #1 : sta (ptrP),y
-    lda theA     : ldy #3 : sta (ptrP),y
-    lda theA+1   : ldy #4 : sta (ptrP),y
-    lda ptrP : clc : adc #5 : sta ptrP
-    { bcs hi : rts : .hi } : inc ptrP+1
-    rts
-
-.runPlot:
-    ;; Finalize the generated code with an "rts" at "ptrP"...
-    ;; First copy "ptr" into 3 places in the code. (marked BEEF)
-    lda ptrP   : sta A1+1 : sta A2+1 : sta A3+1
-    lda ptrP+1 : sta A1+2 : sta A2+2 : sta A3+2
-    ;; Can reset the generation-pointer now
-    jsr initPlot
-    ;; Save the byte we are about to overwrite.
-    .A1 : lda &BEEF
-    sta SavedByte+1
-    ;; Overwrite byte with an "rts" opcode.
-    lda Rts
-    .A2 : sta &BEEF
-    ;; Dispatch to the generated code.
-    jsr plotSpace
-    ;; Reinstate the saved byte.
-    .SavedByte : lda #0
-    .A3 : sta &BEEF
-    ;; Return
-    .Rts : rts
-
-.checkSpacePlot: {
-    lda ptrP+1 : cmp plotSpace_end+1 : bcc ok : bne fail
-    lda ptrP   : cmp plotSpace_end   : bcs fail
-.ok:
-    rts
-.fail:
-    lda #LO(msg) : sta mesPtr
-    lda #HI(msg) : sta mesPtr+1
-    jmp writeMessageAndSpin
-.msg EQUS "Plot Overflow", 13, 0 }
 
 ;----------------------------------------------------------------------
 ; misc
@@ -211,7 +77,7 @@ NEXT
     lda #19 : jsr osbyte
     rts
 
-.writeMessageAndSpin: {
+.printMessageAndSpin: {
     ldy #0
 .loop
     lda (mesPtr),y
@@ -258,5 +124,130 @@ NEXT
     lda #0 : jsr oswrch
     rts
 
+;----------------------------------------------------------------------
+; dual-space erase
+
+.eraseRun:
+    lda #&0 ;50 ; yellow for dev
+    jmp (eraseRunPtr)
+
+eraseNumberBlocks = 50
+macro eraseTemplate
+    sta SPLAT_TO_CRASH ; SCREEN-ADDRESS(1,2)
+endmacro
+
+.eraseSpaceA:
+eraseTemplate ; one copy for size
+eraseBlockSize = *-eraseSpaceA
+FOR i, 1, eraseNumberBlocks-1 : eraseTemplate : NEXT
+.eraseSpaceA_End:
+    rts
+.eraseSpaceB:
+FOR i, 1, eraseNumberBlocks : eraseTemplate : NEXT
+.eraseSpaceB_End:
+    rts
+
+.eraseGen:
+    ;; decrement ptr one block
+    lda erasePtr : sec : sbc #eraseBlockSize : sta erasePtr
+    { bcs noHiDec : dec erasePtr+1 : .noHiDec }
+    ;; check we are within the space
+    jsr eraseSpaceCheck
+    ;; fill in the generated code
+    lda theA     : ldy #1 : sta (erasePtr),y
+    lda theA+1   : ldy #2 : sta (erasePtr),y
+    rts
+
+.eraseSpaceCheck: {
+    lda erasePtr+1 : cmp eraseSpace+1 : bcc fail : bne ok
+    lda erasePtr   : cmp eraseSpace   : bcc fail
+.ok:
+    rts
+.fail:
+    lda #LO(msg) : sta mesPtr
+    lda #HI(msg) : sta mesPtr+1
+    jmp printMessageAndSpin
+.msg EQUS "Erase Overflow", 13, 0 }
+
+.eraseFlip:
+    jmp (eraseSwitcher)
+    rts
+
+.eraseSpace SKIP 2
+
+.eraseInit:
+    lda #LO(eraseSpaceB_End) : sta erasePtr
+    lda #HI(eraseSpaceB_End) : sta erasePtr+1
+.eraseSwitcherA:
+    lda erasePtr : sta eraseRunPtr
+    lda erasePtr+1 : sta eraseRunPtr+1
+    lda #LO(eraseSpaceA) : sta eraseSpace
+    lda #HI(eraseSpaceA) : sta eraseSpace+1
+    lda #LO(eraseSpaceA_End) : sta erasePtr
+    lda #HI(eraseSpaceA_End) : sta erasePtr+1
+    lda #LO(eraseSwitcherB) : sta eraseSwitcher
+    lda #HI(eraseSwitcherB) : sta eraseSwitcher+1
+    rts
+
+.eraseSwitcherB:
+    lda erasePtr : sta eraseRunPtr
+    lda erasePtr+1 : sta eraseRunPtr+1
+    lda #LO(eraseSpaceB) : sta eraseSpace
+    lda #HI(eraseSpaceB) : sta eraseSpace+1
+    lda #LO(eraseSpaceB_End) : sta erasePtr
+    lda #HI(eraseSpaceB_End) : sta erasePtr+1
+    lda #LO(eraseSwitcherA) : sta eraseSwitcher ; TODO: macro for 16bit cp
+    lda #HI(eraseSwitcherA) : sta eraseSwitcher+1
+    rts
+
+;----------------------------------------------------------------------
+; overwrite
+
+.overwriteRun:
+    jmp (overwritePtr)
+
+overwriteNumberBlocks = 50
+macro overwriteTemplate
+    lda #&ff ; DATA-BYTE(1)
+    sta SPLAT_TO_CRASH ; SCREEN-ADDRESS(3,4)
+endmacro
+
+.overwriteSpace:
+overwriteTemplate ; one copy for size
+overwriteBlockSize = *-overwriteSpace
+FOR i, 1, overwriteNumberBlocks-1 : overwriteTemplate : NEXT
+.overwriteSpaceEnd:
+    rts
+
+.overwriteGen: ; byte to overwrite in ACC
+    {sta DB+1 ; save byte to overwrite until after the ptr decrement
+    ;; decrement ptr one block
+    lda overwritePtr : sec : sbc #overwriteBlockSize : sta overwritePtr
+    { bcs noHiDec : dec overwritePtr+1 : .noHiDec }
+    ;; check we are within the space
+    jsr overwriteSpaceCheck
+    ;; fill in the generated code
+    .DB}: lda #0 : ldy #1 : sta (overwritePtr),y
+    lda theA     : ldy #3 : sta (overwritePtr),y
+    lda theA+1   : ldy #4 : sta (overwritePtr),y
+    rts
+
+.overwriteSpaceCheck: {
+    lda overwritePtr+1 : cmp #HI(overwriteSpace) : bcc fail : bne ok
+    lda overwritePtr   : cmp #LO(overwriteSpace) : bcc fail
+.ok:
+    rts
+.fail:
+    lda #LO(msg) : sta mesPtr
+    lda #HI(msg) : sta mesPtr+1
+    jmp printMessageAndSpin
+.msg EQUS "Overwrite Overflow", 13, 0 }
+
+.overwriteReInit:
+    lda #LO(overwriteSpaceEnd) : sta overwritePtr
+    lda #HI(overwriteSpaceEnd) : sta overwritePtr+1
+    rts
+
+;----------------------------------------------------------------------
 .end:
 SAVE "Code", start, end
