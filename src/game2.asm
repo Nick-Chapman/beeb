@@ -7,21 +7,26 @@ screenStart = &3000
 screenEnd = &8000
 stack = &100
 
-GUARD &80 ; keep an eye on zeropage space usage
+maxObjects = 8
+
+GUARD &90 ; keep an eye on zeropage space usage
 GUARD stack
 ORG &70
+
+.hitFlags SKIP maxObjects
 
 .theA SKIP 2
 .msgPtr SKIP 2
 
 .overwritePtr SKIP 2
 .xorplotPtr SKIP 2
+.hitplotPtr SKIP 2
 
 .erasePtr SKIP 2
 .eraseRunPtr SKIP 2
 .eraseSwitcher SKIP 2
 
-GUARD &2100 ; keep an eye on overall code size
+GUARD &2800 ; keep an eye on overall code size
 GUARD screenStart
 ORG &1900
 
@@ -35,6 +40,10 @@ macro copy16v A,B
     lda A+1 : sta B+1
 endmacro
 
+macro STOP N
+    lda #N : jsr stop
+endmacro
+
 .start:
     jmp main
 
@@ -45,6 +54,7 @@ endmacro
     sei
     jsr setupMachine
     jsr eraseInit
+    jsr initHitFlags
 .loop:
     ;lda #3 : sta ula ; blue (prepare time)
     jsr prepareScene
@@ -67,35 +77,74 @@ endmacro
     jsr eraseRun
     jsr overwriteRun
     jsr xorplotRun
+    jsr hitplotRun
     rts
 
 .examplePos SKIP 1 ; for first example drive
 
 .updateScene:
+    jsr checkHitFlags
     inc examplePos
     rts
 
 .prepareScene:
     jsr overwriteReInit
     jsr xorplotReInit
+    jsr hitplotReInit
     ;; two fixed in place bars
-    copy16i &4033, theA : lda #&f0 : jsr overwriteGen : jsr eraseGen ; yellow
-    copy16i &4053, theA : lda #&0f : jsr overwriteGen : jsr eraseGen ; red
+    copy16i &4033, theA : lda #&01 : jsr overwriteGen : jsr eraseGen ; red dot
+    copy16i &4053, theA : lda #&11 : jsr overwriteGen : jsr eraseGen ; cyn dot
+    copy16i &4073, theA : lda #&02 : jsr overwriteGen : jsr eraseGen ; red dot
     ;; moving cyan block
     ldx #32
     jsr eraseGen
-.SPLAT_TO_CRASH:
+.SPLAT
 { .loop:
     txa
     clc : adc examplePos
     sta theA : lda #&40 : sta theA+1
-    lda #&ff : jsr xorplotGen : jsr eraseGen
+    lda #&ee : jsr hitplotGen : jsr eraseGen
     dex
     bne loop }
     rts
 
 ;----------------------------------------------------------------------
-; misc
+; hit-flags
+
+.initHitFlags: {
+    lda #0
+    ldx #0
+.loop:
+    sta hitFlags,x
+    inx
+    cpx #maxObjects
+    bne loop
+    rts }
+
+.checkHitFlags: {
+    ldx #0
+.loop:
+    lda hitFlags,x : bne isHit
+    inx
+    cpx #maxObjects
+    bne loop
+    rts
+.isHit:
+    txa
+    jsr printHexA
+    copy16i msg, msgPtr
+    jmp printMessageAndSpin
+.msg EQUS "Object Hit.", 13, 0
+    }
+
+;----------------------------------------------------------------------
+; misc: stop, sync, print stuff
+
+.stop: { ; byte in Acc
+    jsr printHexA
+    copy16i msg, msgPtr
+    jmp printMessageAndSpin
+    .msg EQUS "Stop", 13, 0 }
 
 .syncDelay:
     lda #19 : jsr osbyte
@@ -111,6 +160,20 @@ endmacro
     bne loop
 .spin:
     jmp spin }
+
+.printHexA: {
+    pha : lda #'[' : jsr osasci : pla
+    pha
+    and #&f0 : lsr a : lsr a : lsr a : lsr a : tax
+    lda digits,x
+    jsr osasci
+    pla
+    and #&f : tax
+    lda digits,x
+    jsr osasci
+    pha : lda #']' : jsr osasci : pla
+    rts
+.digits EQUS "0123456789abcdef" }
 
 ;----------------------------------------------------------------------
 ; setupMachine
@@ -155,9 +218,9 @@ endmacro
     lda #&0 ;50 ; yellow for dev
     jmp (eraseRunPtr)
 
-eraseNumberBlocks = 100
+eraseNumberBlocks = 50
 macro eraseTemplate
-    sta SPLAT_TO_CRASH ; SCREEN-ADDRESS(1,2)
+    sta SPLAT ; SCREEN-ADDRESS(1,2)
 endmacro
 
 .eraseSpaceA:
@@ -223,7 +286,7 @@ FOR i, 1, eraseNumberBlocks : eraseTemplate : NEXT
 overwriteNumberBlocks = 50
 macro overwriteTemplate
     lda #&ff ; DATA-BYTE(1)
-    sta SPLAT_TO_CRASH ; SCREEN-ADDRESS(3,4)
+    sta SPLAT ; SCREEN-ADDRESS(3,4)
 endmacro
 
 .overwriteSpace:
@@ -261,16 +324,16 @@ FOR i, 1, overwriteNumberBlocks-1 : overwriteTemplate : NEXT
     rts
 
 ;----------------------------------------------------------------------
-; xorplot (WIP)
+; xorplot
 
 .xorplotRun:
     jmp (xorplotPtr)
 
 xorplotNumberBlocks = 50
 macro xorplotTemplate
-    lda SPLAT_TO_CRASH ; SCREEN-ADDRESS(1,2)
-    eor #&ff           ; DATA-BYTE(4)
-    sta SPLAT_TO_CRASH ; SCREEN-ADDRESS(6,7)
+    lda SPLAT ; SCREEN-ADDRESS(1,2)
+    eor #&ff  ; DATA-BYTE(4)
+    sta SPLAT ; SCREEN-ADDRESS(6,7)
 endmacro
 
 .xorplotSpace:
@@ -306,6 +369,111 @@ FOR i, 1, xorplotNumberBlocks-1 : xorplotTemplate : NEXT
 .xorplotReInit:
     copy16i xorplotSpaceEnd, xorplotPtr
     rts
+
+;----------------------------------------------------------------------
+; hitplot -- detect collision (with red) and set ZP var
+
+.hitplotRun:
+    jmp (hitplotPtr)
+
+hitplotNumberBlocks = 50
+macro hitplotTemplate
+    lda SPLAT;ScreenAddr(1,2)  |  0  |  3 |  4us
+    tay;                       |  3  |  1 |
+    and #&ff ;DataByte(5)      |  4  |  2 |  2us
+    tax;                       |  6  |  1 |  2us
+    lda hitTableR,x;           |  7  |  3 |  4us
+    beq noHit;                 | 10  |  2 |  3us (noHit-taken), 2us(hit-not)
+    sta hitFlags;HitFlag(13)   | 12  |  2 |  3us (hit)
+    .noHit
+    tya;                       | 14  |  1 |
+    eor #&ff ;DataByte(16)     | 15  |  2 |  2us
+    sta SPLAT;ScreenAddr(18,19)| 17  |  3 |  4us
+endmacro;                      | 20
+
+.hitplotSpace:
+hitplotTemplate ; one copy for size
+hitplotBlockSize = *-hitplotSpace
+ASSERT hitplotBlockSize = 20
+FOR i, 1, hitplotNumberBlocks-1 : hitplotTemplate : NEXT
+.hitplotSpaceEnd:
+    rts
+
+.hitplotGen: ; byte to hitplot in ACC
+    {sta DB+1 ; save byte to hitplot until after the ptr decrement
+    ;; decrement ptr one block
+    lda hitplotPtr : sec : sbc #hitplotBlockSize : sta hitplotPtr
+    { bcs noHiDec : dec hitplotPtr+1 : .noHiDec }
+    ;; check we are within the space
+    jsr hitplotSpaceCheck
+    ;; fill in the generated code
+    .DB}: lda #0 : ldy #5 : sta (hitplotPtr),y : ldy #16 : sta (hitplotPtr),y
+    lda theA     : ldy #1 : sta (hitplotPtr),y : ldy #18 : sta (hitplotPtr),y
+    lda theA+1   : ldy #2 : sta (hitplotPtr),y : ldy #19 : sta (hitplotPtr),y
+    rts
+
+.hitplotSpaceCheck: {
+    lda hitplotPtr+1 : cmp #HI(hitplotSpace) : bcc fail : bne ok
+    lda hitplotPtr   : cmp #LO(hitplotSpace) : bcc fail
+.ok:
+    rts
+.fail:
+    copy16i msg, msgPtr
+    jmp printMessageAndSpin
+.msg EQUS "Hitplot Overflow", 13, 0 }
+
+.hitplotReInit:
+    copy16i hitplotSpaceEnd, hitplotPtr
+    rts
+
+ALIGN &100
+.nohitTable:
+FOR i, 1, 256 : EQUB 0 : NEXT
+.nohitTableEnd:
+ASSERT ((nohitTableEnd-nohitTable) = 256)
+
+x = 1
+ALIGN &100
+.hitTableY: ; if one of the 4 pixels is yellow
+    EQUB 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
+    EQUB x,0,x,0,x,0,x,0,x,0,x,0,x,0,x,0
+    EQUB x,x,0,0,x,x,0,0,x,x,0,0,x,x,0,0
+    EQUB x,x,x,0,x,x,x,0,x,x,x,0,x,x,x,0
+    EQUB x,x,x,x,0,0,0,0,x,x,x,x,0,0,0,0
+    EQUB x,x,x,x,x,0,x,0,x,x,x,x,x,0,x,0
+    EQUB x,x,x,x,x,x,0,0,x,x,x,x,x,x,0,0
+    EQUB x,x,x,x,x,x,x,0,x,x,x,x,x,x,x,0
+    EQUB x,x,x,x,x,x,x,x,0,0,0,0,0,0,0,0
+    EQUB x,x,x,x,x,x,x,x,x,0,x,0,x,0,x,0
+    EQUB x,x,x,x,x,x,x,x,x,x,0,0,x,x,0,0
+    EQUB x,x,x,x,x,x,x,x,x,x,x,0,x,x,x,0
+    EQUB x,x,x,x,x,x,x,x,x,x,x,x,0,0,0,0
+    EQUB x,x,x,x,x,x,x,x,x,x,x,x,x,0,x,0
+    EQUB x,x,x,x,x,x,x,x,x,x,x,x,x,x,0,0
+    EQUB x,x,x,x,x,x,x,x,x,x,x,x,x,x,x,0
+.hitTableYEnd:
+ASSERT ((hitTableYEnd-hitTableY) = 256)
+
+ALIGN &100
+.hitTableR: ; if one of the 4 pixels is red
+    EQUB 0,x,x,x,x,x,x,x,x,x,x,x,x,x,x,x
+    EQUB 0,0,x,x,x,x,x,x,x,x,x,x,x,x,x,x
+    EQUB 0,x,0,x,x,x,x,x,x,x,x,x,x,x,x,x
+    EQUB 0,0,0,0,x,x,x,x,x,x,x,x,x,x,x,x
+    EQUB 0,x,x,x,0,x,x,x,x,x,x,x,x,x,x,x
+    EQUB 0,0,x,x,0,0,x,x,x,x,x,x,x,x,x,x
+    EQUB 0,x,0,x,0,x,0,x,x,x,x,x,x,x,x,x
+    EQUB 0,0,0,0,0,0,0,0,x,x,x,x,x,x,x,x
+    EQUB 0,x,x,x,x,x,x,x,0,x,x,x,x,x,x,x
+    EQUB 0,0,x,x,x,x,x,x,0,0,x,x,x,x,x,x
+    EQUB 0,x,0,x,x,x,x,x,0,x,0,x,x,x,x,x
+    EQUB 0,0,0,0,x,x,x,x,0,0,0,0,x,x,x,x
+    EQUB 0,x,x,x,0,x,x,x,0,x,x,x,0,x,x,x
+    EQUB 0,0,x,x,0,0,x,x,0,0,x,x,0,0,x,x
+    EQUB 0,x,0,x,0,x,0,x,0,x,0,x,0,x,0,x
+    EQUB 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
+.hitTableREnd:
+ASSERT ((hitTableREnd-hitTableR) = 256)
 
 ;----------------------------------------------------------------------
 .end:
