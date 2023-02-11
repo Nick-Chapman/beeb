@@ -12,7 +12,7 @@ GUARD stack
 ORG &70
 
 .theA SKIP 2
-.mesPtr SKIP 2
+.msgPtr SKIP 2
 
 .overwritePtr SKIP 2
 .xorplotPtr SKIP 2
@@ -24,6 +24,16 @@ ORG &70
 GUARD &2100 ; keep an eye on overall code size
 GUARD screenStart
 ORG &1900
+
+macro copy16i I,V
+    lda #LO(I) : sta V
+    lda #HI(I) : sta V+1
+endmacro
+
+macro copy16v A,B
+    lda A : sta B
+    lda A+1 : sta B+1
+endmacro
 
 .start:
     jmp main
@@ -69,10 +79,8 @@ ORG &1900
     jsr overwriteReInit
     jsr xorplotReInit
     ;; two fixed in place bars
-    lda #&33 : sta theA : lda #&40 : sta theA+1
-    lda #&f0 : jsr overwriteGen : jsr eraseGen ; yellow
-    lda #&53 : sta theA : lda #&40 : sta theA+1
-    lda #&0f : jsr overwriteGen : jsr eraseGen ; red
+    copy16i &4033, theA : lda #&f0 : jsr overwriteGen : jsr eraseGen ; yellow
+    copy16i &4053, theA : lda #&0f : jsr overwriteGen : jsr eraseGen ; red
     ;; moving cyan block
     ldx #32
     jsr eraseGen
@@ -96,7 +104,7 @@ ORG &1900
 .printMessageAndSpin: {
     ldy #0
 .loop
-    lda (mesPtr),y
+    lda (msgPtr),y
     beq spin
     jsr osasci
     iny
@@ -180,40 +188,30 @@ FOR i, 1, eraseNumberBlocks : eraseTemplate : NEXT
 .ok:
     rts
 .fail:
-    lda #LO(msg) : sta mesPtr
-    lda #HI(msg) : sta mesPtr+1
+    copy16i msg, msgPtr
     jmp printMessageAndSpin
 .msg EQUS "Erase Overflow", 13, 0 }
 
 .eraseFlip:
     jmp (eraseSwitcher)
-    rts
+    rts ; todo: rm
 
 .eraseSpace SKIP 2
 
 .eraseInit:
-    lda #LO(eraseSpaceB_End) : sta erasePtr
-    lda #HI(eraseSpaceB_End) : sta erasePtr+1
+    copy16i eraseSpaceB_End, erasePtr
 .eraseSwitcherA:
-    lda erasePtr : sta eraseRunPtr
-    lda erasePtr+1 : sta eraseRunPtr+1
-    lda #LO(eraseSpaceA) : sta eraseSpace
-    lda #HI(eraseSpaceA) : sta eraseSpace+1
-    lda #LO(eraseSpaceA_End) : sta erasePtr
-    lda #HI(eraseSpaceA_End) : sta erasePtr+1
-    lda #LO(eraseSwitcherB) : sta eraseSwitcher
-    lda #HI(eraseSwitcherB) : sta eraseSwitcher+1
+    copy16v erasePtr, eraseRunPtr
+    copy16i eraseSpaceA, eraseSpace
+    copy16i eraseSpaceA_End, erasePtr
+    copy16i eraseSwitcherB, eraseSwitcher
     rts
 
 .eraseSwitcherB:
-    lda erasePtr : sta eraseRunPtr
-    lda erasePtr+1 : sta eraseRunPtr+1
-    lda #LO(eraseSpaceB) : sta eraseSpace
-    lda #HI(eraseSpaceB) : sta eraseSpace+1
-    lda #LO(eraseSpaceB_End) : sta erasePtr
-    lda #HI(eraseSpaceB_End) : sta erasePtr+1
-    lda #LO(eraseSwitcherA) : sta eraseSwitcher ; TODO: macro for 16bit cp
-    lda #HI(eraseSwitcherA) : sta eraseSwitcher+1
+    copy16v erasePtr, eraseRunPtr
+    copy16i eraseSpaceB, eraseSpace
+    copy16i eraseSpaceB_End, erasePtr
+    copy16i eraseSwitcherA, eraseSwitcher
     rts
 
 ;----------------------------------------------------------------------
@@ -254,14 +252,12 @@ FOR i, 1, overwriteNumberBlocks-1 : overwriteTemplate : NEXT
 .ok:
     rts
 .fail:
-    lda #LO(msg) : sta mesPtr
-    lda #HI(msg) : sta mesPtr+1
+    copy16i msg, msgPtr
     jmp printMessageAndSpin
 .msg EQUS "Overwrite Overflow", 13, 0 }
 
 .overwriteReInit:
-    lda #LO(overwriteSpaceEnd) : sta overwritePtr
-    lda #HI(overwriteSpaceEnd) : sta overwritePtr+1
+    copy16i overwriteSpaceEnd, overwritePtr
     rts
 
 ;----------------------------------------------------------------------
@@ -303,14 +299,12 @@ FOR i, 1, xorplotNumberBlocks-1 : xorplotTemplate : NEXT
 .ok:
     rts
 .fail:
-    lda #LO(msg) : sta mesPtr
-    lda #HI(msg) : sta mesPtr+1
+    copy16i msg, msgPtr
     jmp printMessageAndSpin
 .msg EQUS "Xorplot Overflow", 13, 0 }
 
 .xorplotReInit:
-    lda #LO(xorplotSpaceEnd) : sta xorplotPtr
-    lda #HI(xorplotSpaceEnd) : sta xorplotPtr+1
+    copy16i xorplotSpaceEnd, xorplotPtr
     rts
 
 ;----------------------------------------------------------------------

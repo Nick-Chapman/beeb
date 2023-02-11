@@ -2,6 +2,10 @@
 #top: run-bf
 top: build-all
 
+game2view: src/game2.asm
+	beebasm -v -i $< -do /dev/null -boot Code
+
+
 units = $(patsubst src/%.asm, %, $(wildcard src/*.asm))
 ssds = $(patsubst %, _build/%.ssd, $(units))
 
