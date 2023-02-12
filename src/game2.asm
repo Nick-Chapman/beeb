@@ -109,6 +109,8 @@ numBullets = 1
 .prepBullets: {
     lda #(numBullets-1) : sta bulletNum
 .loop:
+    ;; TODO: check if bullet was hit last-blit (and so red pixel is gone)
+    ;; TODO: and if so, kill the bullet
     jsr updateBullet
     jsr prepBullet
     dec bulletNum
@@ -147,7 +149,7 @@ numBullets = 1
 
 numRocks = 5
 .rockAlive:
-FOR i, 1, numRocks : EQUB 1 : NEXT
+FOR i, 1, numRocks : EQUB 1 : NEXT ; TODO: replace with explicit spawn
 ASSERT *-rockAlive = numRocks
 .rockPos :
 FOR i, 0, numRocks-1 : EQUB (i*50) : NEXT
@@ -481,25 +483,26 @@ ASSERT ((nohitTableEnd-nohitTable) = 256)
 ;----------------------------------------------------------------------
 ; hit tables
 
-x = 1
+H = 1
+o = 0
 ;ALIGN &100
-.hitTableR: ; if one of the 4 pixels is red
-    EQUB 0,x,x,x,x,x,x,x,x,x,x,x,x,x,x,x
-    EQUB 0,0,x,x,x,x,x,x,x,x,x,x,x,x,x,x
-    EQUB 0,x,0,x,x,x,x,x,x,x,x,x,x,x,x,x
-    EQUB 0,0,0,0,x,x,x,x,x,x,x,x,x,x,x,x
-    EQUB 0,x,x,x,0,x,x,x,x,x,x,x,x,x,x,x
-    EQUB 0,0,x,x,0,0,x,x,x,x,x,x,x,x,x,x
-    EQUB 0,x,0,x,0,x,0,x,x,x,x,x,x,x,x,x
-    EQUB 0,0,0,0,0,0,0,0,x,x,x,x,x,x,x,x
-    EQUB 0,x,x,x,x,x,x,x,0,x,x,x,x,x,x,x
-    EQUB 0,0,x,x,x,x,x,x,0,0,x,x,x,x,x,x
-    EQUB 0,x,0,x,x,x,x,x,0,x,0,x,x,x,x,x
-    EQUB 0,0,0,0,x,x,x,x,0,0,0,0,x,x,x,x
-    EQUB 0,x,x,x,0,x,x,x,0,x,x,x,0,x,x,x
-    EQUB 0,0,x,x,0,0,x,x,0,0,x,x,0,0,x,x
-    EQUB 0,x,0,x,0,x,0,x,0,x,0,x,0,x,0,x
-    EQUB 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
+.hitTableR: ; if one of the 4 pixels is red -- TODO: compute/gen
+    EQUB o,H,H,H,H,H,H,H,H,H,H,H,H,H,H,H
+    EQUB o,o,H,H,H,H,H,H,H,H,H,H,H,H,H,H
+    EQUB o,H,o,H,H,H,H,H,H,H,H,H,H,H,H,H
+    EQUB o,o,o,o,H,H,H,H,H,H,H,H,H,H,H,H
+    EQUB o,H,H,H,o,H,H,H,H,H,H,H,H,H,H,H
+    EQUB o,o,H,H,o,o,H,H,H,H,H,H,H,H,H,H
+    EQUB o,H,o,H,o,H,o,H,H,H,H,H,H,H,H,H
+    EQUB o,o,o,o,o,o,o,o,H,H,H,H,H,H,H,H
+    EQUB o,H,H,H,H,H,H,H,o,H,H,H,H,H,H,H
+    EQUB o,o,H,H,H,H,H,H,o,o,H,H,H,H,H,H
+    EQUB o,H,o,H,H,H,H,H,o,H,o,H,H,H,H,H
+    EQUB o,o,o,o,H,H,H,H,o,o,o,o,H,H,H,H
+    EQUB o,H,H,H,o,H,H,H,o,H,H,H,o,H,H,H
+    EQUB o,o,H,H,o,o,H,H,o,o,H,H,o,o,H,H
+    EQUB o,H,o,H,o,H,o,H,o,H,o,H,o,H,o,H
+    EQUB o,o,o,o,o,o,o,o,o,o,o,o,o,o,o,o
 .hitTableREnd:
 ASSERT ((hitTableREnd-hitTableR) = 256)
 
