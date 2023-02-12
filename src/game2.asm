@@ -15,6 +15,8 @@ ORG &70
 
 .badHit SKIP 1
 
+.scenePtr SKIP 2
+
 .theA SKIP 2
 .msgPtr SKIP 2
 
@@ -27,9 +29,9 @@ ORG &70
 
 .hitFlags SKIP maxObjects
 
-GUARD &2e00 ; keep an eye on overall code size
+;GUARD &2e00 ; keep an eye on overall code size
 GUARD screenStart
-ORG &1900
+ORG &1100
 
 macro copy16i I,V
     lda #LO(I) : sta V
@@ -57,12 +59,13 @@ endmacro
     jsr eraseInit
     jsr initHitFlags
     lda #0 : sta badHit
+    copy16i startScene, scenePtr
 .loop:
-    { lda badHit : beq noBadHit : STOP &44 : .noBadHit }
+    { lda badHit : beq noBadHit : STOP &11 : .noBadHit }
 
     ;lda #3 : sta ula ; blue (prepare time)
-    jsr prepScene
-    ;jsr prepScene ; idempoent
+    jsr prepare
+    ;jsr prepare ; NOT idempoent, because prep contains update
     lda #7 : sta ula ; black
 
     jsr syncDelay
@@ -86,16 +89,43 @@ endmacro
 ;----------------------------------------------------------------------
 ; update/prepare -- NEW with game logic
 
-.prepScene:
-    jsr prepInit
+.prepare:
+    ;; init
+    jsr overwriteReInit
+    jsr hitplotReInit
+    ;; scene
+    jmp (scenePtr)
+
+.startScene:
+    jsr spawnRocks
+    copy16i mainLevelScene, scenePtr
+    rts
+
+.mainLevelScene:
     jsr prepBullets
     jsr prepRocks
     rts
 
-.prepInit:
-    jsr overwriteReInit
-    jsr hitplotReInit
+.eliminateRock: {
+    dec numberRocksLeft
+    bne continue
+    copy16i levelClearScene, scenePtr
+.continue:
+    rts }
+
+.levelClearScene:
+    lda #25 : sta waitCount ; 1/2sec
+    copy16i waitAndRestartScene, scenePtr
     rts
+
+.waitAndRestartScene: {
+    dec waitCount
+    bne continue
+    copy16i startScene, scenePtr
+.continue:
+    rts }
+
+.waitCount: SKIP 1
 
 ;----------------------------------------------------------------------
 ; bullets
@@ -119,9 +149,9 @@ numBullets = 1
 
 .updateBullet: {
     ldx bulletNum
-    dec bulletTimer,x
     lda bulletTimer,x
-    bmi change
+    beq change
+    dec bulletTimer,x
     rts
 .change:
     lda bulletAlive,x
@@ -132,7 +162,7 @@ numBullets = 1
     rts
 .spawn:
     lda #1 : sta bulletAlive,x ; spawn
-    lda #100 : sta bulletTimer,x ; alive for 2s
+    lda #200 : sta bulletTimer,x ; alive for 4s
     jsr getRandom : sta bulletPos,x ; randomize position
     rts
 }
@@ -147,14 +177,23 @@ numBullets = 1
 ;----------------------------------------------------------------------
 ; rocks
 
-numRocks = 5
-.rockAlive:
-FOR i, 1, numRocks : EQUB 1 : NEXT ; TODO: replace with explicit spawn
-ASSERT *-rockAlive = numRocks
-.rockPos :
-FOR i, 0, numRocks-1 : EQUB (i*50) : NEXT
+numRocks = 7
+.rockAlive: SKIP numRocks
+.rockPos: SKIP numRocks
 ASSERT *-rockPos = numRocks
 .rockNum: SKIP 1
+
+.numberRocksLeft SKIP 1
+
+.spawnRocks: {
+    lda #numRocks : sta numberRocksLeft
+    ldx #(numRocks-1)
+.loop:
+    lda #1 : sta rockAlive,x
+    txa : asl a : asl a : asl a : asl a : asl a : sta rockPos,x
+    dex
+    bpl loop
+    rts }
 
 .prepRocks: {
     lda #(numRocks-1) : sta rockNum
@@ -165,15 +204,18 @@ ASSERT *-rockPos = numRocks
     bpl loop
     rts }
 
-.updateRock:
+.updateRock: {
     ldx rockNum
+    ;; first check if we got hit
+    lda hitFlags,x : beq notHit
+    lda #0 : sta hitFlags,x
+    lda #0 : sta rockAlive,x
+    jsr eliminateRock
+.notHit:
     inc rockPos,x
-    lda hitFlags,x : beq noHit
-    lda #0 : sta rockAlive,x ; explode
-.noHit:
-    rts
+    rts }
 
-sizeRock = 10 ; #bars
+sizeRock = 11 ; #bars
 .rockBarNum SKIP 1
 
 .prepRock: {
@@ -310,7 +352,7 @@ sizeRock = 10 ; #bars
     lda #&0 ;50 ; yellow for dev
     jmp (eraseRunPtr)
 
-eraseNumberBlocks = 100
+eraseNumberBlocks = 180
 macro eraseTemplate
     sta &BEEF ; SCREEN-ADDRESS(1,2)
 endmacro
@@ -376,7 +418,7 @@ SPLAT = screenEnd-1 ; dev; bug catch
 .overwriteRun:
     jmp (overwritePtr)
 
-overwriteNumberBlocks = 100
+overwriteNumberBlocks = 180
 macro overwriteTemplate
     lda #&ff ; DATA-BYTE(1)
     sta SPLAT ; SCREEN-ADDRESS(3,4)
@@ -422,7 +464,7 @@ FOR i, 1, overwriteNumberBlocks-1 : overwriteTemplate : NEXT
 .hitplotRun:
     jmp (hitplotPtr)
 
-hitplotNumberBlocks = 100
+hitplotNumberBlocks = 180
 macro hitplotTemplate
     lda SPLAT;ScreenAddr(1,2)  |  0  |  3 |  4us ; TODO update time calc
     tay;                       |  3  |  1 |

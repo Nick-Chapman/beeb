@@ -31,9 +31,10 @@ Eventual goal: write a graphics game.
 - cheap dual-space erase
 - cheap non-coliision plotting (intended for bullets)
 - mask/eor collion plotting (intended for rocks/saucer/player)
+- simple game logic: rocks and bullets
+- simple scene change: level start; detect level end; wait and restart
 
 ## next
-- simple game logic: rocks and bullets
 - post plot collision detection (intended for bullets)
 
 ## todo
