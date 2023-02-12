@@ -143,14 +143,14 @@ endmacro
 
 numBullets = 2
 .bulletAlive : SKIP numBullets
-.bulletTimer : SKIP numBullets
-.bulletPos : SKIP numBullets ; set when spawn
+.bulletTimer : SKIP numBullets ; until spawn
+.bulletPos : SKIP numBullets ; set on delayed-spawn
 .bulletNum: SKIP 1
 
 .delayedSpawnBullets: {
     ldx #(numBullets-1)
 .loop:
-    lda #50 : sta bulletTimer,x ; respawn in 1s
+    lda #100 : sta bulletTimer,x ; respawn in 2s
     jsr getRandom : sta bulletPos,x ; randomize position
     dex
     bpl loop
@@ -191,7 +191,7 @@ numBullets = 2
     ldx bulletNum
     lda bulletAlive,x : beq noplot
     lda bulletPos,x : sta theA : lda #&40 : sta theA+1 ; where
-    lda #&0f : jsr overwriteGen : jsr eraseGen ; red dot (which will hit)
+    lda #&0f : jsr overwriteGen : jsr eraseGen ; red bar
     .noplot : rts }
 
 .postBlitBulletCheck: {
@@ -208,14 +208,12 @@ numBullets = 2
     lda bulletAlive,x : beq ok
     lda bulletPos,x : sta theA : lda #&40 : sta theA+1 ; where
     ldy #0 : lda (theA),y
-    and #&33 ; TODO: mask the bullet shape
-    tax
-    ;;TODO: only consider as not-hit if still red for all bullet shape
-    lda hitTableR,x ;; TODO: so need different hit-table
-    bne ok ; still red
+    and #&ff ; mask the bullet shape
+    cmp #&0f ; all bits have to be red
+    beq ok ; still red
     ldx bulletNum
     lda #0 : sta bulletAlive,x ; die
-    lda #50 : sta bulletTimer,x ; respawn in 1s
+    lda #100 : sta bulletTimer,x ; respawn in 2s
 .ok
     rts }
 
@@ -225,7 +223,7 @@ numBullets = 2
 numRocks = 5
 .rockAlive: SKIP numRocks
 .rockPos: SKIP numRocks
-ASSERT *-rockPos = numRocks
+.rockPat: SKIP numRocks
 .rockNum: SKIP 1
 
 .numberRocksLeft SKIP 1
@@ -235,8 +233,11 @@ ASSERT *-rockPos = numRocks
     ldx #(numRocks-1)
 .loop:
     lda #1 : sta rockAlive,x
-    txa : asl a : asl a : asl a : asl a : asl a : sta rockPos,x
-    ;jsr getRandom : sta rockPos,x ; randomize position
+    jsr getRandom : sta rockPos,x ; randomize position
+    jsr getRandom : and #&3 : tay ; rand 0..3
+    lda #&11 ; shift -> 11, 22, 44, 88
+    {.L : cpy #3 : beq D : asl a : iny : jmp L : .D }
+    sta rockPat,x
     dex
     bpl loop
     rts }
@@ -252,7 +253,6 @@ ASSERT *-rockPos = numRocks
 
 .updateRock: {
     ldx rockNum
-    ;; first check if we got hit
     lda hitFlags,x : beq notHit
     lda #0 : sta hitFlags,x
     lda #0 : sta rockAlive,x
@@ -272,8 +272,7 @@ sizeRock = 11 ; #bars
 .loop:
     lda rockBarNum
     clc : adc rockPos,x : sta theA : lda #&40 : sta theA+1 ; where
-    ;; TODO: diff rocks on diff stripes
-    lda #&33 : jsr hitplotGen : jsr eraseGen ; cyan bar
+    lda rockPat,x : jsr hitplotGen : jsr eraseGen ; cyan bar
     dec rockBarNum
     bpl loop
 .noplot:
@@ -385,7 +384,7 @@ sizeRock = 11 ; #bars
 ; dual-space erase
 
 .eraseRun:
-    lda #&0 ;50 ; yellow for dev
+    lda #0
     jmp (eraseRunPtr)
 
 eraseNumberBlocks = 180
