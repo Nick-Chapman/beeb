@@ -33,8 +33,6 @@ Eventual goal: write a graphics game.
 - mask/eor collion plotting (intended for rocks/saucer/player)
 - simple game logic: rocks and bullets
 - simple scene change: level start; detect level end; wait and restart
-
-## next
 - post plot collision detection (intended for bullets)
 
 ## todo

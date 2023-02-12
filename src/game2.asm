@@ -16,6 +16,7 @@ ORG &70
 .badHit SKIP 1
 
 .scenePtr SKIP 2
+.postBlitPtr SKIP 2
 
 .theA SKIP 2
 .msgPtr SKIP 2
@@ -29,7 +30,6 @@ ORG &70
 
 .hitFlags SKIP maxObjects
 
-;GUARD &2e00 ; keep an eye on overall code size
 GUARD screenStart
 ORG &1100
 
@@ -60,6 +60,7 @@ endmacro
     jsr initHitFlags
     lda #0 : sta badHit
     copy16i startScene, scenePtr
+    copy16i nothingPostBlit, postBlitPtr
 .loop:
     { lda badHit : beq noBadHit : STOP &11 : .noBadHit }
 
@@ -75,6 +76,7 @@ endmacro
     jsr blitScene ; idempoent ; magenta will show 50% vlank used
     lda #7 : sta ula ; black
 
+    jsr postBlit
     jsr eraseFlip
     inc frames
     jmp loop
@@ -84,6 +86,12 @@ endmacro
     jsr eraseRun
     jsr overwriteRun
     jsr hitplotRun
+    rts
+
+.postBlit:
+    jmp (postBlitPtr)
+
+.nothingPostBlit:
     rts
 
 ;----------------------------------------------------------------------
@@ -98,12 +106,14 @@ endmacro
 
 .startScene:
     jsr spawnRocks
+    jsr delayedSpawnBullets
     copy16i mainLevelScene, scenePtr
     rts
 
 .mainLevelScene:
     jsr handleBullets
     jsr handleRocks
+    copy16i postBlitBulletCheck, postBlitPtr
     rts
 
 .eliminateRock: {
@@ -114,7 +124,8 @@ endmacro
     rts }
 
 .levelClearScene:
-    lda #25 : sta waitCount ; 1/2sec
+    jsr killAllBullets
+    lda #50 : sta waitCount ; 1sec
     copy16i waitAndRestartScene, scenePtr
     rts
 
@@ -130,17 +141,32 @@ endmacro
 ;----------------------------------------------------------------------
 ; bullets
 
-numBullets = 1
-.bulletAlive : SKIP numBullets ; dead
-.bulletTimer : SKIP numBullets ; come alive instantly; reset when die
+numBullets = 2
+.bulletAlive : SKIP numBullets
+.bulletTimer : SKIP numBullets
 .bulletPos : SKIP numBullets ; set when spawn
 .bulletNum: SKIP 1
+
+.delayedSpawnBullets: {
+    ldx #(numBullets-1)
+.loop:
+    lda #50 : sta bulletTimer,x ; respawn in 1s
+    jsr getRandom : sta bulletPos,x ; randomize position
+    dex
+    bpl loop
+    rts }
+
+.killAllBullets: {
+    ldx #(numBullets-1)
+.loop:
+    lda #0 : sta bulletAlive,x
+    dex
+    bpl loop
+    rts }
 
 .handleBullets: {
     lda #(numBullets-1) : sta bulletNum
 .loop:
-    ;; TODO: check if bullet was hit last-blit (and so red pixel is gone)
-    ;; TODO: and if so, kill the bullet
     jsr updateBullet
     jsr drawBullet
     dec bulletNum
@@ -149,35 +175,54 @@ numBullets = 1
 
 .updateBullet: {
     ldx bulletNum
-    lda bulletTimer,x
-    beq change
-    dec bulletTimer,x
-    rts
-.change:
     lda bulletAlive,x
-    beq spawn
-.die:
-    lda #0 : sta bulletAlive,x ; die
-    jsr getRandom : and #31 : sta bulletTimer,x ; respawn shortly
+    beq isDead
+    ;; isAlive - do nothing
     rts
-.spawn:
-    lda #1 : sta bulletAlive,x ; spawn
-    lda #200 : sta bulletTimer,x ; alive for 4s
-    jsr getRandom : sta bulletPos,x ; randomize position
+.isDead:
+    dec bulletTimer,x
+    bne stayDead
+    lda #1 : sta bulletAlive,x
+.stayDead:
     rts
-}
+    }
 
 .drawBullet: {
     ldx bulletNum
     lda bulletAlive,x : beq noplot
     lda bulletPos,x : sta theA : lda #&40 : sta theA+1 ; where
-    lda #&01 : jsr overwriteGen : jsr eraseGen ; red dot (which will hit)
+    lda #&0f : jsr overwriteGen : jsr eraseGen ; red dot (which will hit)
     .noplot : rts }
+
+.postBlitBulletCheck: {
+    copy16i nothingPostBlit, postBlitPtr
+    lda #(numBullets-1) : sta bulletNum
+.loop:
+    jsr bulletHitCheck
+    dec bulletNum
+    bpl loop
+    rts }
+
+.bulletHitCheck: {
+    ldx bulletNum
+    lda bulletAlive,x : beq ok
+    lda bulletPos,x : sta theA : lda #&40 : sta theA+1 ; where
+    ldy #0 : lda (theA),y
+    and #&33 ; TODO: mask the bullet shape
+    tax
+    ;;TODO: only consider as not-hit if still red for all bullet shape
+    lda hitTableR,x ;; TODO: so need different hit-table
+    bne ok ; still red
+    ldx bulletNum
+    lda #0 : sta bulletAlive,x ; die
+    lda #50 : sta bulletTimer,x ; respawn in 1s
+.ok
+    rts }
 
 ;----------------------------------------------------------------------
 ; rocks
 
-numRocks = 7
+numRocks = 5
 .rockAlive: SKIP numRocks
 .rockPos: SKIP numRocks
 ASSERT *-rockPos = numRocks
@@ -191,6 +236,7 @@ ASSERT *-rockPos = numRocks
 .loop:
     lda #1 : sta rockAlive,x
     txa : asl a : asl a : asl a : asl a : asl a : sta rockPos,x
+    ;jsr getRandom : sta rockPos,x ; randomize position
     dex
     bpl loop
     rts }
@@ -226,6 +272,7 @@ sizeRock = 11 ; #bars
 .loop:
     lda rockBarNum
     clc : adc rockPos,x : sta theA : lda #&40 : sta theA+1 ; where
+    ;; TODO: diff rocks on diff stripes
     lda #&33 : jsr hitplotGen : jsr eraseGen ; cyan bar
     dec rockBarNum
     bpl loop
@@ -312,19 +359,9 @@ sizeRock = 11 ; #bars
     rts
 
 .setupColours:
-    ;jsr replaceRedWithMagenta
     jsr replaceYellowWithBlue ; easier to see on cyan
     jsr replaceWhiteWithCyan
     rts
-
-;; .replaceRedWithMagenta:
-;;     lda #19 : jsr oswrch
-;;     lda #1 : jsr oswrch ; logical red
-;;     lda #5 : jsr oswrch ; physical magenta
-;;     lda #0 : jsr oswrch
-;;     lda #0 : jsr oswrch
-;;     lda #0 : jsr oswrch
-;;     rts
 
 .replaceYellowWithBlue:
     lda #19 : jsr oswrch
@@ -343,7 +380,6 @@ sizeRock = 11 ; #bars
     lda #0 : jsr oswrch
     lda #0 : jsr oswrch
     rts
-
 
 ;----------------------------------------------------------------------
 ; dual-space erase
