@@ -4,8 +4,6 @@ Playing around with examples to run on the BBC Micro.
 Eventual goal: write a graphics game.
 
 ## game1
-
-DONE
 - Have A be unaffected by fine-Y adjust, and use FY for y-index when plotting.
 - Use self-mod code for sprite data access avoiding x-index for FX.
 - Have more than one object (test with tab-key to switch which is controlled by keys).
@@ -26,12 +24,28 @@ DONE
 - medium meteor sprite data
 - dynamic object creation
 - random position and direction
-
-TODO:
-- collision detection
 - bullets
-- large meteors
-- spaceship with thrust & rotation control, and crash detection
+- collision detection... first exploration
+
+## game2
+- cheap dual-space erase
+- cheap non-coliision plotting (intended for bullets)
+- mask/eor collion plotting (intended for rocks/saucer/player)
+
+## next
+- simple game logic: rocks and bullets
+- post plot collision detection (intended for bullets)
+
+## todo
+- reinstate sprites form game1: bullets, rocks
+- four game object classes classes: bullets, rocks, (LATER:saucer), player
+- game logic and different hit-detection for player
+- reinstate keyboard control for player
+- player shoots bullets
+- large meteor sprite
+- spaceship sprite, 4 orientations, mirror plotting for 4-->16 orientations
+- saucer: spite, game logic
+- spaceship with thrust & rotation control
 - slow object movement; interesting angles
-- split object update into two halfs; each at 25fps
-- improve vsync with timer?
+- plot/erase only half the objects each frame
+- improve vsync with timer
