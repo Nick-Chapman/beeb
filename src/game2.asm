@@ -102,8 +102,8 @@ endmacro
     rts
 
 .mainLevelScene:
-    jsr prepBullets
-    jsr prepRocks
+    jsr handleBullets
+    jsr handleRocks
     rts
 
 .eliminateRock: {
@@ -136,13 +136,13 @@ numBullets = 1
 .bulletPos : SKIP numBullets ; set when spawn
 .bulletNum: SKIP 1
 
-.prepBullets: {
+.handleBullets: {
     lda #(numBullets-1) : sta bulletNum
 .loop:
     ;; TODO: check if bullet was hit last-blit (and so red pixel is gone)
     ;; TODO: and if so, kill the bullet
     jsr updateBullet
-    jsr prepBullet
+    jsr drawBullet
     dec bulletNum
     bpl loop
     rts }
@@ -167,7 +167,7 @@ numBullets = 1
     rts
 }
 
-.prepBullet: {
+.drawBullet: {
     ldx bulletNum
     lda bulletAlive,x : beq noplot
     lda bulletPos,x : sta theA : lda #&40 : sta theA+1 ; where
@@ -195,11 +195,11 @@ ASSERT *-rockPos = numRocks
     bpl loop
     rts }
 
-.prepRocks: {
+.handleRocks: {
     lda #(numRocks-1) : sta rockNum
 .loop:
     jsr updateRock
-    jsr prepRock
+    jsr drawRock
     dec rockNum
     bpl loop
     rts }
@@ -218,7 +218,7 @@ ASSERT *-rockPos = numRocks
 sizeRock = 11 ; #bars
 .rockBarNum SKIP 1
 
-.prepRock: {
+.drawRock: {
     ldx rockNum
     lda rockAlive,x : beq noplot
     lda #(sizeRock-1) : sta rockBarNum
