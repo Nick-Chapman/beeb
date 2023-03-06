@@ -3,8 +3,6 @@ keyCodeU = -58
 keyCodeD = -42
 keyCodeL = -26
 keyCodeR = -122
-keyCodeTab = -97
-keyCodeEscape = -113
 
 ula = &fe21
 osasci = &ffe3
@@ -21,18 +19,17 @@ GUARD &B0 ; keep an eye on zeropage space usage
 GUARD stack
 ORG &70
 
+.vsync SKIP 1
+
 .keyU SKIP 1
 .keyD SKIP 1
 .keyL SKIP 1
 .keyR SKIP 1
-.keyTab SKIP 1
-.keyEscape SKIP 1
 
 .lastKeyU SKIP 1
 .lastKeyD SKIP 1
 .lastKeyL SKIP 1
 .lastKeyR SKIP 1
-.lastKeyTab SKIP 1
 
 ;; new for real sprite plotting
 ;.theSpriteData SKIP 2
@@ -87,7 +84,50 @@ endmacro
 ;----------------------------------------------------------------------
 ; main loop
 
+timerlength = 100 ; smaller->0
+.irq
+    LDA &FE4D:AND #2:BNE irqvsync
+.irqtimer
+    LDA #&40:STA &FE4D:INC vsync
+    LDA &FC
+    RTI
+.irqvsync
+    STA &FE4D
+    LDA #LO(timerlength):STA &FE44
+    LDA #HI(timerlength):STA &FE45
+    LDA &FC
+    RTI
+
+.mySync: {
+    { .loop : lda vsync : beq loop }
+    cmp #2 : bcs failSync ; sometimes triggers surprisingly
+    lda #0 : sta vsync
+    rts
+.failSync:
+    copy16i msg, msgPtr
+    jmp printMessageAndSpin
+.msg EQUS "Too slow to sync", 13, 0 }
+
+.initFromDemo:
+    sei
+    ;LDX #&FF:TXS                ; reset stack (CAN DO IF INLINE)
+    STX &FE44:STX &FE45
+    LDA #&7F:STA &FE4E          ; disable all interrupts
+    STA &FE43                   ; set keyboard data direction
+    LDA #&C2:STA &FE4E          ; enable VSync and timer interrupt
+    LDA #&0F:STA &FE42          ; set addressable latch for writing
+    LDA #3:STA &FE40            ; keyboard write enable
+    LDA #0:STA &FE4B            ; timer 1 one shot mode
+    LDA #LO(irq):STA &204
+    LDA #HI(irq):STA &205       ; set interrupt handler
+
+    rts
+
 .main: {
+
+    jsr initFromDemo
+
+    lda #0: sta vsync
 
     jsr setupMachine
     jsr eraseInit
@@ -98,28 +138,28 @@ endmacro
     copy16i startScene, scenePtr
     copy16i nothingPostBlit, postBlitPtr
 
-    sei ; disable interrupts
+    cli
+
+    jsr mySync
 
 .loop:
+
     { lda badHit : beq noBadHit : STOP &11 : .noBadHit }
 
     jsr saveLastKeys
-    jsr readKeys
+    jsr readKeys ;; TODO
 
-    ;lda #3 : sta ula ; blue (prepare time)
+    ;lda #3 : sta ula ; blue (prepare scene)
     jsr prepare
-    ;jsr prepare ; IDEMPOENT
+    ;jsr prepare ; IDEMPOENT -- nope, does double update
     lda #7 : sta ula ; black
 
-    jsr syncDelay
+    jsr mySync
 
-    ;lda #2 : sta ula ; magenta (shows we missed vblank)
-
-    ;jsr blitScene ; WHY DOES 1 extra "fix" the apparant keyboard interrupts?
-    ;jsr blitScene
-    ;jsr blitScene
-    ;jsr blitScene ; IDEMPOENT
+    lda #2 : sta ula ; magenta (shows if we are too slow to blit)
     jsr blitScene
+    ;jsr blitScene ; IDEMPOENT - still not quite! seems ok with 3!
+    ;jsr blitScene
     lda #7 : sta ula ; black
 
     jsr postBlit
@@ -152,18 +192,18 @@ endmacro
 
 .startScene:
     jsr spawnRocks
-    ;jsr delayedSpawnBullets
+    jsr delayedSpawnBullets
     copy16i mainLevelScene, scenePtr
     rts
 
 .mainLevelScene:
-    ;jsr handleBullets
+    jsr handleBullets
     jsr handleRocks
     copy16i postBlitBulletCheck, postBlitPtr
     rts
 
 .eliminateRock: {
-    STOP &88 ; TODO: remove when have bullets again
+    ;STOP &22 ; TODO: remove when have bullets again
     dec numberRocksLeft
     bne continue
     copy16i levelClearScene, scenePtr
@@ -188,7 +228,7 @@ endmacro
 ;----------------------------------------------------------------------
 ; rocks -- NEW: TODO: real meteors
 
-numRocks = 1
+numRocks = 6
 .rockAlive: SKIP numRocks
 .rockFX: SKIP numRocks
 .rockFY: SKIP numRocks
@@ -208,7 +248,7 @@ numRocks = 1
 
     ;; SETUP ROCK POS/SPEED HERE
     lda #0 : sta rockFX,x
-    lda rockNum : asl a : asl a : asl a : clc : adc #67 : sta rockCX,x
+    lda rockNum : asl a : asl a : asl a : clc : adc #10 : sta rockCX,x
 
     lda #0 : sta rockFY,x
     lda #30 : sta rockCY,x
@@ -246,8 +286,9 @@ rockHitFlags = hitFlags
     lda rockFY,x : sta theFY
     lda rockCX,x : sta theCX
     lda rockCY,x : sta theCY
-    jsr onArrow
+    jsr onArrowWithRepeat
     ;jsr right1
+    ;jsr down1
     lda theFX : sta rockFX,x
     lda theFY : sta rockFY,x
     lda theCX : sta rockCX,x
@@ -260,8 +301,8 @@ rockHitFlags = hitFlags
     rts
 .plot
     txa : clc : adc #rockHitFlags : sta hitme ; me
-    copy16i mediumMeteor, stripPtrPtrPtr
-    ;copy16i smallMeteor, stripPtrPtrPtr
+    ;copy16i mediumMeteor, stripPtrPtrPtr
+    copy16i smallMeteor, stripPtrPtrPtr
 
     lda rockCX,x : sta theCX
     lda #0 : sta stripNum
@@ -281,7 +322,7 @@ rockHitFlags = hitFlags
     jsr plotStrip
 
     inc stripNum
-    lda stripNum : cmp #5 : beq done ; number of strips (3,5)
+    lda stripNum : cmp #3 : beq done ; number of strips (3,5)
     jsr right4
     jmp loop
 .done:
@@ -299,7 +340,7 @@ rockHitFlags = hitFlags
     ;jsr hitplotGen : jsr eraseGen
     inc stripItemNum
     lda stripItemNum
-    cmp #16 : beq done ; strip height (8,16)
+    cmp #8 : beq done ; strip height (8,16)
     jsr down1
     jmp loop
 .done:
@@ -405,10 +446,6 @@ numBullets = 2
     copy16i msg, msgPtr
     jmp printMessageAndSpin
     .msg EQUS "Stop", 13, 0 }
-
-.syncDelay:
-    lda #19 : jsr osbyte
-    rts
 
 .printMessageAndSpin: {
     ldy #0
@@ -932,7 +969,6 @@ EQUB 7 : EQUW A, B, C
 ;;; keyboard
 
 .initKeyVars:
-    lda #0 : sta keyEscape
     lda #0 : sta keyU
     lda #0 : sta keyD
     lda #0 : sta keyL
@@ -944,7 +980,6 @@ EQUB 7 : EQUW A, B, C
     lda keyD : sta lastKeyD
     lda keyL : sta lastKeyL
     lda keyR : sta lastKeyR
-    lda keyTab : sta lastKeyTab
     rts
 
 .readKeys:
@@ -952,70 +987,31 @@ EQUB 7 : EQUW A, B, C
     jsr checkD
     jsr checkL
     jsr checkR
-    jsr checkTab
-    jsr checkEscape
     rts
 
 .checkU: {
     lda #0 : sta keyU
-    lda #&81
-    ldx #(keyCodeU AND &ff)
-    ldy #(keyCodeU AND &ff00) DIV 256
-    jsr osbyte
-    cpx #&ff : bne no
-    lda #1 : sta keyU : .no:
+    lda #(-keyCodeU-1) : sta &fe4f : lda &fe4f
+    BPL no : lda #1 : sta keyU : .no
     rts }
 
 .checkD: {
     lda #0 : sta keyD
-    lda #&81
-    ldx #(keyCodeD AND &ff)
-    ldy #(keyCodeD AND &ff00) DIV 256
-    jsr osbyte
-    cpx #&ff : bne no
-    lda #1 : sta keyD : .no:
+    lda #(-keyCodeD-1) : sta &fe4f : lda &fe4f
+    BPL no : lda #1 : sta keyD : .no
     rts }
 
 .checkL: {
     lda #0 : sta keyL
-    lda #&81
-    ldx #(keyCodeL AND &ff)
-    ldy #(keyCodeL AND &ff00) DIV 256
-    jsr osbyte
-    cpx #&ff : bne no
-    lda #1 : sta keyL : .no:
+    lda #(-keyCodeL-1) : sta &fe4f : lda &fe4f
+    BPL no : lda #1 : sta keyL : .no
     rts }
 
 .checkR: {
     lda #0 : sta keyR
-    lda #&81
-    ldx #(keyCodeR AND &ff)
-    ldy #(keyCodeR AND &ff00) DIV 256
-    jsr osbyte
-    cpx #&ff : bne no
-    lda #1 : sta keyR : .no:
+    lda #(-keyCodeR-1) : sta &fe4f : lda &fe4f
+    BPL no : lda #1 : sta keyR : .no
     rts }
-
-.checkTab: {
-    lda #0 : sta keyTab
-    lda #&81
-    ldx #(keyCodeTab AND &ff)
-    ldy #(keyCodeTab AND &ff00) DIV 256
-    jsr osbyte
-    cpx #&ff : bne no
-    lda #1 : sta keyTab : .no:
-    rts }
-
-.checkEscape: {
-    lda #0 : sta keyEscape
-    lda #&81
-    ldx #(keyCodeEscape AND &ff)
-    ldy #(keyCodeEscape AND &ff00) DIV 256
-    jsr osbyte
-    cpx #&ff : bne no
-    lda #1 : sta keyEscape : .no:
-    rts }
-
 
 ;----------------------------------------------------------------------
 .end:
