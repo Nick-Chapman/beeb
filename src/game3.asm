@@ -203,7 +203,6 @@ timerlength = 100 ; smaller->0
     rts
 
 .eliminateRock: {
-    ;STOP &22 ; TODO: remove when have bullets again
     dec numberRocksLeft
     bne continue
     copy16i levelClearScene, scenePtr
@@ -226,9 +225,9 @@ timerlength = 100 ; smaller->0
 .waitCount: SKIP 1
 
 ;----------------------------------------------------------------------
-; rocks -- NEW: TODO: real meteors
+; rocks...
 
-numRocks = 6
+numRocks = 5
 .rockAlive: SKIP numRocks
 .rockFX: SKIP numRocks
 .rockFY: SKIP numRocks
@@ -243,22 +242,12 @@ numRocks = 6
     ldx #(numRocks-1)
 .loop:
     stx rockNum
-
     lda #1 : sta rockAlive,x
-
-    ;; SETUP ROCK POS/SPEED HERE
-    lda #0 : sta rockFX,x
-    lda rockNum : asl a : asl a : asl a : clc : adc #10 : sta rockCX,x
-
-    lda #0 : sta rockFY,x
-    lda #30 : sta rockCY,x
-
-    ;jsr getRandom : sta rockPos,x ; randomize position
-    ;jsr getRandom : and #&3 : tay ; rand 0..3
-    ;lda #&11 ; shift -> 11, 22, 44, 88
-    ;{.L : cpy #3 : beq D : asl a : iny : jmp L : .D }
-    ;sta rockPat,x
-
+    jsr randomPos
+    lda theFX : sta rockFX,x
+    lda theFY : sta rockFY,x
+    lda theCX : sta rockCX,x
+    lda theCY : sta rockCY,x
     dex
     bpl loop
     rts }
@@ -286,7 +275,7 @@ rockHitFlags = hitFlags
     lda rockFY,x : sta theFY
     lda rockCX,x : sta theCX
     lda rockCY,x : sta theCY
-    jsr onArrowWithRepeat
+    ;jsr onArrowWithRepeat
     ;jsr right1
     ;jsr down1
     lda theFX : sta rockFX,x
@@ -349,20 +338,44 @@ rockHitFlags = hitFlags
 ;----------------------------------------------------------------------
 ; bullets
 
-numBullets = 2
+numBullets = 3
 .bulletAlive : SKIP numBullets
 .bulletTimer : SKIP numBullets ; until spawn
-.bulletPos : SKIP numBullets ; set on delayed-spawn
+.bulletCX : SKIP numBullets
+.bulletCY : SKIP numBullets
+.bulletFX : SKIP numBullets
+.bulletFY : SKIP numBullets
 .bulletNum: SKIP 1
 
 .delayedSpawnBullets: {
     ldx #(numBullets-1)
 .loop:
-    lda #100 : sta bulletTimer,x ; respawn in 2s
-    jsr getRandom : sta bulletPos,x ; randomize position
+    lda #5 : sta bulletTimer,x ; spawn in .1s
+    jsr randomPos
+    lda theFX : sta bulletFX,x
+    lda theFY : sta bulletFY,x
+    lda theCX : sta bulletCX,x
+    lda theCY : sta bulletCY,x
     dex
     bpl loop
     rts }
+
+.randomPos: ; into the{FX,FY,CX,CY}
+    lda #0 : sta theFX
+    jsr getRandom
+    ; shift 2 bits into FX
+    lsr a : rol theFX
+    lsr a : rol theFX
+    sta theCX ; leaving 6 bits in CX (0..63) ; TODO: translate to (0..31 | 48..79)
+
+    lda #0 : sta theFY
+    jsr getRandom
+    ; shift 3 bits into FY
+    lsr a : rol theFY
+    lsr a : rol theFY
+    lsr a : rol theFY
+    sta theCY ; leaving 5 bits in CX (0..31)
+    rts
 
 .killAllBullets: {
     ldx #(numBullets-1)
@@ -385,22 +398,48 @@ numBullets = 2
     ldx bulletNum
     lda bulletAlive,x
     beq isDead
-    ;; isAlive - do nothing
+    ;; isAlive - move...
+    lda bulletFX,x : sta theFX
+    lda bulletFY,x : sta theFY
+    lda bulletCX,x : sta theCX
+    lda bulletCY,x : sta theCY
+    jsr onArrowWithRepeat
+    ;jsr right1
+    ;jsr down1
+    lda theFX : sta bulletFX,x
+    lda theFY : sta bulletFY,x
+    lda theCX : sta bulletCX,x
+    lda theCY : sta bulletCY,x
     rts
 .isDead:
     dec bulletTimer,x
     bne stayDead
     lda #1 : sta bulletAlive,x
+    ;; come alive; choose new random position
+    jsr randomPos
+    lda theFX : sta bulletFX,x
+    lda theFY : sta bulletFY,x
+    lda theCX : sta bulletCX,x
+    lda theCY : sta bulletCY,x
 .stayDead:
-    rts
-    }
+    rts }
 
 .drawBullet: {
     ldx bulletNum
     lda bulletAlive,x : beq noplot
-    lda bulletPos,x : sta theA : lda #&40 : sta theA+1 ; where
-    lda #&0f : jsr overwriteGen : jsr eraseGen ; red bar
+    lda bulletCX,x : sta theCX
+    lda bulletCY,x : sta theCY
+    lda bulletFY,x : sta theFY
+    jsr calculateAfromXY
+    ldy bulletFX,x : lda dotTableRed,y
+    jsr overwriteGen : jsr eraseGen
     .noplot : rts }
+
+.dotTableRed:
+    EQUB &08, &04, &02, &01
+
+.dotTableMask:
+    EQUB &88, &44, &22, &11
 
 .postBlitBulletCheck: {
     copy16i nothingPostBlit, postBlitPtr
@@ -412,16 +451,25 @@ numBullets = 2
     rts }
 
 .bulletHitCheck: {
+
     ldx bulletNum
     lda bulletAlive,x : beq ok
-    lda bulletPos,x : sta theA : lda #&40 : sta theA+1 ; where
+
+    lda bulletCX,x : sta theCX
+    lda bulletCY,x : sta theCY
+    lda bulletFY,x : sta theFY
+    jsr calculateAfromXY
+
     ldy #0 : lda (theA),y
-    and #&ff ; mask the bullet shape
-    cmp #&0f ; all bits have to be red
+
+    ldy bulletFX,x
+    and dotTableMask,y
+    cmp dotTableRed,y
+
     beq ok ; still red
     ldx bulletNum
     lda #0 : sta bulletAlive,x ; die
-    lda #100 : sta bulletTimer,x ; respawn in 2s
+    lda #50 : sta bulletTimer,x ; respawn in 1s
 .ok
     rts }
 
