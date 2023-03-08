@@ -147,7 +147,7 @@ timerlength = 100 ; smaller->0
     { lda badHit : beq noBadHit : STOP &11 : .noBadHit }
 
     jsr saveLastKeys
-    jsr readKeys ;; TODO
+    jsr readKeys
 
     ;lda #3 : sta ula ; blue (prepare scene)
     jsr prepare
@@ -233,6 +233,12 @@ numRocks = 5
 .rockFY: SKIP numRocks
 .rockCX: SKIP numRocks
 .rockCY: SKIP numRocks
+.speedH: SKIP numRocks ; bigger val is slower
+.countH: SKIP numRocks ; number of ticks till H move
+.reverseH: SKIP numRocks
+.speedV: SKIP numRocks
+.countV: SKIP numRocks
+.reverseV: SKIP numRocks
 .rockNum: SKIP 1
 
 .numberRocksLeft SKIP 1
@@ -248,6 +254,17 @@ numRocks = 5
     lda theFY : sta rockFY,x
     lda theCX : sta rockCX,x
     lda theCY : sta rockCY,x
+
+    lda #0 : sta reverseH,x
+    jsr getRandom
+    lsr a : rol reverseH,x
+    and #3 : sta speedH,x : sta countH,x
+
+    lda #0 : sta reverseV,x
+    jsr getRandom
+    lsr a : rol reverseV,x
+    and #3 : sta speedV,x : sta countV,x
+
     dex
     bpl loop
     rts }
@@ -275,13 +292,34 @@ rockHitFlags = hitFlags
     lda rockFY,x : sta theFY
     lda rockCX,x : sta theCX
     lda rockCY,x : sta theCY
-    ;jsr onArrowWithRepeat
-    ;jsr right1
-    ;jsr down1
+    jsr moveRockH
+    jsr moveRockV
     lda theFX : sta rockFX,x
     lda theFY : sta rockFY,x
     lda theCX : sta rockCX,x
     lda theCY : sta rockCY,x
+    rts }
+
+.moveRockH: {
+    lda countH,x
+    bne no
+    { lda reverseH,x : bne back : jsr right1 : jmp end : .back : jsr left1 : .end }
+    lda speedH,x
+    sta countH,x
+    rts
+.no:
+    dec countH,x
+    rts }
+
+.moveRockV: {
+    lda countV,x
+    bne no
+    { lda reverseV,x : bne back : jsr down1 : jmp end : .back : jsr up1 : .end }
+    lda speedV,x
+    sta countV,x
+    rts
+.no:
+    dec countV,x
     rts }
 
 .drawRock: {
