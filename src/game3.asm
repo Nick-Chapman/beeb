@@ -233,8 +233,8 @@ timerlength = 0;100 ; smaller->0
 ;;;----------------------------------------------------------------------
 ;;; rocks...
 
-numRocks = 2
-.rockAlive: SKIP numRocks
+numRocks = 3
+.rockAlive: SKIP numRocks ; 2-medium, 1-small, 0-dead
 .rockFX: SKIP numRocks
 .rockFY: SKIP numRocks
 .rockCX: SKIP numRocks
@@ -254,7 +254,10 @@ numRocks = 2
     ldx #(numRocks-1)
 .loop:
     stx rockNum
+
     lda #1 : sta rockAlive,x
+    { cpx #0 : bne no : inc rockAlive,x : .no } ; make rock#1 a medium rock
+
     jsr randomPos
     lda theFX : sta rockFX,x
     lda theFY : sta rockFY,x
@@ -332,9 +335,9 @@ rockHitFlags = hitFlags
     lda rockAlive,x : bne plot
     rts
 .plot
+    copy16i smallMeteor, stripPtrPtr
+    { lda rockAlive,x : cmp #2 : bne no : copy16i mediumMeteor, stripPtrPtr : .no }
     txa : clc : adc #rockHitFlags : sta hitme ; me
-    copy16i mediumMeteor, stripPtrPtr
-    ;copy16i smallMeteor, stripPtrPtr
     lda rockCX,x : sta theCX
     lda rockCY,x : sta theCY
     lda rockFY,x : sta theFY
