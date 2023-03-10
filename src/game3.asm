@@ -35,18 +35,14 @@ ORG &70
 .lastKeyL SKIP 1
 .lastKeyR SKIP 1
 
-;; new for real sprite plotting
-;.theSpriteData SKIP 2
-.stripPtr SKIP 2 ;theStrip
+.stripPtr SKIP 2
 .stripPtrPtr SKIP 2
-;.funcPtr SKIP 2
 
 .theCX SKIP 1 ; coarse-X : 0..79
 .theCY SKIP 1 ; coarse-Y : 0..31
 .theFX SKIP 1 ; fine-X   : 0..3
 .theFY SKIP 1 ; fine-Y   : 0..7
 .theA SKIP 2  ; screen address of the 8x8 char
-
 
 .badHit SKIP 1
 
@@ -233,7 +229,7 @@ timerlength = 0;100 ; smaller->0
 ;;;----------------------------------------------------------------------
 ;;; rocks...
 
-numRocks = 3
+numRocks = 4
 .rockAlive: SKIP numRocks ; 2-medium, 1-small, 0-dead
 .rockFX: SKIP numRocks
 .rockFY: SKIP numRocks
@@ -250,13 +246,13 @@ numRocks = 3
 .numberRocksLeft SKIP 1
 
 .spawnRocks: {
-    lda #numRocks : sta numberRocksLeft
+    ldx #0 : lda #0 : sta rockAlive,x
+    ldx #1 : lda #2 : sta rockAlive,x : inc numberRocksLeft
+    ldx #2 : lda #0 : sta rockAlive,x
+    ldx #3 : lda #2 : sta rockAlive,x : inc numberRocksLeft
     ldx #(numRocks-1)
 .loop:
     stx rockNum
-
-    lda #1 : sta rockAlive,x
-    { cpx #0 : bne no : inc rockAlive,x : .no } ; make rock#1 a medium rock
 
     jsr randomPos
     lda theFX : sta rockFX,x
@@ -267,12 +263,12 @@ numRocks = 3
     lda #0 : sta reverseH,x
     jsr getRandom
     lsr a : rol reverseH,x
-    and #3 : sta speedH,x : sta countH,x
+    and #3 : clc : adc #1 : sta speedH,x : sta countH,x
 
     lda #0 : sta reverseV,x
     jsr getRandom
     lsr a : rol reverseV,x
-    and #3 : sta speedV,x : sta countV,x
+    and #3 : clc : adc #1 : sta speedV,x : sta countV,x
 
     dex
     bpl loop
@@ -287,26 +283,45 @@ numRocks = 3
     bpl loop
     rts }
 
-rockHitFlags = hitFlags
-
 .updateRock: {
     ldx rockNum
-    lda rockHitFlags,x : beq notHit
-    lda #0 : sta rockHitFlags,x
-    lda #0 : sta rockAlive,x
-    jsr eliminateRock
-.notHit:
-    ;; TODO: copy in/back A when stored in per-rock data
+    lda rockAlive,x : bne notDead
+    rts
+.notDead:
+    ;; grab position
     lda rockFX,x : sta theFX
     lda rockFY,x : sta theFY
     lda rockCX,x : sta theCX
     lda rockCY,x : sta theCY
+    ;; did we get hit?
+    lda hitFlags,x : beq moveRock ; nope, so just move
+    lda #0 : sta hitFlags,x
+    ;; yes, we got hit
+    dec rockAlive,x : beq killRock ; we are small, so die
+    ;; we are medium, so split
+    inc numberRocksLeft
+    ;; wake up small twin
+    dex : lda #1 : sta rockAlive,x
+    ;; copy position into woken rock
+    lda theFX : sta rockFX,x
+    lda theFY : sta rockFY,x
+    lda theCX : sta rockCX,x
+    lda theCY : sta rockCY,x
+    inx
+    ;; match direction
+    lda reverseV,x : dex : sta reverseV,x : inx
+    lda reverseH,x : dex : sta reverseH,x : inx
+    ;; move the (possibly shrunken) rock
+.moveRock:
     IF Not(DontMove) : jsr moveRockH : jsr moveRockV : ENDIF
     lda theFX : sta rockFX,x
     lda theFY : sta rockFY,x
     lda theCX : sta rockCX,x
     lda theCY : sta rockCY,x
-    rts }
+    rts
+.killRock:
+    jmp eliminateRock
+}
 
 .moveRockH: {
     lda countH,x
@@ -337,7 +352,7 @@ rockHitFlags = hitFlags
 .plot
     copy16i smallMeteor, stripPtrPtr
     { lda rockAlive,x : cmp #2 : bne no : copy16i mediumMeteor, stripPtrPtr : .no }
-    txa : clc : adc #rockHitFlags : sta hitme ; me
+    txa : clc : adc #hitFlags : sta hitme ; me
     lda rockCX,x : sta theCX
     lda rockCY,x : sta theCY
     lda rockFY,x : sta theFY
