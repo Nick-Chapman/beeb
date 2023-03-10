@@ -1,4 +1,8 @@
 
+;;; Raster debug for prep time; dont move rocks!
+Debug = FALSE
+DontMove = FALSE
+
 keyCodeU = -58
 keyCodeD = -42
 keyCodeL = -26
@@ -59,6 +63,7 @@ ORG &70
 .eraseSwitcher SKIP 2
 
 .iterAction SKIP 2
+.reposPtr SKIP 2
 
 .hitFlags SKIP maxObjects
 
@@ -150,7 +155,7 @@ timerlength = 0;100 ; smaller->0
     jsr saveLastKeys
     jsr readKeys
 
-    ;lda #3 : sta ula ; blue (prepare scene)
+    IF Debug : lda #3 : sta ula : ENDIF ; blue (prepare scene)
     jsr prepare
     ;jsr prepare ; IDEMPOENT -- nope, does double update
     lda #7 : sta ula ; black
@@ -228,7 +233,7 @@ timerlength = 0;100 ; smaller->0
 ;;;----------------------------------------------------------------------
 ;;; rocks...
 
-numRocks = 4
+numRocks = 2
 .rockAlive: SKIP numRocks
 .rockFX: SKIP numRocks
 .rockFY: SKIP numRocks
@@ -293,7 +298,7 @@ rockHitFlags = hitFlags
     lda rockFY,x : sta theFY
     lda rockCX,x : sta theCX
     lda rockCY,x : sta theCY
-    jsr moveRockH : jsr moveRockV ; TODO: reinstate rock movement
+    IF Not(DontMove) : jsr moveRockH : jsr moveRockV : ENDIF
     lda theFX : sta rockFX,x
     lda theFY : sta rockFY,x
     lda theCX : sta rockCX,x
@@ -328,8 +333,8 @@ rockHitFlags = hitFlags
     rts
 .plot
     txa : clc : adc #rockHitFlags : sta hitme ; me
-    ;copy16i mediumMeteor, stripPtrPtr
-    copy16i smallMeteor, stripPtrPtr
+    copy16i mediumMeteor, stripPtrPtr
+    ;copy16i smallMeteor, stripPtrPtr
     lda rockCX,x : sta theCX
     lda rockCY,x : sta theCY
     lda rockFY,x : sta theFY
@@ -337,82 +342,84 @@ rockHitFlags = hitFlags
     lda rockFX,x : asl a
     tay : lda (stripPtrPtr),y : sta stripPtr
     iny : lda (stripPtrPtr),y : sta stripPtr+1
-    lda #0 : sta spriteDataItemNum
-    lda #0 : sta stripNum
-.loop:
-    jsr plotRockStrip ; inline?
-    inc stripNum
-    lda stripNum : cmp #3 : beq done ; number of strips (3,5)
-    jsr right4 : jsr up8 ; : jsr up8
-    jmp loop
-.done:
-    rts }
-
-.spriteDataItemNum SKIP 1
-.stripNum SKIP 1
-.stripItemNum SKIP 1
-
-.plotRockStrip: {
-    lda #0 : sta stripItemNum
-.loop:
-    ldy spriteDataItemNum
-    lda (stripPtr),y
+    ldy #0 : lda (stripPtr),y : sta stripCount
+    lda #1 : sta dataNum
+.loopStrip:
+    ldy dataNum : lda (stripPtr),y : sta stripItemCount
+    inc dataNum
+.loopItem:
+    ldy dataNum : lda (stripPtr),y
     { beq nogen : jsr hitplotGen : jsr eraseGen : .nogen }
+    inc dataNum
     jsr down1
-    inc spriteDataItemNum
-    inc stripItemNum
-    lda stripItemNum
-    cmp #8 : beq done ; strip height (8,16)
-    jmp loop
+    dec stripItemCount : bne loopItem
+    dec stripCount : beq done
+    ldy dataNum
+    lda (stripPtr),y : sta reposPtr : iny
+    lda (stripPtr),y : sta reposPtr+1 : iny
+    sty dataNum
+    jsr dispatchReposition
+    jmp loopStrip
 .done:
     rts }
+
+.dispatchReposition:
+    jmp (reposPtr)
+
+;;; consider zero page
+.dataNum SKIP 1
+.stripCount SKIP 1
+.stripItemCount SKIP 1
+
+.r4u8:  jsr right4 : jsr up8 : rts
+.r4u16: jsr right4 : jsr up8 : jsr up8 : rts
 
 ;;;----------------------------------------------------------------------
 ;;; sprite data
 .smallMeteor: { EQUW x0,x1,x2,x3
-.x0
-EQUB &33,&44,&88,&88,&44,&22,&44,&33
-EQUB &66,&99,&11,&00,&00,&11,&99,&66
-EQUB &00,&00,&00,&88,&88,&00,&00,&00
-.x1
-EQUB &11,&22,&44,&44,&22,&11,&22,&11
-EQUB &bb,&44,&00,&00,&00,&00,&44,&bb
-EQUB &00,&88,&88,&44,&44,&88,&88,&00
-.x2
-EQUB &00,&11,&22,&22,&11,&00,&11,&00
-EQUB &dd,&22,&00,&00,&00,&88,&22,&dd
-EQUB &88,&44,&44,&22,&22,&44,&44,&88
-.x3
-EQUB &00,&00,&11,&11,&00,&00,&00,&00
-EQUB &66,&99,&00,&00,&88,&44,&99,&66
-EQUB &cc,&22,&22,&11,&11,&22,&22,&cc
+.x0 : EQUB 3
+EQUB 8, &33,&44,&88,&88,&44,&22,&44,&33 : EQUW r4u8
+EQUB 8, &66,&99,&11,&00,&00,&11,&99,&66 : EQUW r4u8
+EQUB 8, &00,&00,&00,&88,&88,&00,&00,&00
+.x1 : EQUB 3
+EQUB 8, &11,&22,&44,&44,&22,&11,&22,&11 : EQUW r4u8
+EQUB 8, &bb,&44,&00,&00,&00,&00,&44,&bb : EQUW r4u8
+EQUB 8, &00,&88,&88,&44,&44,&88,&88,&00
+.x2 : EQUB 3
+EQUB 8, &00,&11,&22,&22,&11,&00,&11,&00 : EQUW r4u8
+EQUB 8, &dd,&22,&00,&00,&00,&88,&22,&dd : EQUW r4u8
+EQUB 8, &88,&44,&44,&22,&22,&44,&44,&88
+.x3 : EQUB 3
+EQUB 8, &00,&00,&11,&11,&00,&00,&00,&00 : EQUW r4u8
+EQUB 8, &66,&99,&00,&00,&88,&44,&99,&66 : EQUW r4u8
+EQUB 8, &cc,&22,&22,&11,&11,&22,&22,&cc
 }
 
 .mediumMeteor: { EQUW x0,x1,x2,x3
-.x0
-EQUB &00,&00,&11,&22,&44,&88,&88,&88,&44,&22,&11,&22,&44,&22,&11,&00
-EQUB &11,&22,&cc,&00,&00,&00,&00,&00,&00,&00,&00,&00,&00,&00,&00,&ff
-EQUB &ff,&00,&00,&00,&00,&00,&00,&00,&00,&00,&00,&00,&00,&44,&aa,&11
-EQUB &00,&88,&66,&11,&00,&11,&22,&44,&22,&11,&00,&00,&00,&11,&22,&cc
-EQUB &00,&00,&00,&00,&88,&00,&00,&00,&00,&00,&88,&88,&88,&00,&00,&00
-.x1
-EQUB &00,&00,&00,&11,&22,&44,&44,&44,&22,&11,&00,&11,&22,&11,&00,&00
-EQUB &00,&11,&ee,&00,&00,&00,&00,&00,&00,&00,&88,&00,&00,&00,&88,&77
-EQUB &ff,&00,&00,&00,&00,&00,&00,&00,&00,&00,&00,&00,&00,&22,&55,&88
-EQUB &88,&44,&33,&00,&00,&00,&11,&22,&11,&00,&00,&00,&00,&00,&11,&ee
-EQUB &00,&00,&00,&88,&44,&88,&00,&00,&00,&88,&44,&44,&44,&88,&00,&00
-.x2
-EQUB &00,&00,&00,&00,&11,&22,&22,&22,&11,&00,&00,&00,&11,&00,&00,&00
-EQUB &00,&00,&77,&88,&00,&00,&00,&00,&00,&88,&44,&88,&00,&88,&44,&33
-EQUB &77,&88,&00,&00,&00,&00,&00,&00,&00,&00,&00,&00,&00,&11,&22,&cc
-EQUB &cc,&22,&11,&00,&00,&00,&00,&11,&00,&00,&00,&00,&00,&00,&88,&77
-EQUB &00,&00,&88,&44,&22,&44,&88,&00,&88,&44,&22,&22,&22,&44,&88,&00
-.x3
-EQUB &00,&00,&00,&00,&00,&11,&11,&11,&00,&00,&00,&00,&00,&00,&00,&00
-EQUB &00,&00,&33,&44,&88,&00,&00,&00,&88,&44,&22,&44,&88,&44,&22,&11
-EQUB &33,&44,&88,&00,&00,&00,&00,&00,&00,&00,&00,&00,&00,&00,&11,&ee
-EQUB &ee,&11,&00,&00,&00,&00,&00,&00,&00,&00,&00,&00,&00,&88,&44,&33
-EQUB &00,&00,&cc,&22,&11,&22,&44,&88,&44,&22,&11,&11,&11,&22,&44,&88
+.x0 : EQUB 5
+EQUB 16, &00,&00,&11,&22,&44,&88,&88,&88,&44,&22,&11,&22,&44,&22,&11,&00 : EQUW r4u16
+EQUB 16, &11,&22,&cc,&00,&00,&00,&00,&00,&00,&00,&00,&00,&00,&00,&00,&ff : EQUW r4u16
+EQUB 16, &ff,&00,&00,&00,&00,&00,&00,&00,&00,&00,&00,&00,&00,&44,&aa,&11 : EQUW r4u16
+EQUB 16, &00,&88,&66,&11,&00,&11,&22,&44,&22,&11,&00,&00,&00,&11,&22,&cc : EQUW r4u16
+EQUB 16, &00,&00,&00,&00,&88,&00,&00,&00,&00,&00,&88,&88,&88,&00,&00,&00
+.x1 : EQUB 5
+EQUB 16, &00,&00,&00,&11,&22,&44,&44,&44,&22,&11,&00,&11,&22,&11,&00,&00 : EQUW r4u16
+EQUB 16, &00,&11,&ee,&00,&00,&00,&00,&00,&00,&00,&88,&00,&00,&00,&88,&77 : EQUW r4u16
+EQUB 16, &ff,&00,&00,&00,&00,&00,&00,&00,&00,&00,&00,&00,&00,&22,&55,&88 : EQUW r4u16
+EQUB 16, &88,&44,&33,&00,&00,&00,&11,&22,&11,&00,&00,&00,&00,&00,&11,&ee : EQUW r4u16
+EQUB 16, &00,&00,&00,&88,&44,&88,&00,&00,&00,&88,&44,&44,&44,&88,&00,&00
+.x2 : EQUB 5
+EQUB 16, &00,&00,&00,&00,&11,&22,&22,&22,&11,&00,&00,&00,&11,&00,&00,&00 : EQUW r4u16
+EQUB 16, &00,&00,&77,&88,&00,&00,&00,&00,&00,&88,&44,&88,&00,&88,&44,&33 : EQUW r4u16
+EQUB 16, &77,&88,&00,&00,&00,&00,&00,&00,&00,&00,&00,&00,&00,&11,&22,&cc : EQUW r4u16
+EQUB 16, &cc,&22,&11,&00,&00,&00,&00,&11,&00,&00,&00,&00,&00,&00,&88,&77 : EQUW r4u16
+EQUB 16, &00,&00,&88,&44,&22,&44,&88,&00,&88,&44,&22,&22,&22,&44,&88,&00
+.x3 : EQUB 5
+EQUB 16, &00,&00,&00,&00,&00,&11,&11,&11,&00,&00,&00,&00,&00,&00,&00,&00 : EQUW r4u16
+EQUB 16, &00,&00,&33,&44,&88,&00,&00,&00,&88,&44,&22,&44,&88,&44,&22,&11 : EQUW r4u16
+EQUB 16, &33,&44,&88,&00,&00,&00,&00,&00,&00,&00,&00,&00,&00,&00,&11,&ee : EQUW r4u16
+EQUB 16, &ee,&11,&00,&00,&00,&00,&00,&00,&00,&00,&00,&00,&00,&88,&44,&33 : EQUW r4u16
+EQUB 16, &00,&00,&cc,&22,&11,&22,&44,&88,&44,&22,&11,&11,&11,&22,&44,&88
 }
 
 
