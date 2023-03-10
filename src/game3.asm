@@ -35,7 +35,6 @@ ORG &70
 ;.theSpriteData SKIP 2
 .stripPtr SKIP 2 ;theStrip
 .stripPtrPtr SKIP 2
-.stripPtrPtrPtr SKIP 2
 ;.funcPtr SKIP 2
 
 .theCX SKIP 1 ; coarse-X : 0..79
@@ -83,10 +82,10 @@ endmacro
 .start:
     jmp main
 
-;----------------------------------------------------------------------
-; main loop
+;;;----------------------------------------------------------------------
+;;; main loop
 
-timerlength = 100 ; smaller->0
+timerlength = 0;100 ; smaller->0
 .irq
     LDA &FE4D:AND #2:BNE irqvsync
 .irqtimer
@@ -189,8 +188,8 @@ timerlength = 100 ; smaller->0
 .nothingPostBlit:
     rts
 
-;----------------------------------------------------------------------
-; scenes: startScene, mainLevelScene, levelClearScene, waitAndRestartScene
+;;;----------------------------------------------------------------------
+;;; scenes: startScene, mainLevelScene, levelClearScene, waitAndRestartScene
 
 .startScene:
     jsr spawnRocks
@@ -226,8 +225,8 @@ timerlength = 100 ; smaller->0
 
 .waitCount: SKIP 1
 
-;----------------------------------------------------------------------
-; rocks...
+;;;----------------------------------------------------------------------
+;;; rocks...
 
 numRocks = 4
 .rockAlive: SKIP numRocks
@@ -329,40 +328,38 @@ rockHitFlags = hitFlags
     rts
 .plot
     txa : clc : adc #rockHitFlags : sta hitme ; me
-    ;copy16i mediumMeteor, stripPtrPtrPtr
-    copy16i smallMeteor, stripPtrPtrPtr
-
+    ;copy16i mediumMeteor, stripPtrPtr
+    copy16i smallMeteor, stripPtrPtr
     lda rockCX,x : sta theCX
     lda rockCY,x : sta theCY
     lda rockFY,x : sta theFY
     jsr calculateAfromXY
-
-    lda #0 : sta stripNum
-.loop:
-    lda stripNum : asl a : tay
-    iny : lda (stripPtrPtrPtr),y : sta stripPtrPtr
-    iny : lda (stripPtrPtrPtr),y : sta stripPtrPtr+1
-    lda rockFX,x : asl a : clc : adc #3
+    lda rockFX,x : asl a
     tay : lda (stripPtrPtr),y : sta stripPtr
     iny : lda (stripPtrPtr),y : sta stripPtr+1
-    jsr plotRockStrip
+    lda #0 : sta spriteDataItemNum
+    lda #0 : sta stripNum
+.loop:
+    jsr plotRockStrip ; inline?
     inc stripNum
     lda stripNum : cmp #3 : beq done ; number of strips (3,5)
-    jsr right4 : jsr up8
+    jsr right4 : jsr up8 ; : jsr up8
     jmp loop
 .done:
     rts }
 
+.spriteDataItemNum SKIP 1
 .stripNum SKIP 1
 .stripItemNum SKIP 1
 
 .plotRockStrip: {
     lda #0 : sta stripItemNum
 .loop:
-    ldy stripItemNum
+    ldy spriteDataItemNum
     lda (stripPtr),y
     { beq nogen : jsr hitplotGen : jsr eraseGen : .nogen }
     jsr down1
+    inc spriteDataItemNum
     inc stripItemNum
     lda stripItemNum
     cmp #8 : beq done ; strip height (8,16)
@@ -370,8 +367,57 @@ rockHitFlags = hitFlags
 .done:
     rts }
 
-;----------------------------------------------------------------------
-; bullets
+;;;----------------------------------------------------------------------
+;;; sprite data
+.smallMeteor: { EQUW x0,x1,x2,x3
+.x0
+EQUB &33,&44,&88,&88,&44,&22,&44,&33
+EQUB &66,&99,&11,&00,&00,&11,&99,&66
+EQUB &00,&00,&00,&88,&88,&00,&00,&00
+.x1
+EQUB &11,&22,&44,&44,&22,&11,&22,&11
+EQUB &bb,&44,&00,&00,&00,&00,&44,&bb
+EQUB &00,&88,&88,&44,&44,&88,&88,&00
+.x2
+EQUB &00,&11,&22,&22,&11,&00,&11,&00
+EQUB &dd,&22,&00,&00,&00,&88,&22,&dd
+EQUB &88,&44,&44,&22,&22,&44,&44,&88
+.x3
+EQUB &00,&00,&11,&11,&00,&00,&00,&00
+EQUB &66,&99,&00,&00,&88,&44,&99,&66
+EQUB &cc,&22,&22,&11,&11,&22,&22,&cc
+}
+
+.mediumMeteor: { EQUW x0,x1,x2,x3
+.x0
+EQUB &00,&00,&11,&22,&44,&88,&88,&88,&44,&22,&11,&22,&44,&22,&11,&00
+EQUB &11,&22,&cc,&00,&00,&00,&00,&00,&00,&00,&00,&00,&00,&00,&00,&ff
+EQUB &ff,&00,&00,&00,&00,&00,&00,&00,&00,&00,&00,&00,&00,&44,&aa,&11
+EQUB &00,&88,&66,&11,&00,&11,&22,&44,&22,&11,&00,&00,&00,&11,&22,&cc
+EQUB &00,&00,&00,&00,&88,&00,&00,&00,&00,&00,&88,&88,&88,&00,&00,&00
+.x1
+EQUB &00,&00,&00,&11,&22,&44,&44,&44,&22,&11,&00,&11,&22,&11,&00,&00
+EQUB &00,&11,&ee,&00,&00,&00,&00,&00,&00,&00,&88,&00,&00,&00,&88,&77
+EQUB &ff,&00,&00,&00,&00,&00,&00,&00,&00,&00,&00,&00,&00,&22,&55,&88
+EQUB &88,&44,&33,&00,&00,&00,&11,&22,&11,&00,&00,&00,&00,&00,&11,&ee
+EQUB &00,&00,&00,&88,&44,&88,&00,&00,&00,&88,&44,&44,&44,&88,&00,&00
+.x2
+EQUB &00,&00,&00,&00,&11,&22,&22,&22,&11,&00,&00,&00,&11,&00,&00,&00
+EQUB &00,&00,&77,&88,&00,&00,&00,&00,&00,&88,&44,&88,&00,&88,&44,&33
+EQUB &77,&88,&00,&00,&00,&00,&00,&00,&00,&00,&00,&00,&00,&11,&22,&cc
+EQUB &cc,&22,&11,&00,&00,&00,&00,&11,&00,&00,&00,&00,&00,&00,&88,&77
+EQUB &00,&00,&88,&44,&22,&44,&88,&00,&88,&44,&22,&22,&22,&44,&88,&00
+.x3
+EQUB &00,&00,&00,&00,&00,&11,&11,&11,&00,&00,&00,&00,&00,&00,&00,&00
+EQUB &00,&00,&33,&44,&88,&00,&00,&00,&88,&44,&22,&44,&88,&44,&22,&11
+EQUB &33,&44,&88,&00,&00,&00,&00,&00,&00,&00,&00,&00,&00,&00,&11,&ee
+EQUB &ee,&11,&00,&00,&00,&00,&00,&00,&00,&00,&00,&00,&00,&88,&44,&33
+EQUB &00,&00,&cc,&22,&11,&22,&44,&88,&44,&22,&11,&11,&11,&22,&44,&88
+}
+
+
+;;;----------------------------------------------------------------------
+;;; bullets
 
 numBullets = 4
 .bulletAlive : SKIP numBullets
@@ -537,8 +583,8 @@ numBullets = 4
 .x3: EQUB &00,&01,&00, &08,&0c,&08
 }
 
-;----------------------------------------------------------------------
-; hit-flags
+;;;----------------------------------------------------------------------
+;;; hit-flags
 
 .initHitFlags: {
     lda #0
@@ -550,8 +596,8 @@ numBullets = 4
     bne loop
     rts }
 
-;----------------------------------------------------------------------
-; misc: stop, sync, print stuff
+;;;----------------------------------------------------------------------
+;;; misc: stop, sync, print stuff
 
 .stop: { ; byte in Acc
     jsr printHexA
@@ -584,8 +630,8 @@ numBullets = 4
     rts
 .digits EQUS "0123456789abcdef" }
 
-;----------------------------------------------------------------------
-; setupMachine
+;;;----------------------------------------------------------------------
+;;; setupMachine
 
 .setupMachine:
     jsr mode1
@@ -634,8 +680,8 @@ numBullets = 4
     lda #0 : jsr oswrch
     rts
 
-;----------------------------------------------------------------------
-; dual-space erase
+;;;----------------------------------------------------------------------
+;;; dual-space erase
 
 .eraseRun:
     lda #0
@@ -662,7 +708,7 @@ FOR i, 1, eraseNumberBlocks : eraseTemplate : NEXT
     lda erasePtr : sec : sbc #eraseBlockSize : sta erasePtr
     { bcs noHiDec : dec erasePtr+1 : .noHiDec }
     ;; check we are within the space
-    jsr eraseSpaceCheck
+    jsr eraseSpaceCheck ; TODO: remove check when in production!
     ;; fill in the generated code
     lda theA     : ldy #1 : sta (erasePtr),y
     lda theA+1   : ldy #2 : sta (erasePtr),y
@@ -699,8 +745,8 @@ FOR i, 1, eraseNumberBlocks : eraseTemplate : NEXT
     copy16i eraseSwitcherA, eraseSwitcher
     rts
 
-;----------------------------------------------------------------------
-; overwrite
+;;;----------------------------------------------------------------------
+;;; overwrite plotting
 
 SPLAT = screenEnd-1 ; dev; bug catch
 
@@ -726,7 +772,7 @@ FOR i, 1, overwriteNumberBlocks-1 : overwriteTemplate : NEXT
     lda overwritePtr : sec : sbc #overwriteBlockSize : sta overwritePtr
     { bcs noHiDec : dec overwritePtr+1 : .noHiDec }
     ;; check we are within the space
-    jsr overwriteSpaceCheck
+    jsr overwriteSpaceCheck ; TODO: remove check when in production!
     ;; fill in the generated code
     .DB}: lda #0 : ldy #1 : sta (overwritePtr),y
     lda theA     : ldy #3 : sta (overwritePtr),y
@@ -747,8 +793,8 @@ FOR i, 1, overwriteNumberBlocks-1 : overwriteTemplate : NEXT
     copy16i overwriteSpaceEnd, overwritePtr
     rts
 
-;----------------------------------------------------------------------
-; hitplot -- detect collision (with red) and set ZP var
+;;;----------------------------------------------------------------------
+;;; hitplot -- detect collision (with red) and set ZP var
 
 .hitplotRun:
     jmp (hitplotPtr)
@@ -783,7 +829,7 @@ FOR i, 1, hitplotNumberBlocks-1 : hitplotTemplate : NEXT
     lda hitplotPtr : sec : sbc #hitplotBlockSize : sta hitplotPtr
     { bcs noHiDec : dec hitplotPtr+1 : .noHiDec }
     ;; check we are within the space
-    jsr hitplotSpaceCheck
+    jsr hitplotSpaceCheck ; TODO: remove check when in production!
     ;; fill in the generated code
     .DB}: lda #0 : ldy #5 : sta (hitplotPtr),y : ldy #16 : sta (hitplotPtr),y
     lda theA     : ldy #1 : sta (hitplotPtr),y : ldy #18 : sta (hitplotPtr),y
@@ -805,14 +851,8 @@ FOR i, 1, hitplotNumberBlocks-1 : hitplotTemplate : NEXT
     copy16i hitplotSpaceEnd, hitplotPtr
     rts
 
-ALIGN &100
-.nohitTable:
-FOR i, 1, 256 : EQUB 0 : NEXT
-.nohitTableEnd:
-ASSERT ((nohitTableEnd-nohitTable) = 256)
-
-;----------------------------------------------------------------------
-; hit tables
+;;;----------------------------------------------------------------------
+;;; hit tables
 
 H = 1
 o = 0
@@ -837,8 +877,8 @@ o = 0
 .hitTableREnd:
 ASSERT ((hitTableREnd-hitTableR) = 256)
 
-;----------------------------------------------------------------------
-; random
+;;;----------------------------------------------------------------------
+;;; random
 
 .frames SKIP 1
 .getRandom:
@@ -866,62 +906,6 @@ EQUB &1a,&c0,&ce,&41,&cc,&26,&13,&b8,&64,&c0,&77,&42,&00,&9f,&63,&e2
 EQUB &70,&3b,&a5,&0d,&f2,&13,&e8,&72,&9b,&e0,&ad,&7e,&aa,&8e,&d0,&f5
 .randomBytesEnd:
 ASSERT ((randomBytesEnd-randomBytes) = 256)
-
-;;;----------------------------------------------------------------------
-;;; sprite data
-
-.smallMeteor: {
-EQUB 7 : EQUW A, B, C
-.A: EQUW nothing : EQUB 8 : EQUW A0, A1, A2, A3
-.A0: EQUB &33,&44,&88,&88,&44,&22,&44,&33
-.A1: EQUB &11,&22,&44,&44,&22,&11,&22,&11
-.A2: EQUB &00,&11,&22,&22,&11,&00,&11,&00
-.A3: EQUB &00,&00,&11,&11,&00,&00,&00,&00
-.B: EQUW right4 : EQUB 8 : EQUW B0, B1, B2, B3
-.B0: EQUB &66,&99,&11,&00,&00,&11,&99,&66
-.B1: EQUB &bb,&44,&00,&00,&00,&00,&44,&bb
-.B2: EQUB &dd,&22,&00,&00,&00,&88,&22,&dd
-.B3: EQUB &66,&99,&00,&00,&88,&44,&99,&66
-.C: EQUW right8 : EQUB 8 : EQUW C0, C1, C2, C3
-.C0: EQUB &00,&00,&00,&88,&88,&00,&00,&00
-.C1: EQUB &00,&88,&88,&44,&44,&88,&88,&00
-.C2: EQUB &88,&44,&44,&22,&22,&44,&44,&88
-.C3: EQUB &cc,&22,&22,&11,&11,&22,&22,&cc
-}
-
-.mediumMeteor: { EQUB 11 : EQUW A, B, C, D, E
-.A: EQUW nothing : EQUB 16 : EQUW A0, A1, A2, A3
-.A0: EQUB &00,&00,&11,&22,&44,&88,&88,&88,&44,&22,&11,&22,&44,&22,&11,&00
-.A1: EQUB &00,&00,&00,&11,&22,&44,&44,&44,&22,&11,&00,&11,&22,&11,&00,&00
-.A2: EQUB &00,&00,&00,&00,&11,&22,&22,&22,&11,&00,&00,&00,&11,&00,&00,&00
-.A3: EQUB &00,&00,&00,&00,&00,&11,&11,&11,&00,&00,&00,&00,&00,&00,&00,&00
-.B: EQUW right4 : EQUB 16 : EQUW B0, B1, B2, B3
-.B0: EQUB &11,&22,&cc,&00,&00,&00,&00,&00,&00,&00,&00,&00,&00,&00,&00,&ff
-.B1: EQUB &00,&11,&ee,&00,&00,&00,&00,&00,&00,&00,&88,&00,&00,&00,&88,&77
-.B2: EQUB &00,&00,&77,&88,&00,&00,&00,&00,&00,&88,&44,&88,&00,&88,&44,&33
-.B3: EQUB &00,&00,&33,&44,&88,&00,&00,&00,&88,&44,&22,&44,&88,&44,&22,&11
-.C: EQUW right8 : EQUB 16 : EQUW C0, C1, C2, C3
-.C0: EQUB &ff,&00,&00,&00,&00,&00,&00,&00,&00,&00,&00,&00,&00,&44,&aa,&11
-.C1: EQUB &ff,&00,&00,&00,&00,&00,&00,&00,&00,&00,&00,&00,&00,&22,&55,&88
-.C2: EQUB &77,&88,&00,&00,&00,&00,&00,&00,&00,&00,&00,&00,&00,&11,&22,&cc
-.C3: EQUB &33,&44,&88,&00,&00,&00,&00,&00,&00,&00,&00,&00,&00,&00,&11,&ee
-.D: EQUW right12 : EQUB 16 : EQUW D0, D1, D2, D3
-.D0: EQUB &00,&88,&66,&11,&00,&11,&22,&44,&22,&11,&00,&00,&00,&11,&22,&cc
-.D1: EQUB &88,&44,&33,&00,&00,&00,&11,&22,&11,&00,&00,&00,&00,&00,&11,&ee
-.D2: EQUB &cc,&22,&11,&00,&00,&00,&00,&11,&00,&00,&00,&00,&00,&00,&88,&77
-.D3: EQUB &ee,&11,&00,&00,&00,&00,&00,&00,&00,&00,&00,&00,&00,&88,&44,&33
-.E: EQUW right16 : EQUB 16 : EQUW E0, E1, E2, E3
-.E0: EQUB &00,&00,&00,&00,&88,&00,&00,&00,&00,&00,&88,&88,&88,&00,&00,&00
-.E1: EQUB &00,&00,&00,&88,&44,&88,&00,&00,&00,&88,&44,&44,&44,&88,&00,&00
-.E2: EQUB &00,&00,&88,&44,&22,&44,&88,&00,&88,&44,&22,&22,&22,&44,&88,&00
-.E3: EQUB &00,&00,&cc,&22,&11,&22,&44,&88,&44,&22,&11,&11,&11,&22,&44,&88
-}
-
-.right16: ; not needed
-.right12: ; not needed
-.right8: ; not needed
-.nothing:
-    rts
 
 ;;;----------------------------------------------------------------------
 
@@ -1134,7 +1118,7 @@ EQUB 7 : EQUW A, B, C
     BPL no : lda #1 : sta keyR : .no
     rts }
 
-;----------------------------------------------------------------------
+;;;----------------------------------------------------------------------
 .end:
 
 print "bytes left: ", screenStart-*
