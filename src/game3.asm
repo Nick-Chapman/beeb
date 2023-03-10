@@ -1032,32 +1032,20 @@ EQUB 7 : EQUW A, B, C
 ;;;----------------------------------------------------------------------
 ;;; up/down...
 
-;; BUGGY? -- fails to maintain theA
-;; .up1: {
-;;     lda theFY : bne no
-;;     lda #8 : sta theFY ;  should be 7? BUG? -- NO, we drop to decrement..
-;;     jsr up8
-;; .no:
-;;     dec theFY ; ..here
-;;     rts }
-
-;; NEW...
 .up1: { ; FY,CY,A
     lda theFY : bne no
     lda #7 : sta theFY
-    lda theA : clc : adc #7 : sta theA ; FIX1
-    jsr up8
-    rts
+    lda theA : clc : adc #7 : sta theA
+    jmp up8
 .no:
-    dec theA ; FIX2
+    dec theA
     dec theFY
     rts }
 
 .up8: ; CY,A
     jsr unwrapScreen
     dec theCY
-    jsr upA8
-    rts
+    jmp upA8
 
 .upA8: ; A
     lda theA : sec : sbc #&80 : sta theA
@@ -1076,25 +1064,24 @@ EQUB 7 : EQUW A, B, C
 .down1: { ; FY,CY,A
     inc theA
     inc theFY
-    lda theFY : cmp #8 : bne finish
+    lda theFY : cmp #8 : beq cont
+    rts
+.cont:
     lda #0 : sta theFY
     lda theA : sec : sbc #8 : sta theA
-    jmp down8
-.finish
-    rts }
+    jmp down8 }
 
-.down8: ; CY, A
+.down8: ; CY,A
     inc theCY
     jsr downA8
-    jsr wrapScreen
-    rts
+    jmp wrapScreen
 
 .downA8: ; A
     lda theA : clc : adc #&80 : sta theA
     lda theA+1     : adc #2   : sta theA+1
     rts
 
-.wrapScreen: { ; updates (the) CY,A
+.wrapScreen: { ; CY,A
     lda theCY
     cmp #32 : bne no
     lda #0 : sta theCY
