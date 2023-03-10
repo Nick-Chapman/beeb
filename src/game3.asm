@@ -3,10 +3,17 @@
 Debug = FALSE
 DontMove = FALSE
 
-keyCodeU = -58
-keyCodeD = -42
-keyCodeL = -26
-keyCodeR = -122
+;;; arrow keys:
+;;; keyCodeU = -58
+;;; keyCodeD = -42
+;;; keyCodeL = -26
+;;; keyCodeR = -122
+
+;;; z/x/./;
+keyCodeU = -88 ; semicolon
+keyCodeD = -104; dot
+keyCodeL = -98 ; z
+keyCodeR = -67 ; x
 
 ula = &fe21
 osasci = &ffe3
