@@ -59,6 +59,8 @@ ORG &70
 .eraseRunPtr SKIP 2
 .eraseSwitcher SKIP 2
 
+.iterAction SKIP 2
+
 .hitFlags SKIP maxObjects
 
 GUARD screenStart
@@ -227,7 +229,7 @@ timerlength = 100 ; smaller->0
 ;----------------------------------------------------------------------
 ; rocks...
 
-numRocks = 5
+numRocks = 4
 .rockAlive: SKIP numRocks
 .rockFX: SKIP numRocks
 .rockFY: SKIP numRocks
@@ -292,8 +294,7 @@ rockHitFlags = hitFlags
     lda rockFY,x : sta theFY
     lda rockCX,x : sta theCX
     lda rockCY,x : sta theCY
-    jsr moveRockH
-    jsr moveRockV
+    jsr moveRockH : jsr moveRockV ; TODO: reinstate rock movement
     lda theFX : sta rockFX,x
     lda theFY : sta rockFY,x
     lda theCX : sta rockCX,x
@@ -346,7 +347,7 @@ rockHitFlags = hitFlags
     lda rockFX,x : asl a : clc : adc #3 ; TODO: do FX select outside loop
     tay : lda (stripPtrPtr),y : sta stripPtr
     iny : lda (stripPtrPtr),y : sta stripPtr+1
-    jsr plotStrip
+    jsr plotRockStrip
 
     inc stripNum
     lda stripNum : cmp #3 : beq done ; number of strips (3,5)
@@ -358,13 +359,12 @@ rockHitFlags = hitFlags
 .stripNum SKIP 1
 .stripItemNum SKIP 1
 
-.plotStrip: {
+.plotRockStrip: {
     lda #0 : sta stripItemNum
 .loop:
     ldy stripItemNum
     lda (stripPtr),y
     { beq nogen : jsr hitplotGen : jsr eraseGen : .nogen }
-    ;jsr hitplotGen : jsr eraseGen
     inc stripItemNum
     lda stripItemNum
     cmp #8 : beq done ; strip height (8,16)
@@ -376,7 +376,7 @@ rockHitFlags = hitFlags
 ;----------------------------------------------------------------------
 ; bullets
 
-numBullets = 3
+numBullets = 4
 .bulletAlive : SKIP numBullets
 .bulletTimer : SKIP numBullets ; until spawn
 .bulletCX : SKIP numBullets
@@ -432,6 +432,7 @@ numBullets = 3
     bpl loop
     rts }
 
+
 .updateBullet: {
     ldx bulletNum
     lda bulletAlive,x
@@ -442,8 +443,6 @@ numBullets = 3
     lda bulletCX,x : sta theCX
     lda bulletCY,x : sta theCY
     jsr onArrowWithRepeat
-    ;jsr right1
-    ;jsr down1
     lda theFX : sta bulletFX,x
     lda theFY : sta bulletFY,x
     lda theCX : sta bulletCX,x
@@ -462,54 +461,84 @@ numBullets = 3
 .stayDead:
     rts }
 
+
 .drawBullet: {
     ldx bulletNum
-    lda bulletAlive,x : beq noplot
-    lda bulletCX,x : sta theCX
-    lda bulletCY,x : sta theCY
-    lda bulletFY,x : sta theFY
-    jsr calculateAfromXY
-    ldy bulletFX,x : lda dotTableRed,y
-    jsr overwriteGen : jsr eraseGen
-    .noplot : rts }
+    lda bulletAlive,x : bne plot
+    rts
+.plot:
+    copy16i action, iterAction
+    jmp iterateBulletSpriteData
+.action:
+    lda (stripPtr),y : jsr overwriteGen : jsr eraseGen
+    rts
+}
 
-.dotTableRed:
-    EQUB &08, &04, &02, &01
 
-.dotTableMask:
-    EQUB &88, &44, &22, &11
+.bulletIsHit: SKIP 1
 
 .postBlitBulletCheck: {
     copy16i nothingPostBlit, postBlitPtr
     lda #(numBullets-1) : sta bulletNum
 .loop:
+    lda #0 : sta bulletIsHit
     jsr bulletHitCheck
+    lda bulletIsHit : beq notHit
+    jsr killBulletAndSetRespawn
+.notHit:
     dec bulletNum
     bpl loop
-    rts }
+    rts
+}
+
+.killBulletAndSetRespawn:
+    ldx bulletNum
+    lda #0 : sta bulletAlive,x ; die
+    lda #50 : sta bulletTimer,x ; respawn in 1s
+    rts
 
 .bulletHitCheck: {
-
     ldx bulletNum
-    lda bulletAlive,x : beq ok
+    lda bulletAlive,x : bne check
+    rts
+.check:
+    copy16i action, iterAction
+    jmp iterateBulletSpriteData
+.action:
+    lda (stripPtr),y : sta pokeme+1
+    ldy #0 : and (theA),y
+    .pokeme : cmp #&FF
+    { beq notHit : inc bulletIsHit : .notHit }
+    rts
+}
 
+
+.iterateBulletSpriteData: {
     lda bulletCX,x : sta theCX
     lda bulletCY,x : sta theCY
     lda bulletFY,x : sta theFY
     jsr calculateAfromXY
+    copy16i bulletSpriteData, stripPtrPtr
+    lda bulletFX,x : asl a
+    tay : lda (stripPtrPtr),y : sta stripPtr
+    iny : lda (stripPtrPtr),y : sta stripPtr+1
+    ldy #0 : jsr dispatch : jsr down1
+    ldy #1 : jsr dispatch : jsr down1
+    ldy #2 : jsr dispatch : jsr right4
+    ldy #3 : jsr dispatch : jsr up1
+    ldy #4 : jsr dispatch : jsr up1
+    ldy #5 : jsr dispatch
+    rts
+.dispatch: jmp (iterAction)
+}
 
-    ldy #0 : lda (theA),y
-
-    ldy bulletFX,x
-    and dotTableMask,y
-    cmp dotTableRed,y
-
-    beq ok ; still red
-    ldx bulletNum
-    lda #0 : sta bulletAlive,x ; die
-    lda #50 : sta bulletTimer,x ; respawn in 1s
-.ok
-    rts }
+;; RED
+.bulletSpriteData: { EQUW x0,x1,x2,x3
+.x0: EQUB &04,&0e,&04, &00,&00,&00
+.x1: EQUB &02,&07,&02, &00,&00,&00
+.x2: EQUB &01,&03,&01, &00,&08,&00
+.x3: EQUB &00,&01,&00, &08,&0c,&08
+}
 
 ;----------------------------------------------------------------------
 ; hit-flags
@@ -615,7 +644,7 @@ numBullets = 3
     lda #0
     jmp (eraseRunPtr)
 
-eraseNumberBlocks = 120
+eraseNumberBlocks = 130
 macro eraseTemplate
     sta &BEEF ; SCREEN-ADDRESS(1,2)
 endmacro
@@ -943,6 +972,9 @@ EQUB 7 : EQUW A, B, C
     { lda keyD : beq no : lda lastKeyD : bne no : jsr down1 : .no }
     rts
 
+;;;----------------------------------------------------------------------
+;;; left/right...
+
 .left1: {
     lda theFX : bne no
     jsr left4
@@ -970,20 +1002,78 @@ EQUB 7 : EQUW A, B, C
     jsr wrapLine
     rts
 
-.up1: {
-    lda theFY : bne no
-    lda #8 : sta theFY
-    jsr up8
-.no:
-    dec theFY
-    rts }
-.up8:
-    jsr unwrapScreen
-    dec theCY
-    jsr upA
+;; TODO inline
+.leftA:
+    lda theA : sec : sbc #8 : sta theA
+    lda theA+1     : sbc #0 : sta theA+1
+    rts
+.rightA:
+    lda theA : clc : adc #8 : sta theA
+    lda theA+1     : adc #0 : sta theA+1
     rts
 
-.down1: {
+.unwrapLine : {
+    lda theCX
+    bne no
+    lda #80 : sta theCX
+    jsr downA8
+.no:
+    rts }
+
+.wrapLine : {
+    lda theCX
+    cmp #80 : bne no
+    lda #0 : sta theCX
+    jsr upA8
+.no:
+    rts }
+
+
+;;;----------------------------------------------------------------------
+;;; up/down...
+
+;; BUGGY? -- fails to maintain theA
+;; .up1: {
+;;     lda theFY : bne no
+;;     lda #8 : sta theFY ;  should be 7? BUG? -- NO, we drop to decrement..
+;;     jsr up8
+;; .no:
+;;     dec theFY ; ..here
+;;     rts }
+
+;; NEW...
+.up1: { ; FY,CY,A
+    lda theFY : bne no
+    lda #7 : sta theFY
+    lda theA : clc : adc #7 : sta theA ; FIX1
+    jsr up8
+    rts
+.no:
+    dec theA ; FIX2
+    dec theFY
+    rts }
+
+.up8: ; CY,A
+    jsr unwrapScreen
+    dec theCY
+    jsr upA8
+    rts
+
+.upA8: ; A
+    lda theA : sec : sbc #&80 : sta theA
+    lda theA+1     : sbc #2   : sta theA+1
+    rts
+
+.unwrapScreen: { ; CY,A
+    lda theCY
+    bne no
+    lda #32 : sta theCY
+    lda theA+1 : clc : adc #HI(screenEnd-screenStart) : sta theA+1
+.no:
+    rts }
+
+
+.down1: { ; FY,CY,A
     inc theA
     inc theFY
     lda theFY : cmp #8 : bne finish
@@ -993,63 +1083,24 @@ EQUB 7 : EQUW A, B, C
 .finish
     rts }
 
-.down8:
+.down8: ; CY, A
     inc theCY
-    jsr downA
+    jsr downA8
     jsr wrapScreen
     rts
 
-
-.leftA:
-    lda theA : sec : sbc #8 : sta theA
-    lda theA+1     : sbc #0 : sta theA+1
-    rts
-.rightA:
-    lda theA : clc : adc #8 : sta theA
-    lda theA+1     : adc #0 : sta theA+1
-    rts
-.upA:
-    lda theA : sec : sbc #&80 : sta theA
-    lda theA+1     : sbc #2   : sta theA+1
-    rts
-.downA:
+.downA8: ; A
     lda theA : clc : adc #&80 : sta theA
     lda theA+1     : adc #2   : sta theA+1
     rts
 
-
-.unwrapScreen: {
-    lda theCY
-    bne no
-    lda #32 : sta theCY
-    lda theA+1 : clc : adc #HI(screenEnd-screenStart) : sta theA+1
-.no:
-    rts }
-
-.wrapScreen: {
+.wrapScreen: { ; updates (the) CY,A
     lda theCY
     cmp #32 : bne no
     lda #0 : sta theCY
     lda theA+1 : sec : sbc #HI(screenEnd-screenStart) : sta theA+1
 .no:
     rts }
-
-.unwrapLine : {
-    lda theCX
-    bne no
-    lda #80 : sta theCX
-    jsr downA
-.no:
-    rts }
-
-.wrapLine : {
-    lda theCX
-    cmp #80 : bne no
-    lda #0 : sta theCX
-    jsr upA
-.no:
-    rts }
-
 
 ;;;----------------------------------------------------------------------
 ;;; keyboard
@@ -1101,4 +1152,7 @@ EQUB 7 : EQUW A, B, C
 
 ;----------------------------------------------------------------------
 .end:
+
+print "bytes left: ", screenStart-*
+
 SAVE "Code", start, end
