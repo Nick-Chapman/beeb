@@ -333,25 +333,22 @@ rockHitFlags = hitFlags
     copy16i smallMeteor, stripPtrPtrPtr
 
     lda rockCX,x : sta theCX
-    lda #0 : sta stripNum
+    lda rockCY,x : sta theCY
+    lda rockFY,x : sta theFY
+    jsr calculateAfromXY
 
+    lda #0 : sta stripNum
 .loop:
     lda stripNum : asl a : tay
     iny : lda (stripPtrPtrPtr),y : sta stripPtrPtr
     iny : lda (stripPtrPtrPtr),y : sta stripPtrPtr+1
-
-    lda rockCY,x : sta theCY
-    lda rockFY,x : sta theFY
-    jsr calculateAfromXY ; TODO: avoid this every time
-
-    lda rockFX,x : asl a : clc : adc #3 ; TODO: do FX select outside loop
+    lda rockFX,x : asl a : clc : adc #3
     tay : lda (stripPtrPtr),y : sta stripPtr
     iny : lda (stripPtrPtr),y : sta stripPtr+1
     jsr plotRockStrip
-
     inc stripNum
     lda stripNum : cmp #3 : beq done ; number of strips (3,5)
-    jsr right4
+    jsr right4 : jsr up8
     jmp loop
 .done:
     rts }
@@ -365,10 +362,10 @@ rockHitFlags = hitFlags
     ldy stripItemNum
     lda (stripPtr),y
     { beq nogen : jsr hitplotGen : jsr eraseGen : .nogen }
+    jsr down1
     inc stripItemNum
     lda stripItemNum
     cmp #8 : beq done ; strip height (8,16)
-    jsr down1
     jmp loop
 .done:
     rts }
