@@ -9,11 +9,15 @@ DontMove = FALSE
 ;;; keyCodeL = -26
 ;;; keyCodeR = -122
 
-;;; z/x/./;
 keyCodeU = -88 ; semicolon
 keyCodeD = -104; dot
-keyCodeL = -98 ; z
-keyCodeR = -67 ; x
+;;;keyCodeL = -98 ; z
+;;;keyCodeR = -67 ; x
+
+keyCodeL = -65 ; capslock
+keyCodeR = -2 ; ctrl
+
+keyCodeRet = -74 ; return
 
 ula = &fe21
 osasci = &ffe3
@@ -36,11 +40,13 @@ ORG &70
 .keyD SKIP 1
 .keyL SKIP 1
 .keyR SKIP 1
+.keyRet SKIP 1
 
 .lastKeyU SKIP 1
 .lastKeyD SKIP 1
 .lastKeyL SKIP 1
 .lastKeyR SKIP 1
+.lastKeyRet SKIP 1
 
 .stripPtr SKIP 2
 .stripPtrPtr SKIP 2
@@ -270,12 +276,14 @@ numRocks = 4
     lda #0 : sta reverseH,x
     jsr getRandom
     lsr a : rol reverseH,x
-    and #3 : clc : adc #1 : sta speedH,x : sta countH,x
+    ;and #3 : clc : adc #1 : sta speedH,x : sta countH,x
+    and #3 : sta speedH,x : sta countH,x
 
     lda #0 : sta reverseV,x
     jsr getRandom
     lsr a : rol reverseV,x
-    and #3 : clc : adc #1 : sta speedV,x : sta countV,x
+    ;and #3 : clc : adc #1 : sta speedV,x : sta countV,x
+    and #3 : sta speedV,x : sta countV,x
 
     dex
     bpl loop
@@ -453,22 +461,19 @@ EQUB 16, &00,&00,&cc,&22,&11,&22,&44,&88,&44,&22,&11,&11,&11,&22,&44,&88
 
 numBullets = 4
 .bulletAlive : SKIP numBullets
-.bulletTimer : SKIP numBullets ; until spawn
+.bulletTimer : SKIP numBullets
 .bulletCX : SKIP numBullets
 .bulletCY : SKIP numBullets
 .bulletFX : SKIP numBullets
 .bulletFY : SKIP numBullets
+.bulletDirection : SKIP numBullets
+
 .bulletNum: SKIP 1
 
 .delayedSpawnBullets: {
     ldx #(numBullets-1)
 .loop:
-    lda #5 : sta bulletTimer,x ; spawn in .1s
-    jsr randomPos
-    lda theFX : sta bulletFX,x
-    lda theFY : sta bulletFY,x
-    lda theCX : sta bulletCX,x
-    lda theCY : sta bulletCY,x
+    lda #0 : sta bulletAlive,x ; begin dead
     dex
     bpl loop
     rts }
@@ -499,6 +504,9 @@ numBullets = 4
     rts }
 
 .handleBullets: {
+    jsr detectFirePressed
+    jsr detectRotateLeft
+    jsr detectRotateRight
     lda #(numBullets-1) : sta bulletNum
 .loop:
     jsr updateBullet
@@ -507,35 +515,81 @@ numBullets = 4
     bpl loop
     rts }
 
+.detectFirePressed:
+    lda #0 : sta fireBullet
+    { lda keyRet : beq no : lda lastKeyRet : bne no : inc fireBullet : .no }
+    rts
+
+.detectRotateLeft:
+    { lda keyL : beq no : lda lastKeyL : bne no : dec theDirection : .no }
+    rts
+
+.detectRotateRight:
+    { lda keyR : beq no : lda lastKeyR : bne no : inc theDirection : .no }
+    rts
+
+.fireBullet : EQUB 0
+.theDirection : EQUB 0
 
 .updateBullet: {
     ldx bulletNum
-    lda bulletAlive,x
-    beq isDead
-    ;; isAlive - move...
+    lda bulletAlive,x : beq isDead
+    dec bulletTimer,x : beq die
+    ;; isAlive; move
     lda bulletFX,x : sta theFX
     lda bulletFY,x : sta theFY
     lda bulletCX,x : sta theCX
     lda bulletCY,x : sta theCY
-    jsr onArrowWithRepeat
+
+    jsr moveBulletDirection
+
     lda theFX : sta bulletFX,x
     lda theFY : sta bulletFY,x
     lda theCX : sta bulletCX,x
     lda theCY : sta bulletCY,x
     rts
+.die:
+    lda #0 : sta bulletAlive,x
 .isDead:
-    dec bulletTimer,x
-    bne stayDead
-    lda #1 : sta bulletAlive,x
-    ;; come alive; choose new random position
-    jsr randomPos
-    lda theFX : sta bulletFX,x
-    lda theFY : sta bulletFY,x
-    lda theCX : sta bulletCX,x
-    lda theCY : sta bulletCY,x
+    lda fireBullet : beq stayDead
+    dec fireBullet ; so only one bullet gets fired
+
+    lda #1 : sta bulletAlive,x ; spawn
+    lda #50 : sta bulletTimer,x ; set lifetime
+    lda theDirection : and #&f : sta bulletDirection,x ; set direction
+
+    ;; TODO: control thrusting rocket
+    lda #0 : sta bulletFX,x
+    lda #0 : sta bulletFY,x
+    lda #39 : sta bulletCX,x
+    lda #15 : sta bulletCY,x
 .stayDead:
     rts }
 
+.moveBulletDirection: {
+    lda bulletDirection,x : asl a : tay
+    lda directions,y : sta pokeme+1
+    lda directions+1,y : sta pokeme+2
+    .pokeme : jsr &FFFF
+    rts }
+
+.directions:
+EQUW up3, u3r1, u2r2, r3u1, right3, r3d1, r2d2, d3r1
+EQUW down3, d3l1, d2l2, l3d1, left3, l3u1, l2u2, u3l1
+
+.u2r2: jsr up2 : jmp right2
+.r2d2: jsr right2 : jmp down2
+.d2l2: jsr down2 : jmp left2
+.l2u2: jsr left2 : jmp up2
+
+.u3l1: jsr up3 : jmp left1
+.u3r1: jsr up3 : jmp right1
+.d3l1: jsr down3 : jmp left1
+.d3r1: jsr down3 : jmp right1
+.l3u1: jsr left3 : jmp up1
+.l3d1: jsr left3 : jmp down1
+.r3u1: jsr right3 : jmp up1
+.r3d1: jsr right3 : jmp down1
 
 .drawBullet: {
     ldx bulletNum
@@ -569,7 +623,6 @@ numBullets = 4
 .killBulletAndSetRespawn:
     ldx bulletNum
     lda #0 : sta bulletAlive,x ; die
-    lda #50 : sta bulletTimer,x ; respawn in 1s
     rts
 
 .bulletHitCheck: {
@@ -971,23 +1024,25 @@ ASSERT ((randomBytesEnd-randomBytes) = 256)
 ;;;----------------------------------------------------------------------
 ;;; incremental movement
 
-.onArrowWithRepeat:
-    { lda keyU : beq no : jsr up1 : .no }
-    { lda keyD : beq no : jsr down1 : .no }
-    { lda keyL : beq no : jsr left1 : .no }
-    { lda keyR : beq no : jsr right1 : .no }
-    rts
+;; .onArrowWithRepeat:
+;;     { lda keyU : beq no : jsr up1 : .no }
+;;     { lda keyD : beq no : jsr down1 : .no }
+;;     { lda keyL : beq no : jsr left1 : .no }
+;;     { lda keyR : beq no : jsr right1 : .no }
+;;     rts
 
-.onArrow:
-    { lda keyL : beq no : lda lastKeyL : bne no : jsr left1 : .no }
-    { lda keyR : beq no : lda lastKeyR : bne no : jsr right1 : .no }
-    { lda keyU : beq no : lda lastKeyU : bne no : jsr up1 : .no }
-    { lda keyD : beq no : lda lastKeyD : bne no : jsr down1 : .no }
-    rts
+;; .onArrow:
+;;     { lda keyL : beq no : lda lastKeyL : bne no : jsr left1 : .no }
+;;     { lda keyR : beq no : lda lastKeyR : bne no : jsr right1 : .no }
+;;     { lda keyU : beq no : lda lastKeyU : bne no : jsr up1 : .no }
+;;     { lda keyD : beq no : lda lastKeyD : bne no : jsr down1 : .no }
+;;     rts
 
 ;;;----------------------------------------------------------------------
 ;;; left/right...
 
+.left3: jsr left1
+.left2: jsr left1
 .left1: {
     lda theFX : bne no
     jsr left4
@@ -1002,7 +1057,8 @@ ASSERT ((randomBytesEnd-randomBytes) = 256)
     jsr leftA
     rts
 
-
+.right3: jsr right1
+.right2: jsr right1
 .right1: {
     inc theFX : lda theFX : cmp #4  : bne after : lda #0 : sta theFX
     inc theCX : lda theCX : cmp #80 : bne after : lda #0 : sta theCX ; TODO: right4
@@ -1045,6 +1101,8 @@ ASSERT ((randomBytesEnd-randomBytes) = 256)
 ;;;----------------------------------------------------------------------
 ;;; up/down...
 
+.up3: jsr up1
+.up2: jsr up1
 .up1: { ; FY,CY,A
     lda theFY : bne no
     lda #7 : sta theFY
@@ -1074,6 +1132,8 @@ ASSERT ((randomBytesEnd-randomBytes) = 256)
     rts }
 
 
+.down3: jsr down1
+.down2: jsr down1
 .down1: { ; FY,CY,A
     inc theA
     inc theFY
@@ -1117,6 +1177,7 @@ ASSERT ((randomBytesEnd-randomBytes) = 256)
     lda keyD : sta lastKeyD
     lda keyL : sta lastKeyL
     lda keyR : sta lastKeyR
+    lda keyRet : sta lastKeyRet
     rts
 
 .readKeys:
@@ -1124,6 +1185,7 @@ ASSERT ((randomBytesEnd-randomBytes) = 256)
     jsr checkD
     jsr checkL
     jsr checkR
+    jsr checkRet
     rts
 
 .checkU: {
@@ -1148,6 +1210,12 @@ ASSERT ((randomBytesEnd-randomBytes) = 256)
     lda #0 : sta keyR
     lda #(-keyCodeR-1) : sta &fe4f : lda &fe4f
     BPL no : lda #1 : sta keyR : .no
+    rts }
+
+.checkRet: {
+    lda #0 : sta keyRet
+    lda #(-keyCodeRet-1) : sta &fe4f : lda &fe4f
+    BPL no : lda #1 : sta keyRet : .no
     rts }
 
 ;;;----------------------------------------------------------------------
