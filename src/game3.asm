@@ -16,7 +16,7 @@ keyCodeD = -104; dot
 
 keyCodeL = -65 ; capslock
 keyCodeR = -2 ; ctrl
-
+keyCodeShift = -1 ; shift
 keyCodeRet = -74 ; return
 
 ula = &fe21
@@ -41,6 +41,7 @@ ORG &70
 .keyL SKIP 1
 .keyR SKIP 1
 .keyRet SKIP 1
+.keyShift SKIP 1
 
 .lastKeyU SKIP 1
 .lastKeyD SKIP 1
@@ -206,12 +207,19 @@ timerlength = 0;100 ; smaller->0
 ;;; scenes: startScene, mainLevelScene, levelClearScene, waitAndRestartScene
 
 .startScene:
+    jsr putShipInMiddle
     jsr spawnRocks
     jsr delayedSpawnBullets
     copy16i mainLevelScene, scenePtr
     rts
 
 .mainLevelScene:
+    jsr detectThrust
+    jsr detectFirePressed
+    jsr detectRotateLeft
+    jsr detectRotateRight
+
+    jsr handleShip
     jsr handleBullets
     jsr handleRocks
     copy16i postBlitBulletCheck, postBlitPtr
@@ -238,6 +246,35 @@ timerlength = 0;100 ; smaller->0
     rts }
 
 .waitCount: SKIP 1
+
+;;;----------------------------------------------------------------------
+;;; detect controls
+
+.detectFirePressed:
+    lda #0 : sta fireBullet
+    { lda keyRet : beq no : lda lastKeyRet : bne no : inc fireBullet : .no }
+    rts
+
+.detectThrust:
+    lda #0 : sta thrustEngine
+    { lda keyShift : beq no : inc thrustEngine : .no }
+    rts
+
+.detectRotateLeft: {
+    lda frames : and #3 : bne done
+    { lda keyL : beq no : dec theDirection : .no }
+.done:
+    rts }
+
+.detectRotateRight: {
+    lda frames : and #3 : bne done
+    { lda keyR : beq no : inc theDirection : .no }
+.done:
+    rts }
+
+.thrustEngine : EQUB 0
+.fireBullet : EQUB 0
+.theDirection : EQUB 0
 
 ;;;----------------------------------------------------------------------
 ;;; rocks...
@@ -455,6 +492,39 @@ EQUB 16, &ee,&11,&00,&00,&00,&00,&00,&00,&00,&00,&00,&00,&00,&88,&44,&33 : EQUW 
 EQUB 16, &00,&00,&cc,&22,&11,&22,&44,&88,&44,&22,&11,&11,&11,&22,&44,&88
 }
 
+;;;----------------------------------------------------------------------
+;;; ship
+
+.shipCX SKIP 1
+.shipCY SKIP 1
+.shipFX SKIP 1
+.shipFY SKIP 1
+
+.putShipInMiddle:
+    lda #0 : sta shipFX
+    lda #0 : sta shipFY
+    lda #39 : sta shipCX
+    lda #15 : sta shipCY
+    rts
+
+.handleShip:
+    jsr updateShipPos
+    rts
+
+.updateShipPos: {
+    lda thrustEngine : beq done
+    lda shipFX : sta theFX
+    lda shipFY : sta theFY
+    lda shipCX : sta theCX
+    lda shipCY : sta theCY
+    lda theDirection : and #&f : jsr moveDirection
+    lda theFX : sta shipFX
+    lda theFY : sta shipFY
+    lda theCX : sta shipCX
+    lda theCY : sta shipCY
+.done:
+    rts }
+
 
 ;;;----------------------------------------------------------------------
 ;;; bullets
@@ -504,9 +574,6 @@ numBullets = 4
     rts }
 
 .handleBullets: {
-    jsr detectFirePressed
-    jsr detectRotateLeft
-    jsr detectRotateRight
     lda #(numBullets-1) : sta bulletNum
 .loop:
     jsr updateBullet
@@ -514,22 +581,6 @@ numBullets = 4
     dec bulletNum
     bpl loop
     rts }
-
-.detectFirePressed:
-    lda #0 : sta fireBullet
-    { lda keyRet : beq no : lda lastKeyRet : bne no : inc fireBullet : .no }
-    rts
-
-.detectRotateLeft:
-    { lda keyL : beq no : lda lastKeyL : bne no : dec theDirection : .no }
-    rts
-
-.detectRotateRight:
-    { lda keyR : beq no : lda lastKeyR : bne no : inc theDirection : .no }
-    rts
-
-.fireBullet : EQUB 0
-.theDirection : EQUB 0
 
 .updateBullet: {
     ldx bulletNum
@@ -541,7 +592,7 @@ numBullets = 4
     lda bulletCX,x : sta theCX
     lda bulletCY,x : sta theCY
 
-    jsr moveBulletDirection
+    lda bulletDirection,x : jsr moveDirection
 
     lda theFX : sta bulletFX,x
     lda theFY : sta bulletFY,x
@@ -558,16 +609,16 @@ numBullets = 4
     lda #50 : sta bulletTimer,x ; set lifetime
     lda theDirection : and #&f : sta bulletDirection,x ; set direction
 
-    ;; TODO: control thrusting rocket
-    lda #0 : sta bulletFX,x
-    lda #0 : sta bulletFY,x
-    lda #39 : sta bulletCX,x
-    lda #15 : sta bulletCY,x
+    ;; bullet originates from ship
+    lda shipFX : sta bulletFX,x
+    lda shipFY : sta bulletFY,x
+    lda shipCX : sta bulletCX,x
+    lda shipCY : sta bulletCY,x
 .stayDead:
     rts }
 
-.moveBulletDirection: {
-    lda bulletDirection,x : asl a : tay
+.moveDirection: { ; passed in Acc
+    asl a : tay
     lda directions,y : sta pokeme+1
     lda directions+1,y : sta pokeme+2
     .pokeme : jsr &FFFF
@@ -1186,6 +1237,7 @@ ASSERT ((randomBytesEnd-randomBytes) = 256)
     jsr checkL
     jsr checkR
     jsr checkRet
+    jsr checkShift
     rts
 
 .checkU: {
@@ -1216,6 +1268,12 @@ ASSERT ((randomBytesEnd-randomBytes) = 256)
     lda #0 : sta keyRet
     lda #(-keyCodeRet-1) : sta &fe4f : lda &fe4f
     BPL no : lda #1 : sta keyRet : .no
+    rts }
+
+.checkShift: {
+    lda #0 : sta keyShift
+    lda #(-keyCodeShift-1) : sta &fe4f : lda &fe4f
+    BPL no : lda #1 : sta keyShift : .no
     rts }
 
 ;;;----------------------------------------------------------------------
