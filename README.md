@@ -35,16 +35,25 @@ Eventual goal: write a graphics game.
 - simple scene change: level start; detect level end; wait and restart
 - post plot collision detection (intended for bullets)
 
-## todo
-- reinstate sprites form game1: bullets, rocks
-- four game object classes classes: bullets, rocks, (LATER:saucer), player
-- game logic and different hit-detection for player
-- reinstate keyboard control for player
-- player shoots bullets
-- large meteor sprite
-- spaceship sprite, 4 orientations, mirror plotting for 4-->16 orientations
-- saucer: spite, game logic
-- spaceship with thrust & rotation control
-- slow object movement; interesting angles
-- plot/erase only half the objects each frame
+## game3
+- reinstate sprites from game1: bullets, rocks
+- collision detection for rocks and bullets
 - improve vsync with timer
+- slow rock movement; independent V/H counters per rock
+- game logic: kill rocks under screen clear, then restart
+- game logic: 2x medium: each medium splits into 2x small
+- reinstate keyboard control for player
+- player shoots bullets from invisible space-ship (source of bullets!)
+- (invisible) ship rotation control: become bullet direction
+- basic thrust control (move the source of bullets)
+
+## NEXT
+- ship: see something!
+- sprite(s) for ship: 5 sprites in 32 orientations (mirror: 4,8,8,8,4)
+- ship: collision detection
+- ship: proper thrust control
+- large meteor sprite
+- prepare/plot objects every other frame to allow double number of objects
+
+## one day
+- saucer: sprite, collision, game logic
