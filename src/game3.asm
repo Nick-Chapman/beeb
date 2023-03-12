@@ -68,7 +68,6 @@ ORG &70
 .eraseSwitcher SKIP 2
 
 .iterAction SKIP 2
-.reposPtr SKIP 2
 
 .hitFlags SKIP maxObjects
 
@@ -288,7 +287,7 @@ timerlength = 0;100 ; smaller->0
 ;;;----------------------------------------------------------------------
 ;;; rocks...
 
-numRocks = 2
+numRocks = 4
 .rockAlive: SKIP numRocks ; 2-medium, 1-small, 0-dead
 .rockFX: SKIP numRocks
 .rockFY: SKIP numRocks
@@ -307,8 +306,8 @@ numRocks = 2
 .spawnRocks: {
     ldx #0 : lda #0 : sta rockAlive,x
     ldx #1 : lda #2 : sta rockAlive,x : inc numberRocksLeft
-    ;ldx #2 : lda #0 : sta rockAlive,x
-    ;ldx #3 : lda #2 : sta rockAlive,x : inc numberRocksLeft
+    ldx #2 : lda #0 : sta rockAlive,x
+    ldx #3 : lda #2 : sta rockAlive,x : inc numberRocksLeft
     ldx #(numRocks-1)
 .loop:
     stx rockNum
@@ -434,16 +433,13 @@ numRocks = 2
     dec stripItemCount : bne loopItem
     dec stripCount : beq done
     ldy dataNum
-    lda (stripPtr),y : sta reposPtr : iny
-    lda (stripPtr),y : sta reposPtr+1 : iny
+    lda (stripPtr),y : sta dispatch+1 : iny
+    lda (stripPtr),y : sta dispatch+2 : iny
     sty dataNum
-    jsr dispatchReposition
+    .dispatch : jsr &FFFF
     jmp loopStrip
 .done:
     rts }
-
-.dispatchReposition:
-    jmp (reposPtr)
 
 ;;; consider zero page
 .dataNum SKIP 1
@@ -561,10 +557,10 @@ EQUB 16, &00,&00,&cc,&22,&11,&22,&44,&88,&44,&22,&11,&11,&11,&22,&44,&88
     dec stripItemCount : bne loopItem
     dec stripCount : beq done
     ldy dataNum
-    lda (stripPtr),y : sta reposPtr : iny
-    lda (stripPtr),y : sta reposPtr+1 : iny
+    lda (stripPtr),y : sta dispatch+1 : iny
+    lda (stripPtr),y : sta dispatch+2 : iny
     sty dataNum
-    jsr dispatchReposition
+    .dispatch : jsr &FFFF
     jmp loopStrip
 .done:
     rts }
