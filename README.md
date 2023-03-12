@@ -46,12 +46,15 @@ Eventual goal: write a graphics game.
 - player shoots bullets from invisible space-ship (source of bullets!)
 - (invisible) ship rotation control: become bullet direction
 - basic thrust control (move the source of bullets)
+- ship: see something!
 
 ## NEXT
-- ship: see something!
-- sprite(s) for ship: 5 sprites in 32 orientations (mirror: 4,8,8,8,4)
-- ship: collision detection
+- ship: show facing direction
 - ship: proper thrust control
+- ship: collision detection
+- find some easy wins for speedup
+
+- sprite(s) for ship: 5 sprites in 32 orientations (mirror: 4,8,8,8,4)
 - large meteor sprite
 - prepare/plot objects every other frame to allow double number of objects
 
