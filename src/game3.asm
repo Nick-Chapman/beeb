@@ -3,21 +3,19 @@
 Debug = FALSE
 DontMove = FALSE
 
-;;; arrow keys:
-;;; keyCodeU = -58
-;;; keyCodeD = -42
-;;; keyCodeL = -26
-;;; keyCodeR = -122
+;;; keyCodeU = -58  ; up arrow
+;;; keyCodeD = -42  ; down arrow
+;;; keyCodeL = -26  ; left arrow
+;;; keyCodeR = -122 ; right arrow
+;;; keyCodeL = -98  ; z
+;;; keyCodeR = -67  ; x
 
-keyCodeU = -88 ; semicolon
-keyCodeD = -104; dot
-;;;keyCodeL = -98 ; z
-;;;keyCodeR = -67 ; x
-
-keyCodeL = -65 ; capslock
-keyCodeR = -2 ; ctrl
+keyCodeU = -88    ; semicolon
+keyCodeD = -104   ; dot
+keyCodeL = -65    ; capslock
+keyCodeR = -2     ; ctrl
+keyCodeRet = -74  ; return
 keyCodeShift = -1 ; shift
-keyCodeRet = -74 ; return
 
 ula = &fe21
 osasci = &ffe3
@@ -36,18 +34,15 @@ ORG &70
 
 .vsync SKIP 1
 
-.keyU SKIP 1
-.keyD SKIP 1
 .keyL SKIP 1
 .keyR SKIP 1
 .keyRet SKIP 1
 .keyShift SKIP 1
 
-.lastKeyU SKIP 1
-.lastKeyD SKIP 1
 .lastKeyL SKIP 1
 .lastKeyR SKIP 1
 .lastKeyRet SKIP 1
+;;; dont need to save Shift
 
 .stripPtr SKIP 2
 .stripPtrPtr SKIP 2
@@ -116,7 +111,7 @@ timerlength = 0;100 ; smaller->0
 
 .mySync: {
     { .loop : lda vsync : beq loop }
-    cmp #2 : bcs failSync ; sometimes triggers surprisingly
+    cmp #2 : bcs failSync
     lda #0 : sta vsync
     rts
 .failSync:
@@ -148,7 +143,6 @@ timerlength = 0;100 ; smaller->0
     jsr setupMachine
     jsr eraseInit
     jsr initHitFlags
-    jsr initKeyVars
 
     lda #0 : sta badHit
     copy16i startScene, scenePtr
@@ -209,7 +203,6 @@ timerlength = 0;100 ; smaller->0
 .startScene:
     jsr putShipInMiddle
     jsr spawnRocks
-    jsr delayedSpawnBullets
     copy16i mainLevelScene, scenePtr
     rts
 
@@ -219,9 +212,20 @@ timerlength = 0;100 ; smaller->0
     jsr detectRotateLeft
     jsr detectRotateRight
 
-    jsr handleShip
-    jsr handleBullets
-    jsr handleRocks
+    ;; currently we are not doing collision detection for ship
+    ;; ship is blitted using the cheap "overwrite" plotting
+    ;; bullets are also plotted using "overwrite" plotting
+    ;; also: bullets are checked after blitting, to implement bullet collision
+
+    ;; to allow this postBlitBulletCheck to work,
+    ;; the bullets must be blitted after the ship is blitted
+
+    ;; However, the code generated in the prepare step is bliited in reverse order
+    ;; So we must draw the ship *after* we draw the bullets
+
+    jsr handleBullets ; overwrite (blitted *after* ship)
+    jsr handleShip ; overwrite (blitted *before* bullets)
+    jsr handleRocks ; hitplot (bliited *last*)
     copy16i postBlitBulletCheck, postBlitPtr
     rts
 
@@ -255,20 +259,25 @@ timerlength = 0;100 ; smaller->0
     { lda keyRet : beq no : lda lastKeyRet : bne no : inc fireBullet : .no }
     rts
 
-.detectThrust:
+.detectThrust: {
     lda #0 : sta thrustEngine
+    lda frames : and #1 : bne done ; every other frame
     { lda keyShift : beq no : inc thrustEngine : .no }
     rts
+.done:
+    rts }
 
 .detectRotateLeft: {
-    lda frames : and #3 : bne done
+    ;lda frames : and #1 : bne done
     { lda keyL : beq no : dec theDirection : .no }
+    ;{ lda keyL : beq no : lda lastKeyL : bne no : dec theDirection : .no }
 .done:
     rts }
 
 .detectRotateRight: {
-    lda frames : and #3 : bne done
+    ;lda frames : and #1 : bne done
     { lda keyR : beq no : inc theDirection : .no }
+    ;{ lda keyR : beq no : lda lastKeyR : bne no : inc theDirection : .no }
 .done:
     rts }
 
@@ -279,7 +288,7 @@ timerlength = 0;100 ; smaller->0
 ;;;----------------------------------------------------------------------
 ;;; rocks...
 
-numRocks = 4
+numRocks = 2
 .rockAlive: SKIP numRocks ; 2-medium, 1-small, 0-dead
 .rockFX: SKIP numRocks
 .rockFY: SKIP numRocks
@@ -298,8 +307,8 @@ numRocks = 4
 .spawnRocks: {
     ldx #0 : lda #0 : sta rockAlive,x
     ldx #1 : lda #2 : sta rockAlive,x : inc numberRocksLeft
-    ldx #2 : lda #0 : sta rockAlive,x
-    ldx #3 : lda #2 : sta rockAlive,x : inc numberRocksLeft
+    ;ldx #2 : lda #0 : sta rockAlive,x
+    ;ldx #3 : lda #2 : sta rockAlive,x : inc numberRocksLeft
     ldx #(numRocks-1)
 .loop:
     stx rockNum
@@ -509,6 +518,7 @@ EQUB 16, &00,&00,&cc,&22,&11,&22,&44,&88,&44,&22,&11,&11,&11,&22,&44,&88
 
 .handleShip:
     jsr updateShipPos
+    jsr drawShip
     rts
 
 .updateShipPos: {
@@ -517,7 +527,7 @@ EQUB 16, &00,&00,&cc,&22,&11,&22,&44,&88,&44,&22,&11,&11,&11,&22,&44,&88
     lda shipFY : sta theFY
     lda shipCX : sta theCX
     lda shipCY : sta theCY
-    lda theDirection : and #&f : jsr moveDirection
+    lda theDirection : lsr a : lsr a : and #&f : jsr moveDirection
     lda theFX : sta shipFX
     lda theFY : sta shipFY
     lda theCX : sta shipCX
@@ -525,12 +535,63 @@ EQUB 16, &00,&00,&cc,&22,&11,&22,&44,&88,&44,&22,&11,&11,&11,&22,&44,&88
 .done:
     rts }
 
+.drawShip: { ; TODO: unify with drawRock
+    ;copy16i smallMeteor, stripPtrPtr
+    ;{ lda rockAlive,x : cmp #2 : bne no : copy16i mediumMeteor, stripPtrPtr : .no }
+    copy16i shipSpriteData, stripPtrPtr
+    ;txa : clc : adc #hitFlags : sta hitme ; me
+    lda shipCX : sta theCX
+    lda shipCY : sta theCY
+    lda shipFY : sta theFY
+    jsr calculateAfromXY
+    lda shipFX : asl a
+    tay : lda (stripPtrPtr),y : sta stripPtr
+    iny : lda (stripPtrPtr),y : sta stripPtr+1
+    ldy #0 : lda (stripPtr),y : sta stripCount
+    lda #1 : sta dataNum
+.loopStrip:
+    ldy dataNum : lda (stripPtr),y : sta stripItemCount
+    inc dataNum
+.loopItem:
+    ldy dataNum : lda (stripPtr),y
+    ;{ beq nogen : jsr hitplotGen : jsr eraseGen : .nogen } ; ship collision will need
+    { beq nogen : jsr overwriteGen : jsr eraseGen : .nogen }
+    inc dataNum
+    jsr down1
+    dec stripItemCount : bne loopItem
+    dec stripCount : beq done
+    ldy dataNum
+    lda (stripPtr),y : sta reposPtr : iny
+    lda (stripPtr),y : sta reposPtr+1 : iny
+    sty dataNum
+    jsr dispatchReposition
+    jmp loopStrip
+.done:
+    rts }
+
+;;YELLOW
+.shipSpriteData: { EQUW x0,x1,x2,x3
+.x0: EQUB 2
+EQUB 3, &40,&e0,&40 : EQUW r4u3
+EQUB 3, &00,&00,&00
+.x1: EQUB 2
+EQUB 3, &20,&70,&20 : EQUW r4u3
+EQUB 3, &00,&00,&00
+.x2: EQUB 2
+EQUB 3, &10,&30,&10 : EQUW r4u3
+EQUB 3, &00,&80,&00
+.x3: EQUB 2
+EQUB 3, &00,&10,&00 : EQUW r4u3
+EQUB 3, &80,&c0,&80
+}
+
+.r4u3:  jsr right4 : jmp up3
 
 ;;;----------------------------------------------------------------------
 ;;; bullets
 
 numBullets = 4
-.bulletAlive : SKIP numBullets
+.bulletAlive : SKIP numBullets ; zero initialization means bullets start dead
 .bulletTimer : SKIP numBullets
 .bulletCX : SKIP numBullets
 .bulletCY : SKIP numBullets
@@ -539,31 +600,6 @@ numBullets = 4
 .bulletDirection : SKIP numBullets
 
 .bulletNum: SKIP 1
-
-.delayedSpawnBullets: {
-    ldx #(numBullets-1)
-.loop:
-    lda #0 : sta bulletAlive,x ; begin dead
-    dex
-    bpl loop
-    rts }
-
-.randomPos: ; into the{FX,FY,CX,CY}
-    lda #0 : sta theFX
-    jsr getRandom
-    ; shift 2 bits into FX
-    lsr a : rol theFX
-    lsr a : rol theFX
-    sta theCX ; leaving 6 bits in CX (0..63) ; TODO: translate to (0..31 | 48..79)
-
-    lda #0 : sta theFY
-    jsr getRandom
-    ; shift 3 bits into FY
-    lsr a : rol theFY
-    lsr a : rol theFY
-    lsr a : rol theFY
-    sta theCY ; leaving 5 bits in CX (0..31)
-    rts
 
 .killAllBullets: {
     ldx #(numBullets-1)
@@ -592,7 +628,7 @@ numBullets = 4
     lda bulletCX,x : sta theCX
     lda bulletCY,x : sta theCY
 
-    lda bulletDirection,x : jsr moveDirection
+    lda bulletDirection,x : lsr a : lsr a : and #&f : jsr moveDirection
 
     lda theFX : sta bulletFX,x
     lda theFY : sta bulletFY,x
@@ -607,13 +643,22 @@ numBullets = 4
 
     lda #1 : sta bulletAlive,x ; spawn
     lda #50 : sta bulletTimer,x ; set lifetime
-    lda theDirection : and #&f : sta bulletDirection,x ; set direction
 
-    ;; bullet originates from ship
-    lda shipFX : sta bulletFX,x
-    lda shipFY : sta bulletFY,x
-    lda shipCX : sta bulletCX,x
-    lda shipCY : sta bulletCY,x
+    lda theDirection : sta bulletDirection,x
+
+    lda shipFX : sta theFX
+    lda shipFY : sta theFY
+    lda shipCX : sta theCX
+    lda shipCY : sta theCY
+
+    ;;bullet originates one bullet-move step from center of ship
+    lda bulletDirection,x : lsr a : lsr a : and #&f : jsr moveDirection
+
+    lda theFX : sta bulletFX,x
+    lda theFY : sta bulletFY,x
+    lda theCX : sta bulletCX,x
+    lda theCY : sta bulletCY,x
+
 .stayDead:
     rts }
 
@@ -794,18 +839,18 @@ EQUW down3, d3l1, d2l2, l3d1, left3, l3u1, l2u2, u3l1
     rts
 
 .setupColours:
-    jsr replaceYellowWithBlue ; easier to see on cyan
+    ;jsr replaceYellowWithBlue ; easier to see on cyan
     jsr replaceWhiteWithCyan
     rts
 
-.replaceYellowWithBlue:
-    lda #19 : jsr oswrch
-    lda #2 : jsr oswrch ; logical yellow
-    lda #4 : jsr oswrch ; physical blue
-    lda #0 : jsr oswrch
-    lda #0 : jsr oswrch
-    lda #0 : jsr oswrch
-    rts
+;; .replaceYellowWithBlue:
+;;     lda #19 : jsr oswrch
+;;     lda #2 : jsr oswrch ; logical yellow
+;;     lda #4 : jsr oswrch ; physical blue
+;;     lda #0 : jsr oswrch
+;;     lda #0 : jsr oswrch
+;;     lda #0 : jsr oswrch
+;;     rts
 
 .replaceWhiteWithCyan:
     lda #19 : jsr oswrch
@@ -971,6 +1016,7 @@ FOR i, 1, hitplotNumberBlocks-1 : hitplotTemplate : NEXT
     lda theA     : ldy #1 : sta (hitplotPtr),y : ldy #18 : sta (hitplotPtr),y
     lda theA+1   : ldy #2 : sta (hitplotPtr),y : ldy #19 : sta (hitplotPtr),y
     lda hitme : ldy #13 : sta (hitplotPtr),y
+    ;lda #badHit : sta hitme ; DEV CHECK CODE
     rts
 
 .hitplotSpaceCheck: {
@@ -1017,9 +1063,11 @@ ASSERT ((hitTableREnd-hitTableR) = 256)
 ;;; random
 
 .frames SKIP 1
+.randomOffset SKIP 1
+
 .getRandom:
-    inc frames
-    ldy frames
+    inc randomOffset
+    ldy randomOffset
     lda randomBytes,y
     rts
 
@@ -1044,6 +1092,28 @@ EQUB &70,&3b,&a5,&0d,&f2,&13,&e8,&72,&9b,&e0,&ad,&7e,&aa,&8e,&d0,&f5
 ASSERT ((randomBytesEnd-randomBytes) = 256)
 
 ;;;----------------------------------------------------------------------
+
+;;; theCX : coarse-X : 0..79
+;;; theFX : fine-X   : 0..3
+;;; theCY : coarse-Y : 0..31
+;;; theFY : fine-Y   : 0..7
+
+.randomPos: ; into the{FX,FY,CX,CY}
+    lda #0 : sta theFX
+    jsr getRandom
+    ; shift 2 bits into FX
+    lsr a : rol theFX
+    lsr a : rol theFX
+    sta theCX ; leaving 6 bits in CX (0..63) ; TODO: translate to (0..31 | 48..79)
+
+    lda #0 : sta theFY
+    jsr getRandom
+    ; shift 3 bits into FY
+    lsr a : rol theFY
+    lsr a : rol theFY
+    lsr a : rol theFY
+    sta theCY ; leaving 5 bits in CX (0..31)
+    rts
 
 .calculateAfromXY:
     ;; (coarse)X                    0..79
@@ -1071,23 +1141,6 @@ ASSERT ((randomBytesEnd-randomBytes) = 256)
     clc : adc theA : sta theA ; adjust A with fineY
 
     rts
-
-;;;----------------------------------------------------------------------
-;;; incremental movement
-
-;; .onArrowWithRepeat:
-;;     { lda keyU : beq no : jsr up1 : .no }
-;;     { lda keyD : beq no : jsr down1 : .no }
-;;     { lda keyL : beq no : jsr left1 : .no }
-;;     { lda keyR : beq no : jsr right1 : .no }
-;;     rts
-
-;; .onArrow:
-;;     { lda keyL : beq no : lda lastKeyL : bne no : jsr left1 : .no }
-;;     { lda keyR : beq no : lda lastKeyR : bne no : jsr right1 : .no }
-;;     { lda keyU : beq no : lda lastKeyU : bne no : jsr up1 : .no }
-;;     { lda keyD : beq no : lda lastKeyD : bne no : jsr down1 : .no }
-;;     rts
 
 ;;;----------------------------------------------------------------------
 ;;; left/right...
@@ -1216,41 +1269,18 @@ ASSERT ((randomBytesEnd-randomBytes) = 256)
 ;;;----------------------------------------------------------------------
 ;;; keyboard
 
-.initKeyVars:
-    lda #0 : sta keyU
-    lda #0 : sta keyD
-    lda #0 : sta keyL
-    lda #0 : sta keyR
-    rts
-
 .saveLastKeys:
-    lda keyU : sta lastKeyU
-    lda keyD : sta lastKeyD
     lda keyL : sta lastKeyL
     lda keyR : sta lastKeyR
     lda keyRet : sta lastKeyRet
     rts
 
 .readKeys:
-    jsr checkU
-    jsr checkD
     jsr checkL
     jsr checkR
     jsr checkRet
     jsr checkShift
     rts
-
-.checkU: {
-    lda #0 : sta keyU
-    lda #(-keyCodeU-1) : sta &fe4f : lda &fe4f
-    BPL no : lda #1 : sta keyU : .no
-    rts }
-
-.checkD: {
-    lda #0 : sta keyD
-    lda #(-keyCodeD-1) : sta &fe4f : lda &fe4f
-    BPL no : lda #1 : sta keyD : .no
-    rts }
 
 .checkL: {
     lda #0 : sta keyL
