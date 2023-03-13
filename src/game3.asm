@@ -2,7 +2,7 @@
 ;;; Raster debug for prep time; dont move rocks!
 RasterDebugPrepare = FALSE
 DontMove = FALSE
-DevSpaceCheck = FALSE
+DevSpaceCheck = TRUE
 
 ;;; keyCodeU = -58  ; up arrow
 ;;; keyCodeD = -42  ; down arrow
@@ -436,7 +436,8 @@ numRocks = 4
     lda shipFY : sta theFY
     jsr calculateAfromXY
     lda shipFX : asl a
-    jmp drawSprite
+    jsr drawSprite
+    jmp drawTurret
     }
 
 .drawSprite:
@@ -553,7 +554,7 @@ EQUB 16, &00,&00,&cc,&22,&11,&22,&44,&88,&44,&22,&11,&11,&11,&22,&44,&88
 .done:
     rts }
 
-
+;; YELLOW
 .shipSpriteData: { EQUW x0,x1,x2,x3
 .x0: EQUB 2
 EQUB 3, &e0,&a0,&e0 : EQUW r4u3
@@ -570,6 +571,53 @@ EQUB 3, &c0,&40,&c0
 }
 
 .r4u3:  jsr right4 : jmp up3
+
+.drawTurret: ; expect CX,CY,FY to be set
+    lda shipFX : sta theFX
+    ;jsr up8 : jsr right1 ;; TODO: demonstate bug in right1
+    jsr positionTurret
+    lda theFX : tax
+    lda dotData,x
+    jsr hitplotGen : jsr eraseGen ;; have to use hitplotGen for the xor
+    rts
+
+;; YELLOW
+.dotData: EQUB &80, &40, &20, &10
+
+.positionTurret: {
+    lda theDirection : lsr a : lsr a : and #&f
+    asl a : tay
+    lda turretPosition,y : sta pokeme+1
+    lda turretPosition+1,y : sta pokeme+2
+    .pokeme : jsr &FFFF
+    rts }
+
+;;; Turret position is determined as offset from position marked with 'x'
+;;; (This is where we end up after drawing the ship)
+
+;;;    ef012
+;;;    d...3
+;;;    c...4
+;;;    b...5
+;;;    a9876x
+
+.turretPosition:
+EQUW l3u4, l2u4, l1u4, l1u3, l1u2, l1u1, left1, left2
+EQUW left3, left4, left5, l5u1, l5u2, l5u3, l5u4, l4u4
+
+.l1u1: jsr left1 : jmp up1
+.l1u2: jsr left1 : jmp up2
+.l1u3: jsr left1 : jmp up3
+.l1u4: jsr left1 : jmp up4
+.l2u4: jsr left2 : jmp up4
+.l3u4: jsr left3 : jmp up4
+.l4u4: jsr left4 : jmp up4
+.l5u1: jsr left5 : jmp up1
+.l5u2: jsr left5 : jmp up2
+.l5u3: jsr left5 : jmp up3
+.l5u4: jsr left5 : jmp up4
+.nothing: rts
+
 
 ;;;----------------------------------------------------------------------
 ;;; bullets
@@ -1146,6 +1194,7 @@ ASSERT ((randomBytesEnd-randomBytes) = 256)
     dec theFX
     rts }
 
+.left5: jsr left1
 .left4:
     jsr unwrapLine
     dec theCX
@@ -1154,7 +1203,7 @@ ASSERT ((randomBytesEnd-randomBytes) = 256)
 
 .right3: jsr right1
 .right2: jsr right1
-.right1: {
+.right1: { ;; TODO: Is this buggy? -- THINK SO. It doesn't update theA
     inc theFX : lda theFX : cmp #4  : bne after : lda #0 : sta theFX
     inc theCX : lda theCX : cmp #80 : bne after : lda #0 : sta theCX ; TODO: right4
 .after:
@@ -1196,6 +1245,7 @@ ASSERT ((randomBytesEnd-randomBytes) = 256)
 ;;;----------------------------------------------------------------------
 ;;; up/down...
 
+.up4: jsr up1
 .up3: jsr up1
 .up2: jsr up1
 .up1: { ; FY,CY,A
