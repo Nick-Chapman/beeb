@@ -1,8 +1,11 @@
 
 ;;; Raster debug for prep time; dont move rocks!
 RasterDebugPrepare = FALSE
+RasterDebugBlit = TRUE
 DontMove = FALSE
 DevSpaceCheck = TRUE
+
+numMediumRocks = 2
 
 ;;; keyCodeU = -58  ; up arrow
 ;;; keyCodeD = -42  ; down arrow
@@ -164,12 +167,12 @@ timerlength = 0;100 ; smaller->0
 
     IF RasterDebugPrepare : lda #3 : sta ula : ENDIF ; blue (prepare scene)
     jsr prepare
-    ;jsr prepare ; IDEMPOENT -- nope, does double update
+    ;;jsr prepare ; IDEMPOENT
     lda #7 : sta ula ; black
 
     jsr mySync
 
-    lda #2 : sta ula ; magenta (shows if we are too slow to blit)
+    IF RasterDebugBlit : lda #2 : sta ula : ENDIF ; magenta (blit)
     jsr blitScene
     ;;jsr blitScene ; not IDEMPOENT if we blit twice (why?)
     ;;jsr blitScene ; IDEMPOENT if blit 3 times
@@ -291,7 +294,7 @@ timerlength = 0;100 ; smaller->0
 ;;;----------------------------------------------------------------------
 ;;; rocks...
 
-numRocks = 4
+numRocks = 2 * numMediumRocks
 .rockAlive: SKIP numRocks ; 2-medium, 1-small, 0-dead
 .rockFX: SKIP numRocks
 .rockFY: SKIP numRocks
@@ -308,15 +311,13 @@ numRocks = 4
 .numberRocksLeft SKIP 1
 
 .spawnRocks: {
-    ldx #0 : lda #0 : sta rockAlive,x
-    ldx #1 : lda #2 : sta rockAlive,x : inc numberRocksLeft
-    ldx #2 : lda #0 : sta rockAlive,x
-    ldx #3 : lda #2 : sta rockAlive,x : inc numberRocksLeft
-    ;ldx #4 : lda #0 : sta rockAlive,x
-    ;ldx #5 : lda #2 : sta rockAlive,x : inc numberRocksLeft
     ldx #(numRocks-1)
 .loop:
     stx rockNum
+
+    lda #0 : sta rockAlive,x ; default: rockas start dead
+    ;; set odd rocks as medium
+    { txa : and #1 : beq no : lda #2 : sta rockAlive,x : inc numberRocksLeft : .no }
 
     jsr randomPos
     lda theFX : sta rockFX,x
@@ -903,7 +904,7 @@ EQUW down3, d3l1, d2l2, l3d1, left3, l3u1, l2u2, u3l1
     lda #0 ; this is the zero-black which erases
     jmp (eraseRunPtr)
 
-eraseNumberBlocks = 140
+eraseNumberBlocks = 150
 macro eraseTemplate
     sta &BEEF ; SCREEN-ADDRESS(1,2)
 endmacro
