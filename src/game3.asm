@@ -1204,7 +1204,7 @@ ASSERT ((randomBytesEnd-randomBytes) = 256)
     { bne no : lda #80 : sta theCX : jsr downA8 : .no }
     dec theCX
     lda theA : sec : sbc #8 : sta theA
-    lda theA+1     : sbc #0 : sta theA+1
+    { bcs no : dec theA+1 : .no }
     rts
 
 .right3: jsr right1
