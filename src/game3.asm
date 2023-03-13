@@ -1,7 +1,8 @@
 
 ;;; Raster debug for prep time; dont move rocks!
-Debug = FALSE
+RasterDebugPrepare = FALSE
 DontMove = FALSE
+DevSpaceCheck = FALSE
 
 ;;; keyCodeU = -58  ; up arrow
 ;;; keyCodeD = -42  ; down arrow
@@ -109,8 +110,9 @@ timerlength = 0;100 ; smaller->0
     RTI
 
 .mySync: {
+    ;lda vsync : bne failSync ; pre-sync check (more harsh)
     { .loop : lda vsync : beq loop }
-    cmp #2 : bcs failSync
+    ;cmp #2 : bcs failSync; post-sync check (move forgiving)
     lda #0 : sta vsync
     rts
 .failSync:
@@ -137,7 +139,7 @@ timerlength = 0;100 ; smaller->0
 
     jsr initFromDemo
 
-    lda #0: sta vsync
+    ;lda #0: sta vsync
 
     jsr setupMachine
     jsr eraseInit
@@ -149,6 +151,7 @@ timerlength = 0;100 ; smaller->0
 
     cli
 
+    lda #0 : sta vsync
     jsr mySync
 
 .loop:
@@ -158,7 +161,7 @@ timerlength = 0;100 ; smaller->0
     jsr saveLastKeys
     jsr readKeys
 
-    IF Debug : lda #3 : sta ula : ENDIF ; blue (prepare scene)
+    IF RasterDebugPrepare : lda #3 : sta ula : ENDIF ; blue (prepare scene)
     jsr prepare
     ;jsr prepare ; IDEMPOENT -- nope, does double update
     lda #7 : sta ula ; black
@@ -167,8 +170,8 @@ timerlength = 0;100 ; smaller->0
 
     lda #2 : sta ula ; magenta (shows if we are too slow to blit)
     jsr blitScene
-    ;jsr blitScene ; IDEMPOENT - still not quite! seems ok with 3!
-    ;jsr blitScene
+    ;;jsr blitScene ; not IDEMPOENT if we blit twice (why?)
+    ;;jsr blitScene ; IDEMPOENT if blit 3 times
     lda #7 : sta ula ; black
 
     jsr postBlit
@@ -861,7 +864,7 @@ EQUW down3, d3l1, d2l2, l3d1, left3, l3u1, l2u2, u3l1
 ;;; dual-space erase
 
 .eraseRun:
-    lda #0
+    lda #0 ; this is the zero-black which erases
     jmp (eraseRunPtr)
 
 eraseNumberBlocks = 130
@@ -885,12 +888,13 @@ FOR i, 1, eraseNumberBlocks : eraseTemplate : NEXT
     lda erasePtr : sec : sbc #eraseBlockSize : sta erasePtr
     { bcs noHiDec : dec erasePtr+1 : .noHiDec }
     ;; check we are within the space
-    jsr eraseSpaceCheck ; TODO: remove check when in production!
+    IF DevSpaceCheck : jsr eraseSpaceCheck : ENDIF
     ;; fill in the generated code
     lda theA     : ldy #1 : sta (erasePtr),y
     lda theA+1   : ldy #2 : sta (erasePtr),y
     rts
 
+IF DevSpaceCheck
 .eraseSpaceCheck: {
     lda erasePtr+1 : cmp eraseSpace+1 : bcc fail : bne ok
     lda erasePtr   : cmp eraseSpace   : bcc fail
@@ -900,6 +904,7 @@ FOR i, 1, eraseNumberBlocks : eraseTemplate : NEXT
     copy16i msg, msgPtr
     jmp printMessageAndSpin
 .msg EQUS "Erase Overflow", 13, 0 }
+ENDIF
 
 .eraseFlip:
     jmp (eraseSwitcher)
@@ -949,13 +954,14 @@ FOR i, 1, overwriteNumberBlocks-1 : overwriteTemplate : NEXT
     lda overwritePtr : sec : sbc #overwriteBlockSize : sta overwritePtr
     { bcs noHiDec : dec overwritePtr+1 : .noHiDec }
     ;; check we are within the space
-    jsr overwriteSpaceCheck ; TODO: remove check when in production!
+    IF DevSpaceCheck : jsr overwriteSpaceCheck : ENDIF
     ;; fill in the generated code
     .DB}: lda #0 : ldy #1 : sta (overwritePtr),y
     lda theA     : ldy #3 : sta (overwritePtr),y
     lda theA+1   : ldy #4 : sta (overwritePtr),y
     rts
 
+IF DevSpaceCheck
 .overwriteSpaceCheck: {
     lda overwritePtr+1 : cmp #HI(overwriteSpace) : bcc fail : bne ok
     lda overwritePtr   : cmp #LO(overwriteSpace) : bcc fail
@@ -965,6 +971,7 @@ FOR i, 1, overwriteNumberBlocks-1 : overwriteTemplate : NEXT
     copy16i msg, msgPtr
     jmp printMessageAndSpin
 .msg EQUS "Overwrite Overflow", 13, 0 }
+ENDIF
 
 .overwriteReInit:
     copy16i overwriteSpaceEnd, overwritePtr
@@ -1006,15 +1013,16 @@ FOR i, 1, hitplotNumberBlocks-1 : hitplotTemplate : NEXT
     lda hitplotPtr : sec : sbc #hitplotBlockSize : sta hitplotPtr
     { bcs noHiDec : dec hitplotPtr+1 : .noHiDec }
     ;; check we are within the space
-    jsr hitplotSpaceCheck ; TODO: remove check when in production!
+    IF DevSpaceCheck : jsr hitplotSpaceCheck : ENDIF
     ;; fill in the generated code
     .DB}: lda #0 : ldy #5 : sta (hitplotPtr),y : ldy #16 : sta (hitplotPtr),y
     lda theA     : ldy #1 : sta (hitplotPtr),y : ldy #18 : sta (hitplotPtr),y
     lda theA+1   : ldy #2 : sta (hitplotPtr),y : ldy #19 : sta (hitplotPtr),y
     lda hitme : ldy #13 : sta (hitplotPtr),y
-    ;lda #badHit : sta hitme ; DEV CHECK CODE
+    ;lda #badHit : sta hitme ; DEV CHECK?
     rts
 
+IF DevSpaceCheck
 .hitplotSpaceCheck: {
     lda hitplotPtr+1 : cmp #HI(hitplotSpace) : bcc fail : bne ok
     lda hitplotPtr   : cmp #LO(hitplotSpace) : bcc fail
@@ -1024,6 +1032,7 @@ FOR i, 1, hitplotNumberBlocks-1 : hitplotTemplate : NEXT
     copy16i msg, msgPtr
     jmp printMessageAndSpin
 .msg EQUS "Hitplot Overflow", 13, 0 }
+ENDIF
 
 .hitplotReInit:
     copy16i hitplotSpaceEnd, hitplotPtr
