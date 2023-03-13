@@ -70,6 +70,7 @@ ORG &70
 
 .iterAction SKIP 2
 
+.dummyTurretHitFlag SKIP 1
 .hitFlags SKIP maxObjects
 
 GUARD screenStart
@@ -311,6 +312,8 @@ numRocks = 4
     ldx #1 : lda #2 : sta rockAlive,x : inc numberRocksLeft
     ldx #2 : lda #0 : sta rockAlive,x
     ldx #3 : lda #2 : sta rockAlive,x : inc numberRocksLeft
+    ;ldx #4 : lda #0 : sta rockAlive,x
+    ;ldx #5 : lda #2 : sta rockAlive,x : inc numberRocksLeft
     ldx #(numRocks-1)
 .loop:
     stx rockNum
@@ -428,7 +431,7 @@ numRocks = 4
     jmp drawSprite
 }
 
-.drawShip: {
+.drawShip:
     copy16i shipSpriteData, stripPtrPtr
     copy16i overwriteGen, pokeSpritePlotGen+1 ; use hitplotGen when support ship collision
     lda shipCX : sta theCX
@@ -438,7 +441,6 @@ numRocks = 4
     lda shipFX : asl a
     jsr drawSprite
     jmp drawTurret
-    }
 
 .drawSprite:
     tay : lda (stripPtrPtr),y : sta stripPtr
@@ -576,6 +578,7 @@ EQUB 3, &c0,&40,&c0
     lda shipFX : sta theFX
     jsr positionTurret
     lda theFX : tax
+    lda #dummyTurretHitFlag : sta hitme
     lda dotData,x
     jsr hitplotGen : jsr eraseGen ;; have to use hitplotGen for the xor
     rts
@@ -900,7 +903,7 @@ EQUW down3, d3l1, d2l2, l3d1, left3, l3u1, l2u2, u3l1
     lda #0 ; this is the zero-black which erases
     jmp (eraseRunPtr)
 
-eraseNumberBlocks = 130
+eraseNumberBlocks = 140
 macro eraseTemplate
     sta &BEEF ; SCREEN-ADDRESS(1,2)
 endmacro
@@ -1013,28 +1016,29 @@ ENDIF
 ;;;----------------------------------------------------------------------
 ;;; hitplot -- detect collision (with red) and set ZP var
 
+hitplotNumberBlocks = 120
+
 .hitplotRun:
     jmp (hitplotPtr)
 
-hitplotNumberBlocks = 120
-macro hitplotTemplate
-    lda SPLAT;ScreenAddr(1,2)  |  0  |  3 |  4us ; TODO update time calc
-    tay;                       |  3  |  1 |
-    and #&ff ;DataByte(5)      |  4  |  2 |  2us
-    tax;                       |  6  |  1 |  2us
-    lda hitTableR,x;           |  7  |  3 |  4us
-    beq noHit;                 | 10  |  2 |  3us (noHit-taken), 2us(hit-not)
-    sta badHit;  HitFlag(13)   | 12  |  2 |  3us (hit)
-    .noHit
-    tya;                       | 14  |  1 |
-    eor #&ff ;DataByte(16)     | 15  |  2 |  2us
-    sta SPLAT;ScreenAddr(18,19)| 17  |  3 |  4us
-endmacro;                      | 20
+ScreenAddr = SPLAT
+DataByte = &FF
+HitFlag = badHit
+
+macro hitplotTemplate       ;size;acc
+    lda ScreenAddr          ; 3 ;  3  ScreenAddr(1,2)
+    eor #DataByte           ; 2 ;  5  DataByte(4)
+    sta ScreenAddr          ; 3 ;  8  ScreenAddr(6,7)
+    tax                     ; 1 ;  9
+    lda hitTableY,x         ; 3 ; 12
+    beq noHit               ; 2 ; 14
+    sta HitFlag : .noHit    ; 2 ; 16  HitFlag(15)
+endmacro
 
 .hitplotSpace:
 hitplotTemplate ; one copy for size
 hitplotBlockSize = *-hitplotSpace
-ASSERT hitplotBlockSize = 20
+ASSERT hitplotBlockSize = 16
 FOR i, 1, hitplotNumberBlocks-1 : hitplotTemplate : NEXT
 .hitplotSpaceEnd:
     rts
@@ -1048,10 +1052,11 @@ FOR i, 1, hitplotNumberBlocks-1 : hitplotTemplate : NEXT
     ;; check we are within the space
     IF DevSpaceCheck : jsr hitplotSpaceCheck : ENDIF
     ;; fill in the generated code
-    .DB}: lda #0 : ldy #5 : sta (hitplotPtr),y : ldy #16 : sta (hitplotPtr),y
-    lda theA     : ldy #1 : sta (hitplotPtr),y : ldy #18 : sta (hitplotPtr),y
-    lda theA+1   : ldy #2 : sta (hitplotPtr),y : ldy #19 : sta (hitplotPtr),y
-    lda hitme : ldy #13 : sta (hitplotPtr),y
+    .DB}: lda #0 : ldy  #4 : sta (hitplotPtr),y
+    lda theA     : ldy  #1 : sta (hitplotPtr),y : ldy #6 : sta (hitplotPtr),y
+    lda theA+1   : ldy  #2 : sta (hitplotPtr),y : ldy #7 : sta (hitplotPtr),y
+    lda hitme    : ldy #15 : sta (hitplotPtr),y
+
     ;lda #badHit : sta hitme ; DEV CHECK?
     rts
 
@@ -1074,28 +1079,26 @@ ENDIF
 ;;;----------------------------------------------------------------------
 ;;; hit tables
 
-H = 1
-o = 0
-;ALIGN &100
-.hitTableR: ; if one of the 4 pixels is red -- TODO: compute/gen
-    EQUB o,H,H,H,H,H,H,H,H,H,H,H,H,H,H,H
-    EQUB o,o,H,H,H,H,H,H,H,H,H,H,H,H,H,H
-    EQUB o,H,o,H,H,H,H,H,H,H,H,H,H,H,H,H
-    EQUB o,o,o,o,H,H,H,H,H,H,H,H,H,H,H,H
-    EQUB o,H,H,H,o,H,H,H,H,H,H,H,H,H,H,H
-    EQUB o,o,H,H,o,o,H,H,H,H,H,H,H,H,H,H
-    EQUB o,H,o,H,o,H,o,H,H,H,H,H,H,H,H,H
-    EQUB o,o,o,o,o,o,o,o,H,H,H,H,H,H,H,H
-    EQUB o,H,H,H,H,H,H,H,o,H,H,H,H,H,H,H
-    EQUB o,o,H,H,H,H,H,H,o,o,H,H,H,H,H,H
-    EQUB o,H,o,H,H,H,H,H,o,H,o,H,H,H,H,H
-    EQUB o,o,o,o,H,H,H,H,o,o,o,o,H,H,H,H
-    EQUB o,H,H,H,o,H,H,H,o,H,H,H,o,H,H,H
-    EQUB o,o,H,H,o,o,H,H,o,o,H,H,o,o,H,H
-    EQUB o,H,o,H,o,H,o,H,o,H,o,H,o,H,o,H
-    EQUB o,o,o,o,o,o,o,o,o,o,o,o,o,o,o,o
-.hitTableREnd:
-ASSERT ((hitTableREnd-hitTableR) = 256)
+x = 1
+.hitTableY: ; if one of the 4 pixels is yellow
+    EQUB 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
+    EQUB x,0,x,0,x,0,x,0,x,0,x,0,x,0,x,0
+    EQUB x,x,0,0,x,x,0,0,x,x,0,0,x,x,0,0
+    EQUB x,x,x,0,x,x,x,0,x,x,x,0,x,x,x,0
+    EQUB x,x,x,x,0,0,0,0,x,x,x,x,0,0,0,0
+    EQUB x,x,x,x,x,0,x,0,x,x,x,x,x,0,x,0
+    EQUB x,x,x,x,x,x,0,0,x,x,x,x,x,x,0,0
+    EQUB x,x,x,x,x,x,x,0,x,x,x,x,x,x,x,0
+    EQUB x,x,x,x,x,x,x,x,0,0,0,0,0,0,0,0
+    EQUB x,x,x,x,x,x,x,x,x,0,x,0,x,0,x,0
+    EQUB x,x,x,x,x,x,x,x,x,x,0,0,x,x,0,0
+    EQUB x,x,x,x,x,x,x,x,x,x,x,0,x,x,x,0
+    EQUB x,x,x,x,x,x,x,x,x,x,x,x,0,0,0,0
+    EQUB x,x,x,x,x,x,x,x,x,x,x,x,x,0,x,0
+    EQUB x,x,x,x,x,x,x,x,x,x,x,x,x,x,0,0
+    EQUB x,x,x,x,x,x,x,x,x,x,x,x,x,x,x,0
+.hitTableYEnd:
+ASSERT ((hitTableYEnd-hitTableY) = 256)
 
 ;;;----------------------------------------------------------------------
 ;;; random
