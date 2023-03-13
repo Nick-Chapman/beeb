@@ -1220,7 +1220,7 @@ ASSERT ((randomBytesEnd-randomBytes) = 256)
 .right4:
     inc theCX
     lda theA : clc : adc #8 : sta theA
-    lda theA+1     : adc #0 : sta theA+1
+    { bcc no : inc theA+1 : .no }
     lda theCX : cmp #80
     ; wrap line
     { bne no : lda #0 : sta theCX : jsr upA8 : .no }
