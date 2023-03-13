@@ -574,7 +574,6 @@ EQUB 3, &c0,&40,&c0
 
 .drawTurret: ; expect CX,CY,FY to be set
     lda shipFX : sta theFX
-    ;jsr up8 : jsr right1 ;; TODO: demonstate bug in right1
     jsr positionTurret
     lda theFX : tax
     lda dotData,x
@@ -1203,10 +1202,12 @@ ASSERT ((randomBytesEnd-randomBytes) = 256)
 
 .right3: jsr right1
 .right2: jsr right1
-.right1: { ;; TODO: Is this buggy? -- THINK SO. It doesn't update theA
-    inc theFX : lda theFX : cmp #4  : bne after : lda #0 : sta theFX
-    inc theCX : lda theCX : cmp #80 : bne after : lda #0 : sta theCX ; TODO: right4
-.after:
+.right1: {
+    inc theFX
+    lda theFX : cmp #4 : bne no
+    lda #0 : sta theFX
+    jsr right4
+.no:
     rts }
 
 .right4:
