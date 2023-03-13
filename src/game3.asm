@@ -553,20 +553,20 @@ EQUB 16, &00,&00,&cc,&22,&11,&22,&44,&88,&44,&22,&11,&11,&11,&22,&44,&88
 .done:
     rts }
 
-;;YELLOW
+
 .shipSpriteData: { EQUW x0,x1,x2,x3
 .x0: EQUB 2
-EQUB 3, &40,&e0,&40 : EQUW r4u3
+EQUB 3, &e0,&a0,&e0 : EQUW r4u3
 EQUB 3, &00,&00,&00
 .x1: EQUB 2
-EQUB 3, &20,&70,&20 : EQUW r4u3
+EQUB 3, &70,&50,&70 : EQUW r4u3
 EQUB 3, &00,&00,&00
 .x2: EQUB 2
-EQUB 3, &10,&30,&10 : EQUW r4u3
-EQUB 3, &00,&80,&00
+EQUB 3, &30,&20,&30 : EQUW r4u3
+EQUB 3, &80,&80,&80
 .x3: EQUB 2
-EQUB 3, &00,&10,&00 : EQUW r4u3
-EQUB 3, &80,&c0,&80
+EQUB 3, &10,&10,&10 : EQUW r4u3
+EQUB 3, &c0,&40,&c0
 }
 
 .r4u3:  jsr right4 : jmp up3
@@ -636,6 +636,7 @@ numBullets = 4
     lda shipCY : sta theCY
 
     ;;bullet originates one bullet-move step from center of ship
+    lda bulletDirection,x : lsr a : lsr a : and #&f : jsr moveDirection
     lda bulletDirection,x : lsr a : lsr a : and #&f : jsr moveDirection
 
     lda theFX : sta bulletFX,x
