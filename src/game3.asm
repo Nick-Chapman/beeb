@@ -408,12 +408,16 @@ numRocks = 4
     dec countV,x
     rts }
 
+;----------------------------------------------------------------------
+;;; sprite drawing
+
 .drawRock: {
     ldx rockNum
     lda rockAlive,x : bne plot
     rts
 .plot
     copy16i smallMeteor, stripPtrPtr
+    copy16i hitplotGen, pokeSpritePlotGen+1
     { lda rockAlive,x : cmp #2 : bne no : copy16i mediumMeteor, stripPtrPtr : .no }
     txa : clc : adc #hitFlags : sta hitme ; me
     lda rockCX,x : sta theCX
@@ -421,6 +425,21 @@ numRocks = 4
     lda rockFY,x : sta theFY
     jsr calculateAfromXY
     lda rockFX,x : asl a
+    jmp drawSprite
+}
+
+.drawShip: {
+    copy16i shipSpriteData, stripPtrPtr
+    copy16i overwriteGen, pokeSpritePlotGen+1 ; use hitplotGen when support ship collision
+    lda shipCX : sta theCX
+    lda shipCY : sta theCY
+    lda shipFY : sta theFY
+    jsr calculateAfromXY
+    lda shipFX : asl a
+    jmp drawSprite
+    }
+
+.drawSprite:
     tay : lda (stripPtrPtr),y : sta stripPtr
     iny : lda (stripPtrPtr),y : sta stripPtr+1
     ldy #0 : lda (stripPtr),y : sta stripCount
@@ -430,19 +449,19 @@ numRocks = 4
     inc dataNum
 .loopItem:
     ldy dataNum : lda (stripPtr),y
-    { beq nogen : jsr hitplotGen : jsr eraseGen : .nogen }
+    beq sprite_nogen : .pokeSpritePlotGen jsr overwriteGen : jsr eraseGen : .sprite_nogen
     inc dataNum
     jsr down1
     dec stripItemCount : bne loopItem
-    dec stripCount : beq done
+    dec stripCount : beq doneDrawSprite
     ldy dataNum
     lda (stripPtr),y : sta dispatch+1 : iny
     lda (stripPtr),y : sta dispatch+2 : iny
     sty dataNum
     .dispatch : jsr &FFFF
     jmp loopStrip
-.done:
-    rts }
+.doneDrawSprite:
+    rts
 
 ;;; consider zero page
 .dataNum SKIP 1
@@ -531,40 +550,6 @@ EQUB 16, &00,&00,&cc,&22,&11,&22,&44,&88,&44,&22,&11,&11,&11,&22,&44,&88
     lda theFY : sta shipFY
     lda theCX : sta shipCX
     lda theCY : sta shipCY
-.done:
-    rts }
-
-.drawShip: { ; TODO: unify with drawRock
-    ;copy16i smallMeteor, stripPtrPtr
-    ;{ lda rockAlive,x : cmp #2 : bne no : copy16i mediumMeteor, stripPtrPtr : .no }
-    copy16i shipSpriteData, stripPtrPtr
-    ;txa : clc : adc #hitFlags : sta hitme ; me
-    lda shipCX : sta theCX
-    lda shipCY : sta theCY
-    lda shipFY : sta theFY
-    jsr calculateAfromXY
-    lda shipFX : asl a
-    tay : lda (stripPtrPtr),y : sta stripPtr
-    iny : lda (stripPtrPtr),y : sta stripPtr+1
-    ldy #0 : lda (stripPtr),y : sta stripCount
-    lda #1 : sta dataNum
-.loopStrip:
-    ldy dataNum : lda (stripPtr),y : sta stripItemCount
-    inc dataNum
-.loopItem:
-    ldy dataNum : lda (stripPtr),y
-    ;{ beq nogen : jsr hitplotGen : jsr eraseGen : .nogen } ; ship collision will need
-    { beq nogen : jsr overwriteGen : jsr eraseGen : .nogen }
-    inc dataNum
-    jsr down1
-    dec stripItemCount : bne loopItem
-    dec stripCount : beq done
-    ldy dataNum
-    lda (stripPtr),y : sta dispatch+1 : iny
-    lda (stripPtr),y : sta dispatch+2 : iny
-    sty dataNum
-    .dispatch : jsr &FFFF
-    jmp loopStrip
 .done:
     rts }
 
