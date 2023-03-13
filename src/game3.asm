@@ -1195,9 +1195,12 @@ ASSERT ((randomBytesEnd-randomBytes) = 256)
 
 .left5: jsr left1
 .left4:
-    jsr unwrapLine
+    lda theCX
+    ; unwrap line
+    { bne no : lda #80 : sta theCX : jsr downA8 : .no }
     dec theCX
-    jsr leftA
+    lda theA : sec : sbc #8 : sta theA
+    lda theA+1     : sbc #0 : sta theA+1
     rts
 
 .right3: jsr right1
@@ -1212,36 +1215,12 @@ ASSERT ((randomBytesEnd-randomBytes) = 256)
 
 .right4:
     inc theCX
-    jsr rightA
-    jsr wrapLine
-    rts
-
-;; TODO inline
-.leftA:
-    lda theA : sec : sbc #8 : sta theA
-    lda theA+1     : sbc #0 : sta theA+1
-    rts
-.rightA:
     lda theA : clc : adc #8 : sta theA
     lda theA+1     : adc #0 : sta theA+1
+    lda theCX : cmp #80
+    ; wrap line
+    { bne no : lda #0 : sta theCX : jsr upA8 : .no }
     rts
-
-.unwrapLine : {
-    lda theCX
-    bne no
-    lda #80 : sta theCX
-    jsr downA8
-.no:
-    rts }
-
-.wrapLine : {
-    lda theCX
-    cmp #80 : bne no
-    lda #0 : sta theCX
-    jsr upA8
-.no:
-    rts }
-
 
 ;;;----------------------------------------------------------------------
 ;;; up/down...
