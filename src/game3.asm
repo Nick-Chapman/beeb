@@ -7,19 +7,16 @@ DevSpaceCheck = TRUE
 
 numMediumRocks = 2
 
-;;; keyCodeU = -58  ; up arrow
-;;; keyCodeD = -42  ; down arrow
-;;; keyCodeL = -26  ; left arrow
-;;; keyCodeR = -122 ; right arrow
-;;; keyCodeL = -98  ; z
-;;; keyCodeR = -67  ; x
+interruptSaveA = &fc
+irq1v = &204
 
-keyCodeU = -88    ; semicolon
-keyCodeD = -104   ; dot
-keyCodeL = -65    ; capslock
-keyCodeR = -2     ; ctrl
-keyCodeRet = -74  ; return
-keyCodeShift = -1 ; shift
+system_VIA_portB           = &fe40
+system_VIA_dataDirectionB  = &fe42
+system_VIA_dataDirectionA  = &fe43
+
+system_VIA_interruptFlags  = &fe4d
+system_VIA_interruptEnable = &fe4e
+system_VIA_portA           = &fe4f
 
 ula = &fe21
 osasci = &ffe3
@@ -36,17 +33,13 @@ GUARD &B0 ; keep an eye on zeropage space usage
 GUARD stack
 ORG &70
 
-.vsync SKIP 1
+.vsyncNotify SKIP 1
 
-.keyL SKIP 1
-.keyR SKIP 1
-.keyRet SKIP 1
+.keyCapsLock SKIP 1
+.keyControl SKIP 1
+.keyReturn SKIP 1
 .keyShift SKIP 1
-
-.lastKeyL SKIP 1
-.lastKeyR SKIP 1
-.lastKeyRet SKIP 1
-;;; dont need to save Shift
+.lastKeyReturn SKIP 1
 
 .stripPtr SKIP 2
 .stripPtrPtr SKIP 2
@@ -89,63 +82,73 @@ macro copy16v A,B
     lda A+1 : sta B+1
 endmacro
 
-macro STOP N
-    lda #N : jsr stop
+macro Puts S
+    copy16i msg, msgPtr
+    jmp after
+.msg: EQUS S, 0
+.after:
+    jsr printMessage
+endmacro
+
+macro STOP message
+    copy16i msg, msgPtr
+    jsr printMessage
+    jmp spin
+.msg:EQUS message, 0
 endmacro
 
 .start:
     jmp main
 
+.spin: jmp spin
+
+;;;----------------------------------------------------------------------
+;;; myIRQ, syncVB
+
+.myIRQ:
+    lda system_VIA_interruptFlags : and #2 : bne vblank
+    STOP "unexpected interrupt"
+    lda #&7f : sta system_VIA_interruptFlags ; ack
+    lda interruptSaveA
+    rti
+.vblank:
+    sta system_VIA_interruptFlags ; ack
+    inc vsyncNotify
+    lda interruptSaveA
+    rti
+
+.syncVB: {
+    ;;lda vsyncNotify : bne failSync1 ; pre-sync check (more harsh)
+    { .loop : lda vsyncNotify : beq loop }
+    ;;cmp #2 : bcs failSync2 ; post-sync check (move forgiving)
+    lda #0 : sta vsyncNotify
+    rts
+.failSync1:
+    STOP "Too slow to sync(1)"
+.failSync2:
+    STOP "Too slow to sync(2)"
+}
+
 ;;;----------------------------------------------------------------------
 ;;; main loop
 
-timerlength = 0;100 ; smaller->0
-.irq
-    LDA &FE4D:AND #2:BNE irqvsync
-.irqtimer
-    LDA #&40:STA &FE4D:INC vsync
-    LDA &FC
-    RTI
-.irqvsync
-    STA &FE4D
-    LDA #LO(timerlength):STA &FE44
-    LDA #HI(timerlength):STA &FE45
-    LDA &FC
-    RTI
-
-.mySync: {
-    ;lda vsync : bne failSync ; pre-sync check (more harsh)
-    { .loop : lda vsync : beq loop }
-    ;cmp #2 : bcs failSync; post-sync check (move forgiving)
-    lda #0 : sta vsync
-    rts
-.failSync:
-    copy16i msg, msgPtr
-    jmp printMessageAndSpin
-.msg EQUS "Too slow to sync", 13, 0 }
-
-.initFromDemo:
-    sei
-    ;LDX #&FF:TXS                ; reset stack (CAN DO IF INLINE)
-    STX &FE44:STX &FE45
-    LDA #&7F:STA &FE4E          ; disable all interrupts
-    STA &FE43                   ; set keyboard data direction
-    LDA #&C2:STA &FE4E          ; enable VSync and timer interrupt
-    LDA #&0F:STA &FE42          ; set addressable latch for writing
-    LDA #3:STA &FE40            ; keyboard write enable
-    LDA #0:STA &FE4B            ; timer 1 one shot mode
-    LDA #LO(irq):STA &204
-    LDA #HI(irq):STA &205       ; set interrupt handler
-
-    rts
-
 .main: {
 
-    jsr initFromDemo
+    lda #%01111111 : sta system_VIA_interruptEnable ; disable all interrupts
+    lda #%10000010 : sta system_VIA_interruptEnable ; enable just VBlank
 
-    ;lda #0: sta vsync
+    ;; poll keyboard via system VIA portA
+    ;; data directionA: bottom 7 bits output (key to poll); top bit input (is it pressed?)
+    lda #%01111111 : sta system_VIA_dataDirectionA
+    lda #%00001111 : sta system_VIA_dataDirectionB ; allow write to addressable latch
+    lda #%00000011 : sta system_VIA_portB ; set bit 3 to 0
 
-    jsr setupMachine
+    jsr mode1
+    jsr cursorOff
+    jsr replaceWhiteWithCyan
+
+    copy16i myIRQ, irq1v
+
     jsr eraseInit
     jsr initHitFlags
 
@@ -153,16 +156,13 @@ timerlength = 0;100 ; smaller->0
     copy16i startScene, scenePtr
     copy16i nothingPostBlit, postBlitPtr
 
-    cli
-
-    lda #0 : sta vsync
-    jsr mySync
+    lda #0 : sta vsyncNotify
+    jsr syncVB
 
 .loop:
 
-    { lda badHit : beq noBadHit : STOP &11 : .noBadHit }
+    { lda badHit : beq noBadHit : STOP "Bad Hit" : .noBadHit }
 
-    jsr saveLastKeys
     jsr readKeys
 
     IF RasterDebugPrepare : lda #3 : sta ula : ENDIF ; blue (prepare scene)
@@ -170,7 +170,7 @@ timerlength = 0;100 ; smaller->0
     ;;jsr prepare ; IDEMPOENT
     lda #7 : sta ula ; black
 
-    jsr mySync
+    jsr syncVB
 
     IF RasterDebugBlit : lda #2 : sta ula : ENDIF ; magenta (blit)
     jsr blitScene
@@ -185,10 +185,8 @@ timerlength = 0;100 ; smaller->0
     rts }
 
 .prepare:
-    ;; init
     jsr overwriteReInit
     jsr hitplotReInit
-    ;; scene
     jmp (scenePtr)
 
 .blitScene:
@@ -262,7 +260,7 @@ timerlength = 0;100 ; smaller->0
 
 .detectFirePressed:
     lda #0 : sta fireBullet
-    { lda keyRet : beq no : lda lastKeyRet : bne no : inc fireBullet : .no }
+    { lda keyReturn : beq no : lda lastKeyReturn : bne no : inc fireBullet : .no }
     rts
 
 .detectThrust: {
@@ -275,14 +273,13 @@ timerlength = 0;100 ; smaller->0
 
 .detectRotateLeft: {
     ;lda frames : and #1 : bne done
-    { lda keyL : beq no : dec theDirection : .no }
-    ;{ lda keyL : beq no : lda lastKeyL : bne no : dec theDirection : .no }
+    { lda keyCapsLock : beq no : dec theDirection : .no }
 .done:
     rts }
 
 .detectRotateRight: {
     ;lda frames : and #1 : bne done
-    { lda keyR : beq no : inc theDirection : .no }
+    { lda keyControl : beq no : inc theDirection : .no }
     ;{ lda keyR : beq no : lda lastKeyR : bne no : inc theDirection : .no }
 .done:
     rts }
@@ -423,13 +420,15 @@ numRocks = 2 * numMediumRocks
     copy16i smallMeteor, stripPtrPtr
     copy16i hitplotGen, pokeSpritePlotGen+1
     { lda rockAlive,x : cmp #2 : bne no : copy16i mediumMeteor, stripPtrPtr : .no }
-    txa : clc : adc #hitFlags : sta hitme ; me
+    txa : clc : adc #hitFlags : sta hitme
     lda rockCX,x : sta theCX
     lda rockCY,x : sta theCY
     lda rockFY,x : sta theFY
     jsr calculateAfromXY
     lda rockFX,x : asl a
-    jmp drawSprite
+    jsr drawSprite
+    lda #badHit : sta hitme
+    rts
 }
 
 .drawShip:
@@ -582,6 +581,7 @@ EQUB 3, &c0,&40,&c0
     lda #dummyTurretHitFlag : sta hitme
     lda dotData,x
     jsr hitplotGen : jsr eraseGen ;; have to use hitplotGen for the xor
+    lda #badHit : sta hitme
     rts
 
 ;; YELLOW
@@ -816,22 +816,16 @@ EQUW down3, d3l1, d2l2, l3d1, left3, l3u1, l2u2, u3l1
 ;;;----------------------------------------------------------------------
 ;;; misc: stop, sync, print stuff
 
-.stop: { ; byte in Acc
-    jsr printHexA
-    copy16i msg, msgPtr
-    jmp printMessageAndSpin
-    .msg EQUS "Stop", 13, 0 }
-
-.printMessageAndSpin: {
+.printMessage: {
     ldy #0
 .loop
     lda (msgPtr),y
-    beq spin
+    beq done
     jsr osasci
     iny
     bne loop
-.spin:
-    jmp spin }
+.done:
+    rts }
 
 .printHexA: {
     pha : lda #'[' : jsr osasci : pla
@@ -850,12 +844,6 @@ EQUW down3, d3l1, d2l2, l3d1, left3, l3u1, l2u2, u3l1
 ;;;----------------------------------------------------------------------
 ;;; setupMachine
 
-.setupMachine:
-    jsr mode1
-    jsr cursorOff
-    jsr setupColours
-    rts
-
 .mode1:
     lda #22 : jsr oswrch
     lda #1 : jsr oswrch
@@ -873,20 +861,6 @@ EQUW down3, d3l1, d2l2, l3d1, left3, l3u1, l2u2, u3l1
     lda #0 : jsr oswrch
     lda #0 : jsr oswrch
     rts
-
-.setupColours:
-    ;jsr replaceYellowWithBlue ; easier to see on cyan
-    jsr replaceWhiteWithCyan
-    rts
-
-;; .replaceYellowWithBlue:
-;;     lda #19 : jsr oswrch
-;;     lda #2 : jsr oswrch ; logical yellow
-;;     lda #4 : jsr oswrch ; physical blue
-;;     lda #0 : jsr oswrch
-;;     lda #0 : jsr oswrch
-;;     lda #0 : jsr oswrch
-;;     rts
 
 .replaceWhiteWithCyan:
     lda #19 : jsr oswrch
@@ -938,9 +912,7 @@ IF DevSpaceCheck
 .ok:
     rts
 .fail:
-    copy16i msg, msgPtr
-    jmp printMessageAndSpin
-.msg EQUS "Erase Overflow", 13, 0 }
+    STOP "Erase Overflow" }
 ENDIF
 
 .eraseFlip:
@@ -1005,9 +977,7 @@ IF DevSpaceCheck
 .ok:
     rts
 .fail:
-    copy16i msg, msgPtr
-    jmp printMessageAndSpin
-.msg EQUS "Overwrite Overflow", 13, 0 }
+    STOP "Overwrite Overflow" }
 ENDIF
 
 .overwriteReInit:
@@ -1057,8 +1027,6 @@ FOR i, 1, hitplotNumberBlocks-1 : hitplotTemplate : NEXT
     lda theA     : ldy  #1 : sta (hitplotPtr),y : ldy #6 : sta (hitplotPtr),y
     lda theA+1   : ldy  #2 : sta (hitplotPtr),y : ldy #7 : sta (hitplotPtr),y
     lda hitme    : ldy #15 : sta (hitplotPtr),y
-
-    ;lda #badHit : sta hitme ; DEV CHECK?
     rts
 
 IF DevSpaceCheck
@@ -1068,9 +1036,7 @@ IF DevSpaceCheck
 .ok:
     rts
 .fail:
-    copy16i msg, msgPtr
-    jmp printMessageAndSpin
-.msg EQUS "Hitplot Overflow", 13, 0 }
+    STOP "Hitplot Overflow" }
 ENDIF
 
 .hitplotReInit:
@@ -1294,46 +1260,23 @@ ASSERT ((randomBytesEnd-randomBytes) = 256)
 ;;;----------------------------------------------------------------------
 ;;; keyboard
 
-.saveLastKeys:
-    lda keyL : sta lastKeyL
-    lda keyR : sta lastKeyR
-    lda keyRet : sta lastKeyRet
-    rts
+macro PollKey CODE, VAR
+    lda #0 : sta VAR
+    lda #(-CODE-1) : sta system_VIA_portA : lda system_VIA_portA
+    bpl no : lda #1 : sta VAR : .no
+endmacro
 
 .readKeys:
-    jsr checkL
-    jsr checkR
-    jsr checkRet
-    jsr checkShift
+    ; save current value for edge-triggered keys
+    lda keyReturn : sta lastKeyReturn
+    ; poll new values
+    PollKey -65, keyCapsLock
+    PollKey -2,  keyControl
+    PollKey -74, keyReturn
+    PollKey -1,  keyShift
     rts
-
-.checkL: {
-    lda #0 : sta keyL
-    lda #(-keyCodeL-1) : sta &fe4f : lda &fe4f
-    BPL no : lda #1 : sta keyL : .no
-    rts }
-
-.checkR: {
-    lda #0 : sta keyR
-    lda #(-keyCodeR-1) : sta &fe4f : lda &fe4f
-    BPL no : lda #1 : sta keyR : .no
-    rts }
-
-.checkRet: {
-    lda #0 : sta keyRet
-    lda #(-keyCodeRet-1) : sta &fe4f : lda &fe4f
-    BPL no : lda #1 : sta keyRet : .no
-    rts }
-
-.checkShift: {
-    lda #0 : sta keyShift
-    lda #(-keyCodeShift-1) : sta &fe4f : lda &fe4f
-    BPL no : lda #1 : sta keyShift : .no
-    rts }
 
 ;;;----------------------------------------------------------------------
 .end:
-
 print "bytes left: ", screenStart-*
-
 SAVE "Code", start, end
