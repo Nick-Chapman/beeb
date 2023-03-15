@@ -36,6 +36,12 @@ macro Puts S
     jsr printMessage
 endmacro
 
+macro Position X,Y
+    lda #31 : jsr osasci
+    lda #X : jsr osasci
+    lda #Y : jsr osasci
+endmacro
+
 GUARD &80
 GUARD stack
 ORG &70
@@ -50,7 +56,10 @@ ORG &1100
 
 .myIrq:
     lda system_VIA_interruptFlags : and #2 : bne vblank
-    STOP &33
+    ;STOP &33
+    ;lda #&7f : sta system_VIA_interruptFlags
+    lda interruptSaveA
+    rti
 .vblank:
     sta system_VIA_interruptFlags
     inc vsyncNotify
@@ -60,16 +69,24 @@ ORG &1100
 .vsyncNotify SKIP 1
 
 .syncVB: {
-    lda #0 : sta vsyncNotify
+    ;lda vsyncNotify : bne failSync
 .loop:
     lda vsyncNotify : beq loop
-    rts }
+    lda #0 : sta vsyncNotify
+    rts
+.failSync:
+    Puts "Too slow"
+    jmp spin
+    }
 
 .main: {
 
     jsr mode1
     jsr cursorOff
-    jsr mos_syncVB : jsr mos_syncVB ; wait a bit so b-em can finish the boot-up beep
+    ;; wait a bit so b-em can finish the boot-up beep
+    ;jsr mos_syncVB
+    ;jsr mos_syncVB
+    ;jsr mos_syncVB
 
     lda #%01111111 : sta system_VIA_interruptEnable ; disable all interrupts
     lda #%10000010 : sta system_VIA_interruptEnable ; enable just VBlank
@@ -87,33 +104,77 @@ ORG &1100
 .loop:
     jsr syncVB
 
-macro Poll CODE,VAR
-    lda #0 : sta VAR
-    lda #(-CODE-1) : sta system_VIA_portA : lda system_VIA_portA
-    bpl no : lda #1 : sta VAR : .no
-endmacro
+;; macro Poll CODE,VAR
+;;     lda #0 : sta VAR
+;;     lda #(-CODE-1) : sta system_VIA_portA : lda system_VIA_portA
+;;     bpl no : lda #1 : sta VAR : .no
+;; endmacro
 
-    Poll -98, keyZ
-    Poll -67, keyX
-    Poll -65, keyCapsLock
-    Poll -2, keyCtrl
-    Poll -1, keyShift
-    Poll -74, keyReturn
-
-macro Position X,Y
-    lda #31 : jsr osasci
-    lda #X : jsr osasci
-    lda #Y : jsr osasci
-endmacro
+    ldx #0
+.more:
+    lda #0 : sta keys,x
+    stx system_VIA_portA : lda system_VIA_portA
+    bpl no : lda #1 : sta keys,x : .no
+    inx
+    bne more
 
     Position 1,1 : Puts "Frame    : " : lda frameCount  : jsr printHexA
 
-    Position 1,3 : Puts "Z        : " : lda keyZ        : jsr printHexA
-    Position 1,4 : Puts "X        : " : lda keyX        : jsr printHexA
-    Position 1,5 : Puts "CapsLock : " : lda keyCapsLock : jsr printHexA
-    Position 1,6 : Puts "Ctrl     : " : lda keyCtrl     : jsr printHexA
-    Position 1,7 : Puts "Shift    : " : lda keyShift    : jsr printHexA
-    Position 1,8 : Puts "Return   : " : lda keyReturn   : jsr printHexA
+macro See CODE,CHR
+    { lda #'.' : ldx #(-CODE-1) : ldy keys,x : beq no : lda #CHR : .no : jsr osasci }
+endmacro
+
+macro SeeSpecial MES,CODE
+    Puts MES : ldx #(-CODE-1) : lda keys,x : jsr printHexA
+endmacro
+
+    Position 1,3 : SeeSpecial "Tab      : ", -97
+    Position 1,4 : SeeSpecial "CapsLock : ", -65
+    Position 1,5 : SeeSpecial "Shift    : ", -1
+    Position 1,6 : SeeSpecial "Control  : ", -2
+
+    Position 1,8 : SeeSpecial "Return   : ", -74
+
+    Position 1,10 : SeeSpecial "Up       : ", -58
+    Position 1,11 : SeeSpecial "Down     : ", -42
+    Position 1,12 : SeeSpecial "Left     : ", -26
+    Position 1,14 : SeeSpecial "Right    : ", -122 ; problem at position 13 ??
+
+
+    Position 1,17
+
+    See -17,'Q'
+    See -34,'W'
+    See -35,'E'
+    See -52,'R'
+    See -36,'T'
+    See -69,'Y'
+    See -54,'U'
+    See -38,'I'
+    See -55,'O'
+    See -56,'P'
+
+    Position 2,19
+
+    See -66,'A'
+    See -82,'S'
+    See -51,'D'
+    See -68,'F'
+    See -84,'G'
+    See -85,'H'
+    See -70,'J'
+    See -71,'K'
+    See -87,'L'
+
+    Position 3,21
+
+    See -98,'Z'
+    See -67,'X'
+    See -83,'C'
+    See -100,'V'
+    See -101,'B'
+    See -86,'N'
+    See -102,'M'
 
     inc frameCount
     jmp loop }
@@ -122,12 +183,7 @@ endmacro
 
 .frameCount SKIP 1
 
-.keyZ SKIP 1
-.keyX SKIP 1
-.keyCapsLock SKIP 1
-.keyCtrl SKIP 1
-.keyShift SKIP 1
-.keyReturn SKIP 1
+.keys SKIP 256
 
 .mos_syncVB: lda #19 : jmp osbyte
 
