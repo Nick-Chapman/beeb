@@ -1,8 +1,13 @@
 ;;; Key scanning test example
 
+interruptSaveA = &fc
+irq1v = &204
+
 system_VIA_portB           = &fe40
 system_VIA_dataDirectionB  = &fe42
 system_VIA_dataDirectionA  = &fe43
+
+system_VIA_interruptFlags  = &fe4d
 system_VIA_interruptEnable = &fe4e
 system_VIA_portA           = &fe4f
 
@@ -13,6 +18,10 @@ osbyte = &fff4
 screenStart = &3000
 screenEnd = &8000
 stack = &100
+
+macro STOP N
+    lda #N : jsr stop
+endmacro
 
 macro copy16i I,V
     lda #LO(I) : sta V
@@ -27,12 +36,6 @@ macro Puts S
     jsr printMessage
 endmacro
 
-macro Position X,Y
-    lda #31 : jsr osasci
-    lda #X : jsr osasci
-    lda #Y : jsr osasci
-endmacro
-
 GUARD &80
 GUARD stack
 ORG &70
@@ -45,21 +48,35 @@ ORG &1100
 .start:
     jmp main
 
-macro Poll CODE,VAR
+.myIrq:
+    lda system_VIA_interruptFlags : and #2 : bne vblank
+    STOP &33
+.vblank:
+    sta system_VIA_interruptFlags
+    inc vsyncNotify
+    lda interruptSaveA
+    rti
 
-    lda #0 : sta VAR
-    lda #(-CODE-1) : sta system_VIA_portA : lda system_VIA_portA
-    bpl no : lda #1 : sta VAR : .no
-endmacro
+.vsyncNotify SKIP 1
+
+.syncVB: {
+    lda #0 : sta vsyncNotify
+.loop:
+    lda vsyncNotify : beq loop
+    rts }
 
 .main: {
 
     jsr mode1
     jsr cursorOff
-    jsr syncVB : jsr syncVB ; wait a bit so b-em can finish  the boot-up beep
+    jsr mos_syncVB : jsr mos_syncVB ; wait a bit so b-em can finish the boot-up beep
 
     lda #%01111111 : sta system_VIA_interruptEnable ; disable all interrupts
-    lda #%10000010 : sta system_VIA_interruptEnable ; enable VSync
+    lda #%10000010 : sta system_VIA_interruptEnable ; enable just VBlank
+
+    ;sei
+    copy16i myIrq, irq1v
+    ;cli
 
     ;; poll keyboard via system VIA portA
     ;; data directionA: bottom 7 bits output (key to poll); top bit input (is it pressed?)
@@ -70,12 +87,24 @@ endmacro
 .loop:
     jsr syncVB
 
+macro Poll CODE,VAR
+    lda #0 : sta VAR
+    lda #(-CODE-1) : sta system_VIA_portA : lda system_VIA_portA
+    bpl no : lda #1 : sta VAR : .no
+endmacro
+
     Poll -98, keyZ
     Poll -67, keyX
     Poll -65, keyCapsLock
     Poll -2, keyCtrl
     Poll -1, keyShift
     Poll -74, keyReturn
+
+macro Position X,Y
+    lda #31 : jsr osasci
+    lda #X : jsr osasci
+    lda #Y : jsr osasci
+endmacro
 
     Position 1,1 : Puts "Frame    : " : lda frameCount  : jsr printHexA
 
@@ -100,15 +129,11 @@ endmacro
 .keyShift SKIP 1
 .keyReturn SKIP 1
 
-.spin : jmp spin
+.mos_syncVB: lda #19 : jmp osbyte
 
 .mode1:
     lda #22 : jsr oswrch
     lda #1 : jsr oswrch
-    rts
-
-.syncVB:
-    lda #19 : jsr osbyte
     rts
 
 .cursorOff:
@@ -148,6 +173,17 @@ endmacro
     bne loop
 .done:
     rts }
+
+.stop:
+    jsr printHexA
+    Puts "Stop,"
+    jmp spin
+
+.spin :  {
+    ;jsr printHexA
+    Puts "SPIN"
+.loop:
+    jmp loop }
 
 .end:
 print "bytes left: ", screenStart-*
