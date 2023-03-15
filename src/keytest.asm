@@ -54,6 +54,10 @@ endmacro
 
 .main: {
 
+    jsr mode1
+    jsr cursorOff
+    jsr syncVB : jsr syncVB ; wait a bit so b-em can finish  the boot-up beep
+
     lda #%01111111 : sta system_VIA_interruptEnable ; disable all interrupts
     lda #%10000010 : sta system_VIA_interruptEnable ; enable VSync
 
@@ -62,9 +66,6 @@ endmacro
     lda #%01111111 : sta system_VIA_dataDirectionA
     lda #%00001111 : sta system_VIA_dataDirectionB ; allow write to addressable latch
     lda #%00000011 : sta system_VIA_portB ; set bit 3 to 0
-
-    jsr mode1
-    jsr cursorOff
 
 .loop:
     jsr syncVB
