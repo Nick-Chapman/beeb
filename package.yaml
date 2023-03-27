@@ -1,0 +1,27 @@
+name:                h6502
+version:             0.1.0.0
+description:         Use my Haskell 6502 Asm
+author:              Nick Chapman
+maintainer:          nic@amadido.co.uk
+github:              Nick-Chapman/beeb.git
+
+dependencies:
+- base >= 4.7 && < 5
+- bytestring
+- typed6502
+
+default-extensions:
+- DataKinds
+- QualifiedDo
+- RecursiveDo
+
+ghc-options:
+- -Werror
+- -Wall
+- -Wno-name-shadowing
+
+executables:
+  bfInHaskell.exe:
+    main: haskell/bfInHaskell.hs
+  frame.exe:
+    main: haskell/frame.hs

@@ -1,2 +1,5 @@
 *~
 _build
+.stack-work
+*.cabal
+stack.yaml.lock
