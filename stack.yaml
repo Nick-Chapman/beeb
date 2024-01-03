@@ -5,4 +5,4 @@ extra-deps:
 - git: https://github.com/Nick-Chapman/EarleyM
   commit: 21b4bbdfd8e9fe7027e998d1fa86f758bd3b0f89
 - git: https://github.com/Nick-Chapman/typed6502
-  commit: 80923d07e522646d1b051b8f7cc9e3db76ae2134
+  commit: b0e4f4740d7125e1b09a2304c6f7b8105d3ef465
