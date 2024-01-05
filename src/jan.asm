@@ -269,23 +269,57 @@ endmacro
     PushVar8 posY+1
     jmp drawShape
 
-.drawShape: ; ( x y -- ) -- draw a simple tricolour L-shape
-    lda #red : PushA : jsr pointAt
-    inc 0,x
-    lda #yellow : PushA : jsr pointAt
-    inc 1,x
-    lda #cyan : PushA : jsr pointAt
-    PopY
-    PopY
+;; .drawShape: ; ( x y -- ) -- draw a simple tricolour L-shape
+;;     ;lda #red : PushA : jsr cyanPointAt : inc 0,x
+;;     ;lda #yellow : PushA : jsr cyanPointAt : inc 1,x
+;;     ;lda #cyan : PushA : jsr cyanPointAt
+;; .pointAt: ; ( x y col -- x y )
+;;     PopA ; col
+;;     sta SMC +1
+;;     jsr calcA ; ( a-hi a-lo fineXmask )
+;;     PopA ; fineXmask
+;;     .SMC : and #&33
+;;     PushA ; col & fineXmask --> d
+;;     jmp eorAt
+
+;; .drawShape: ; ( x y -- ) -- draw a simple shape
+;;     jsr redPointAt :
+;;     inc 0,x : jsr yellowPointAt
+;;     inc 1,x : jsr cyanPointAt
+;;     PopY
+;;     PopY
+;;     rts
+
+macro Yel : jsr yellowPointAt : endmacro
+macro IX : inc 1,x : endmacro
+macro IY : inc 0,x : endmacro
+macro DX : dec 1,x : endmacro
+macro DY : dec 0,x : endmacro
+
+.drawShape: ; ( x y -- ) -- draw a simple shape
+    Yel : IX : Yel : IX : Yel : IX
+    Yel : IY : Yel : IY : Yel : IY
+    Yel : DX : Yel : DX : Yel : DX
+    Yel : DY : Yel : DY : Yel
+    PopA : PopA
     rts
 
-.pointAt: ; ( x y col -- x y )
-    PopA ; col
-    sta SMC +1
+.redPointAt: ; ( x y -- x y )
     jsr calcA ; ( a-hi a-lo fineXmask )
     PopA ; fineXmask
-    .SMC : and #&33
-    PushA ; col & fineXmask --> d
+    and #red
+    PushA
+    jmp eorAt
+
+.yellowPointAt: ; ( x y -- x y )
+    jsr calcA ; ( a-hi a-lo fineXmask )
+    PopA ; fineXmask
+    and #yellow
+    PushA
+    jmp eorAt
+
+.cyanPointAt: ; ( x y -- x y )
+    jsr calcA ; ( a-hi a-lo fineXmask )
     jmp eorAt
 
 .eorAt: { ; ( aa d -- )
@@ -430,7 +464,7 @@ endmacro
     Position 1,28 : Emit 'S' : Space : PrHexWord speedX : Space : PrHexWord speedY
     Position 1,30
     txa : jsr printHexA ; debug param stack bugs
-    Space : jsr printKeyState
+    ;Space : jsr printKeyState
     rts
 
 .printKeyState:
