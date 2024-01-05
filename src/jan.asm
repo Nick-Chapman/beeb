@@ -3,8 +3,8 @@
 ;;; Determine Acceleration via Thrust/Drag.
 
 ;;; Good values for Impulse/Momentum: 3/6, 2/5
-Impulse = 3 ;; Thrust = 1/2**Impulse
-Momentum = 6 ;; Drag = 1/2**Momentum
+Impulse = 0 ;; Thrust = 1/2**Impulse
+Momentum = 1 ;; Drag = 1/2**Momentum
 ;;; MaxSpeed ~= 2**(Momentum - Impulse)
 
 SyncAssert = TRUE
@@ -77,6 +77,11 @@ endmacro
 macro PushA
     dex
     sta 0,x
+endmacro
+
+macro PushY
+    dex
+    sty 0,x
 endmacro
 
 macro PopA
@@ -154,6 +159,9 @@ org &1100
 ;;; State
 
 .frameCounter EQUB 0
+
+.direction EQUB 0 ; angles increase clockwise
+
 .accelX SKIP 2
 .accelY SKIP 2
 .speedX SKIP 2
@@ -186,6 +194,7 @@ endmacro
 
 .prepare:
     jsr savePos ; save where we were before update
+    jsr updateDirection ; in repose to key caps/ctrl key presses
     jsr setAccel ; in response to a key presses & existing speed
     jsr updateSpeed ; using accel
     jsr updatePos ; using speed
@@ -195,6 +204,18 @@ endmacro
     lda posX+1 : sta lastPosX
     lda posY+1 : sta lastPosY
     rts
+
+.updateDirection: {
+    PushVar8 direction
+    lda keyCaps : beq no
+    lda keyCtrl : bne done ; both
+    dec 0,x : jmp done
+    .no : lda keyCtrl : beq done ; neither
+    inc 0,x
+.done:
+    PopVar8 direction
+    rts
+    }
 
 .setAccel: ; ( -- )
     ComputeAccel accelX, thrustX, speedX
@@ -238,11 +259,69 @@ macro DetermineThrust Decrease, Increase
     jmp pushMinusOneE8 ; TODO inline
 endmacro
 
-.thrustX:
-    DetermineThrust keyLeft, keyRight
+;; .OLD_thrustX:
+;;     DetermineThrust keyLeft, keyRight
 
-.thrustY:
-    DetermineThrust keyUp, keyDown
+;; .OLD_thrustY:
+;;     DetermineThrust keyUp, keyDown
+
+
+.thrustX: {
+    lda keyShift : beq noThrust
+
+    jmp pushOneE8 ; TEMP HACK
+
+    lda direction
+    and #31
+    eor #&ff : sec : adc #31 ; invert: Acc <- 31-Acc
+    tay : lda #0 : PushA : lda sinTab, y : PushA
+    rts
+.noThrust:
+    jmp pushZero
+    }
+
+.thrustY: {
+    lda keyShift : beq noThrust
+
+    lda direction
+    and #&40
+    bne H ; inverted (going upwards)
+
+    lda direction
+    and #&20
+    bne B
+;.A:
+    lda direction
+    and #31
+    tay : lda #0 : PushA : lda sinTab, y : PushA
+    rts
+.B:
+    lda direction
+    and #31
+    eor #&ff : sec : adc #31 ; invert: Acc <- 31-Acc
+    tay : lda #0 : PushA : lda sinTab, y : PushA
+    rts
+.H:
+    lda direction
+    and #&20
+    bne D
+;.C:
+    lda direction
+    and #31
+    tay : lda #0 : PushA : lda sinTab, y : PushA
+    jsr invert
+    rts
+.D:
+    lda direction
+    and #31
+    eor #&ff : sec : adc #31 ; invert: Acc <- 31-Acc
+    tay : lda #0 : PushA : lda sinTab, y : PushA
+    jsr invert
+    rts
+
+.noThrust:
+    jmp pushZero
+    }
 
 .pushZero:
     lda #0 : PushA : PushA
@@ -255,6 +334,18 @@ endmacro
 .pushMinusOneE8
     lda #&ff : PushA : lda #0 : PushA
     rts
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; Trig
+
+macro mm B
+    EQUB B
+    ;PRINT B
+endmacro
+
+.sinTab: FOR i, 0, 31 : mm INT(SIN((i*PI)/64) * 256) : NEXT
+sinTabSize = *-sinTab
+ASSERT sinTabSize = 32
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Blit
@@ -350,6 +441,16 @@ macro DY : dec 0,x : endmacro
     inx : inx
     rts
 
+.invert: ; ( qq -- rr ) ; zero-minus ; TODO: better imp
+    sec
+    lda #0
+    sbc 0, x ; QL
+    sta 0, x
+    lda #0
+    sbc 1, x ; QH
+    sta 1, x
+    rts
+
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; calculate screen address from X/Y
 
@@ -411,10 +512,12 @@ macro DY : dec 0,x : endmacro
 
 .keyShift EQUB 0
 .keyEnter EQUB 0
-.keyUp    EQUB 0
-.keyDown  EQUB 0
-.keyLeft  EQUB 0
-.keyRight EQUB 0
+;.keyUp    EQUB 0
+;.keyDown  EQUB 0
+;.keyLeft  EQUB 0
+;.keyRight EQUB 0
+.keyCaps  EQUB 0
+.keyCtrl  EQUB 0
 
 macro PollKey CODE, VAR
     lda #0 : sta VAR
@@ -425,10 +528,12 @@ endmacro
 .readKeys:
     PollKey -1,   keyShift
     PollKey -74,  keyEnter
-    PollKey -58,  keyUp
-    PollKey -42,  keyDown
-    PollKey -26,  keyLeft
-    PollKey -122, keyRight
+    ;PollKey -58,  keyUp
+    ;PollKey -42,  keyDown
+    ;PollKey -26,  keyLeft
+    ;PollKey -122, keyRight
+    PollKey -65,  keyCaps
+    PollKey -2,   keyCtrl
     rts
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -450,17 +555,20 @@ endmacro
     ;Position 1,28 : Emit 'P' : Space : PrHexWord posX : Space : PrHexWord posY
     Position 1,30
     ;lda frameCounter : jsr printHexA
-    ;txa : jsr printHexA ; debug param stack bugs
-    Space : jsr printKeyState
+    txa : jsr printHexA ; debug param stack bugs
+    Space : lda direction : jsr printHexA
+    ;Space : jsr printKeyState
     rts
 
 .printKeyState:
-    lda #'.' : { ldy keyLeft  : beq no : lda #'L' : .no } : jsr osasci
-    lda #'.' : { ldy keyRight : beq no : lda #'R' : .no } : jsr osasci
-    lda #'.' : { ldy keyUp    : beq no : lda #'U' : .no } : jsr osasci
-    lda #'.' : { ldy keyDown  : beq no : lda #'D' : .no } : jsr osasci
+    ;lda #'.' : { ldy keyLeft  : beq no : lda #'L' : .no } : jsr osasci
+    ;lda #'.' : { ldy keyRight : beq no : lda #'R' : .no } : jsr osasci
+    ;lda #'.' : { ldy keyUp    : beq no : lda #'U' : .no } : jsr osasci
+    ;lda #'.' : { ldy keyDown  : beq no : lda #'D' : .no } : jsr osasci
     ;lda #' '                                              : jsr osasci
-    ;lda #'.' : { ldy keyShift : beq no : lda #'S' : .no } : jsr osasci
+    lda #'.' : { ldy keyCaps : beq no : lda #'A' : .no } : jsr osasci
+    lda #'.' : { ldy keyCtrl : beq no : lda #'C' : .no } : jsr osasci
+    lda #'.' : { ldy keyShift : beq no : lda #'S' : .no } : jsr osasci
     ;lda #'.' : { ldy keyEnter : beq no : lda #'E' : .no } : jsr osasci
     rts
 
