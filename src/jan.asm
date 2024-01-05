@@ -2,10 +2,12 @@
 ;;; New Year. New fun.
 ;;; Determine Acceleration via Thrust/Drag.
 
-Impulse = 2 ;; Thrust = 1/2**Impulse
-Momentum = 5 ;; Drag = 1/2**Momentum
+;;; Good values for Impulse/Momentum: 3/6, 2/5
+Impulse = 3 ;; Thrust = 1/2**Impulse
+Momentum = 6 ;; Drag = 1/2**Momentum
 ;;; MaxSpeed ~= 2**(Momentum - Impulse)
 
+SyncAssert = TRUE
 RasterDebugPrepare = TRUE
 RasterDebugBlit = TRUE
 
@@ -136,10 +138,10 @@ org &1100
     jsr plotRun
 .loop:
     jsr readKeys
-    jsr textInfo
     IF RasterDebugPrepare : lda #3 : sta ula : ENDIF ; blue (prepare)
     jsr prepare
     lda #7 : sta ula ; black
+    jsr textInfo
     jsr syncVB
     IF RasterDebugBlit : lda #2 : sta ula : ENDIF ; magenta (blit)
     jsr blitScene
@@ -175,7 +177,8 @@ endmacro
 
 macro ComputeAccel Accel, Thrust, Speed
     jsr Thrust
-    FOR i, 1, Impulse : jsr halve : NEXT
+    IF Impulse > 0 : FOR i, 1, Impulse : jsr halve : NEXT
+    ENDIF
     PushVar16 Speed
     jsr decay5
     PopVar16 Accel
@@ -209,7 +212,8 @@ endmacro
     rts
 
 .decay5: ; ( tt vv -- aa )
-    FOR i, 1, Momentum : jsr decay1 : NEXT
+    IF Momentum > 0 : FOR i, 1, Momentum : jsr decay1 : NEXT
+    ENDIF
     jsr minus
     rts
 
@@ -269,27 +273,7 @@ endmacro
     PushVar8 posY+1
     jmp drawShape
 
-;; .drawShape: ; ( x y -- ) -- draw a simple tricolour L-shape
-;;     ;lda #red : PushA : jsr cyanPointAt : inc 0,x
-;;     ;lda #yellow : PushA : jsr cyanPointAt : inc 1,x
-;;     ;lda #cyan : PushA : jsr cyanPointAt
-;; .pointAt: ; ( x y col -- x y )
-;;     PopA ; col
-;;     sta SMC +1
-;;     jsr calcA ; ( a-hi a-lo fineXmask )
-;;     PopA ; fineXmask
-;;     .SMC : and #&33
-;;     PushA ; col & fineXmask --> d
-;;     jmp eorAt
-
-;; .drawShape: ; ( x y -- ) -- draw a simple shape
-;;     jsr redPointAt :
-;;     inc 0,x : jsr yellowPointAt
-;;     inc 1,x : jsr cyanPointAt
-;;     PopY
-;;     PopY
-;;     rts
-
+macro Cyan : jsr cyanPointAt : endmacro
 macro Yel : jsr yellowPointAt : endmacro
 macro IX : inc 1,x : endmacro
 macro IY : inc 0,x : endmacro
@@ -297,10 +281,11 @@ macro DX : dec 1,x : endmacro
 macro DY : dec 0,x : endmacro
 
 .drawShape: ; ( x y -- ) -- draw a simple shape
-    Yel : IX : Yel : IX : Yel : IX
-    Yel : IY : Yel : IY : Yel : IY
-    Yel : DX : Yel : DX : Yel : DX
-    Yel : DY : Yel : DY : Yel
+    Cyan
+    IX : Yel : IX
+    Yel : IY : Yel : IY
+    Yel : DX : Yel : DX
+    Yel : DY : Yel
     PopA : PopA
     rts
 
@@ -460,11 +445,13 @@ macro PrHexWord VAR
 endmacro
 
 .textInfo:
-    Position 1,27 : Emit 'A' : Space : PrHexWord accelX : Space : PrHexWord accelY
-    Position 1,28 : Emit 'S' : Space : PrHexWord speedX : Space : PrHexWord speedY
+    Position 1,26 : Emit 'A' : Space : PrHexWord accelX : Space : PrHexWord accelY
+    Position 1,27 : Emit 'S' : Space : PrHexWord speedX : Space : PrHexWord speedY
+    ;Position 1,28 : Emit 'P' : Space : PrHexWord posX : Space : PrHexWord posY
     Position 1,30
-    txa : jsr printHexA ; debug param stack bugs
-    ;Space : jsr printKeyState
+    ;lda frameCounter : jsr printHexA
+    ;txa : jsr printHexA ; debug param stack bugs
+    Space : jsr printKeyState
     rts
 
 .printKeyState:
@@ -524,9 +511,9 @@ endmacro
     }
 
 .syncVB: {
-    lda vsyncNotify : bne failSync1 ; pre-sync check (more harsh)
+    ;IF SyncAssert : lda vsyncNotify : bne failSync1 : ENDIF ; pre-sync check (more harsh)
     { .loop : lda vsyncNotify : beq loop }
-    cmp #2 : bcs failSync2 ; post-sync check (move forgiving)
+    IF SyncAssert : cmp #2 : bcs failSync2 : ENDIF ; post-sync check (move forgiving)
     lda #0 : sta vsyncNotify
     rts
 .failSync1:
