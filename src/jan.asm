@@ -40,9 +40,13 @@ macro copy16i I,V
     lda #HI(I) : sta V+1
 endmacro
 
-macro Space
-	lda #' '
+macro Emit C
+	lda #C
     jsr osasci
+endmacro
+
+macro Space
+	Emit ' '
 endmacro
 
 macro Position X,Y
@@ -422,8 +426,8 @@ macro PrHexWord VAR
 endmacro
 
 .textInfo:
-    Position 1,27 : Puts "A: " : PrHexWord accelX : Space : PrHexWord accelY
-    Position 1,28 : Puts "V: " : PrHexWord speedX : Space : PrHexWord speedY
+    Position 1,27 : Emit 'A' : Space : PrHexWord accelX : Space : PrHexWord accelY
+    Position 1,28 : Emit 'S' : Space : PrHexWord speedX : Space : PrHexWord speedY
     Position 1,30
     txa : jsr printHexA ; debug param stack bugs
     Space : jsr printKeyState
