@@ -127,7 +127,7 @@ org &1100
     jsr cursorOff
     jsr replaceWhiteWithCyan
     copy16i myIRQ, irq1v
-    ldx &90 ; End of stack; grows downwards
+    ldx #&90 ; End of stack; grows downwards
     jsr syncVB
     jsr plotRun
 .loop:
@@ -424,7 +424,9 @@ endmacro
 .textInfo:
     Position 1,27 : Puts "A: " : PrHexWord accelX : Space : PrHexWord accelY
     Position 1,28 : Puts "V: " : PrHexWord speedX : Space : PrHexWord speedY
-    Position 1,30 : jsr printKeyState
+    Position 1,30
+    txa : jsr printHexA ; debug param stack bugs
+    Space : jsr printKeyState
     rts
 
 .printKeyState:
@@ -432,9 +434,9 @@ endmacro
     lda #'.' : { ldy keyRight : beq no : lda #'R' : .no } : jsr osasci
     lda #'.' : { ldy keyUp    : beq no : lda #'U' : .no } : jsr osasci
     lda #'.' : { ldy keyDown  : beq no : lda #'D' : .no } : jsr osasci
-    lda #' '                                              : jsr osasci
-    lda #'.' : { ldy keyShift : beq no : lda #'S' : .no } : jsr osasci
-    lda #'.' : { ldy keyEnter : beq no : lda #'E' : .no } : jsr osasci
+    ;lda #' '                                              : jsr osasci
+    ;lda #'.' : { ldy keyShift : beq no : lda #'S' : .no } : jsr osasci
+    ;lda #'.' : { ldy keyEnter : beq no : lda #'E' : .no } : jsr osasci
     rts
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -454,12 +456,12 @@ endmacro
 
 .printHexA: {
     pha
-    and #&f0 : lsr a : lsr a : lsr a : lsr a : tax
-    lda digits,x
+    and #&f0 : lsr a : lsr a : lsr a : lsr a : tay
+    lda digits,y
     jsr osasci
     pla
-    and #&f : tax
-    lda digits,x
+    and #&f : tay
+    lda digits,y
     jsr osasci
     rts
 .digits: EQUS "0123456789abcdef"
