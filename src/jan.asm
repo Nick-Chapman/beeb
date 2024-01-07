@@ -258,13 +258,15 @@ endmacro
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Trig...
 
+QuarterTurn = 64
+
 .cos: ; ( n -- nn )
     jsr turnNinety
     jmp sin
 
 .turnNinety: ; ( n -- n )
     lda 0,x
-    clc : adc #32
+    clc : adc #QuarterTurn
     sta 0,x
     rts
 
@@ -272,15 +274,15 @@ endmacro
     jsr mirrorB
     PopA : pha
 	jsr mirrorA
-    jsr thirtyOneMinusMaybe
+    jsr invertQuadrantMaybe
     jsr sinTableLookup
     pla : PushA
     jsr invertMaybe
     rts
 
 .sinTableLookup: ; ( n -- nn )
-    PopA ; 0--31
-    and #31
+    PopA
+    and #(QuarterTurn-1)
     tay
     jsr pushZeroByte ; res-hi
     lda sinTab, y
@@ -293,24 +295,24 @@ endmacro
 
 .mirrorB: ; ( n -- n p )
     lda 0,x
-    and #&40
+    and #&80
     PushA
     rts
 
 .mirrorA: ; ( n -- n p )
     lda 0,x
-    and #&20
+    and #&40
     PushA
     rts
 
-.thirtyOneMinusMaybe: ; ( n p -- n )
+.invertQuadrantMaybe: ; ( n p -- n )
     inx
     lda &ff,x
-    bne thirtyOneMinus
+    bne invertQuadrant
     rts
 
-.thirtyOneMinus: ; ( n -- n )
-    lda #31
+.invertQuadrant: ; ( n -- n )
+    lda #(QuarterTurn-1)
     sec : sbc 0,x
     sta 0,x
     rts
@@ -331,9 +333,9 @@ macro mm B
     ;PRINT B
 endmacro
 
-.sinTab: FOR i, 0, 31 : mm INT(SIN((i*PI)/64) * 256) : NEXT
+.sinTab: FOR i, 0, QuarterTurn-1 : mm INT(SIN((i*PI)/128) * 256) : NEXT
 sinTabSize = *-sinTab
-ASSERT sinTabSize = 32
+ASSERT sinTabSize = 64
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Arithmetic
