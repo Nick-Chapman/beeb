@@ -3,13 +3,14 @@
 ;;; Determine Acceleration via Thrust/Drag.
 
 ;;; Possible values for Impulse/Momentum: 2/5, 3/5, 3/6
-Impulse = 3 ;; Thrust = 1/2**Impulse
-Momentum = 6 ;; Drag = 1/2**Momentum
+Impulse = 2 ;; Thrust = 1/2**Impulse
+Momentum = 5 ;; Drag = 1/2**Momentum
 ;;; MaxSpeed ~= 2**(Momentum - Impulse)
 
 SyncAssert = TRUE
-RasterDebugPrepare = TRUE
-RasterDebugBlit = TRUE
+RasterDebugBlit = TRUE ; magenta
+RasterDebugPrepare = TRUE ; blue
+RasterDebugTextInfo = FALSE ; green
 
 ;;; MOS vectors & zero page use
 interruptSaveA = &fc
@@ -143,14 +144,21 @@ org &1100
     jsr plotRun
 .loop:
     jsr readKeys
+
     IF RasterDebugPrepare : lda #3 : sta ula : ENDIF ; blue (prepare)
     jsr prepare
     lda #7 : sta ula ; black
+
+    IF RasterDebugTextInfo : lda #5 : sta ula : ENDIF ; green (text-info)
     jsr textInfo
+    lda #7 : sta ula ; black
+
     jsr syncVB
+
     IF RasterDebugBlit : lda #2 : sta ula : ENDIF ; magenta (blit)
     jsr blitScene
     lda #7 : sta ula ; black
+
     inc frameCounter
     jmp loop
     }
@@ -166,8 +174,8 @@ org &1100
 .accelY SKIP 2
 .speedX SKIP 2
 .speedY SKIP 2
-.posX EQUW &1100
-.posY EQUW &2200
+.posX EQUW &9000
+.posY EQUW &b000
 
 ;; (last) copies of (just)high-byte of pos, for erasing
 .lastPosX SKIP 1
@@ -209,8 +217,11 @@ endmacro
     PushVar8 direction
     lda keyCaps : beq no
     lda keyCtrl : bne done ; both
-    dec 0,x : jmp done
+    dec 0,x
+    dec 0,x
+    jmp done
     .no : lda keyCtrl : beq done ; neither
+    inc 0,x
     inc 0,x
 .done:
     PopVar8 direction
@@ -411,49 +422,53 @@ ASSERT sinTabSize = 64
     jsr eraseRun
     jmp plotRun
 
-.eraseRun: ; ( -- ) -- erase is same as plot, except using last pos
+;;; erase is same as plot, except using last pos
+.eraseRun: ; ( -- )
+    lda #yellow : PushA
     PushVar8 lastPosX
     PushVar8 lastPosY
-    jmp drawShape
-
-.plotRun: ; ( -- )
-    PushVar8 posX+1
-    PushVar8 posY+1
-    jmp drawShape
-
-macro Cyan : jsr cyanPointAt : endmacro
-macro Yel : jsr yellowPointAt : endmacro
-macro IX : inc 1,x : endmacro
-macro IY : inc 0,x : endmacro
-macro DX : dec 1,x : endmacro
-macro DY : dec 0,x : endmacro
-
-.drawShape: ; ( x y -- ) -- draw a simple shape
-    Cyan
-    IX : Yel : IX
-    Yel : IY : Yel : IY
-    Yel : DX : Yel : DX
-    Yel : DY : Yel
-    PopA : PopA
+    jsr drawShape
+    PopA : PopA : PopA
     rts
 
-.redPointAt: ; ( x y -- x y )
-    jsr calcA ; ( a-hi a-lo fineXmask )
-    PopA ; fineXmask
-    and #red
-    PushA
+.plotRun: ; ( -- )
+    lda #yellow : PushA
+    PushVar8 posX+1
+    PushVar8 posY+1
+    jsr drawShape
+    PopA : PopA : PopA
+    rts
+
+macro X : jsr colPointAt : endmacro
+macro U : dec 0,x : endmacro
+macro R : inc 1,x : endmacro
+macro D : inc 0,x : endmacro
+macro L : dec 1,x : endmacro
+
+macro SHIP1
+X:N:X:N:X : N:E:X:N:X:N:X : N:E:X:N:X:N:X : N:E:X:N:X:N:X : N:E:X
+S:E:X:S:X:S:X : S:E:X:S:X:S:X : S:E:X:S:X:S:X : S:E:X:S:X:S:X : N:W:X:W:X:W:X:W:X:W:X:W:X:W:X
+endmacro
+
+.drawShape: { ; ( c x y -- c x y )
+    macro N : R : endmacro
+    macro E : D : endmacro
+    macro S : L : endmacro
+    macro W : U : endmacro
+    SHIP1
+    rts
+    }
+
+.colPointAt: ; ( c x y -- c x y )
+    jsr calcA ; ( c x y aa fineXmask )
+    lda 0,x
+    and 5,x
+    sta 0,x
     jmp eorAt
 
-.yellowPointAt: ; ( x y -- x y )
-    jsr calcA ; ( a-hi a-lo fineXmask )
-    PopA ; fineXmask
-    and #yellow
-    PushA
-    jmp eorAt
-
-.cyanPointAt: ; ( x y -- x y )
-    jsr calcA ; ( a-hi a-lo fineXmask )
-    jmp eorAt
+;;.cyanPointAt: ; ( x y -- x y )
+;;    jsr calcA
+;;    jmp eorAt
 
 .eorAt: { ; ( aa d -- )
     PopY ; d
@@ -560,12 +575,12 @@ macro PrHexWord VAR
 endmacro
 
 .textInfo:
-    Position 1,28 : Emit 'A' : Space : PrHexWord accelX : Space : PrHexWord accelY
-    Position 1,29 : Emit 'S' : Space : PrHexWord speedX : Space : PrHexWord speedY
-    Position 1,31 : Emit 'D' : Space : lda direction : jsr printHexA
+    Position 1,27 : Emit 'A' : Space : PrHexWord accelX : Space : PrHexWord accelY
+    ;Position 1,28 : Emit 'S' : Space : PrHexWord speedX : Space : PrHexWord speedY
+    Position 1,30 : Emit 'D' : Space : lda direction : jsr printHexA
     ;Position 1,28 : Emit 'P' : Space : PrHexWord posX : Space : PrHexWord posY
     ;lda frameCounter : jsr printHexA
-    ;txa : jsr printHexA : Space ; debug param stack bugs
+    ;Position 1,31 : txa : jsr printHexA ; debug param stack bugs
     ;Space : jsr printKeyState
     rts
 
