@@ -274,22 +274,19 @@ endmacro
 	jsr mirrorA
     jsr thirtyOneMinusMaybe
     jsr sinTableLookup
-    jsr pushZeroByte ; HI byte of resulting answer
-    jsr swap
     pla : PushA
     jsr invertMaybe
     rts
 
-.sinTableLookup: ; ( n -- n ) -- TODO (return nn)
-    lda 0,x ; 0--31
+.sinTableLookup: ; ( n -- nn )
+    PopA ; 0--31
     and #31
     tay
-    ;jsr pushZeroByte ;;TODO
+    jsr pushZeroByte ; res-hi
     lda sinTab, y
-    sta 0,x
+    PushA
     rts
 
-;;; TODO inline?...
 .pushZeroByte: ; ( -- n )
     lda #0 : PushA
     rts
@@ -318,12 +315,16 @@ endmacro
     sta 0,x
     rts
 
-.swap: ; ( n n -- n n )
-    lda 0,x
-    ldy 1,x
-    sta 1,x
-    sty 0,x
-    rts
+;; .swap: ; ( n n -- n n )
+;;     lda 0,x
+;;     ldy 1,x
+;;     sta 1,x
+;;     sty 0,x
+;;     rts
+
+;; .drop: ; ( n -- )
+;;     inx
+;;     rts
 
 macro mm B
     EQUB B
@@ -557,13 +558,12 @@ macro PrHexWord VAR
 endmacro
 
 .textInfo:
-    Position 1,26 : Emit 'A' : Space : PrHexWord accelX : Space : PrHexWord accelY
-    Position 1,27 : Emit 'S' : Space : PrHexWord speedX : Space : PrHexWord speedY
+    Position 1,28 : Emit 'A' : Space : PrHexWord accelX : Space : PrHexWord accelY
+    Position 1,29 : Emit 'S' : Space : PrHexWord speedX : Space : PrHexWord speedY
+    Position 1,31 : Emit 'D' : Space : lda direction : jsr printHexA
     ;Position 1,28 : Emit 'P' : Space : PrHexWord posX : Space : PrHexWord posY
-    Position 1,30
     ;lda frameCounter : jsr printHexA
-    txa : jsr printHexA ; debug param stack bugs
-    Space : lda direction : jsr printHexA
+    ;txa : jsr printHexA : Space ; debug param stack bugs
     ;Space : jsr printKeyState
     rts
 
