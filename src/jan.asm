@@ -2,9 +2,9 @@
 ;;; New Year. New fun.
 ;;; Determine Acceleration via Thrust/Drag.
 
-;;; Good values for Impulse/Momentum: 3/6, 2/5
-Impulse = 0 ;; Thrust = 1/2**Impulse
-Momentum = 1 ;; Drag = 1/2**Momentum
+;;; Possible values for Impulse/Momentum: 2/5, 3/5, 3/6
+Impulse = 3 ;; Thrust = 1/2**Impulse
+Momentum = 6 ;; Drag = 1/2**Momentum
 ;;; MaxSpeed ~= 2**(Momentum - Impulse)
 
 SyncAssert = TRUE
@@ -232,111 +232,98 @@ endmacro
     PlusEq16 posY, speedY
     rts
 
-.decay5: ; ( tt vv -- aa )
-    IF Momentum > 0 : FOR i, 1, Momentum : jsr decay1 : NEXT
-    ENDIF
-    jsr minus
-    rts
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; Thrust
 
-.decay1: { ; ( vv -- vv )
-    lda 1,x ;h
-    bmi no
-    jsr pushOne ; TODO: inline
-    jsr plus ; TODO change to inc
-.no:
-    jmp halve
-    }
-
-.pushOne
-    lda #0 : PushA : lda #1 : PushA
-    rts
-
-macro DetermineThrust Decrease, Increase
-    lda Increase : beq no
-    lda Decrease : bne pushZero ; both
-    jmp pushOneE8 ; TODO inline
-    .no : lda Decrease : beq pushZero ; neither
-    jmp pushMinusOneE8 ; TODO inline
-endmacro
-
-;; .OLD_thrustX:
-;;     DetermineThrust keyLeft, keyRight
-
-;; .OLD_thrustY:
-;;     DetermineThrust keyUp, keyDown
-
-
-.thrustX: {
+.thrustX: { ; ( -- nn )
     lda keyShift : beq noThrust
-
-    jmp pushOneE8 ; TEMP HACK
-
-    lda direction
-    and #31
-    eor #&ff : sec : adc #31 ; invert: Acc <- 31-Acc
-    tay : lda #0 : PushA : lda sinTab, y : PushA
-    rts
+    PushVar8 direction
+    jmp cos
 .noThrust:
     jmp pushZero
     }
 
-.thrustY: {
+.thrustY: { ; ( -- nn )
     lda keyShift : beq noThrust
-
-    lda direction
-    and #&40
-    bne H ; inverted (going upwards)
-
-    lda direction
-    and #&20
-    bne B
-;.A:
-    lda direction
-    and #31
-    tay : lda #0 : PushA : lda sinTab, y : PushA
-    rts
-.B:
-    lda direction
-    and #31
-    eor #&ff : sec : adc #31 ; invert: Acc <- 31-Acc
-    tay : lda #0 : PushA : lda sinTab, y : PushA
-    rts
-.H:
-    lda direction
-    and #&20
-    bne D
-;.C:
-    lda direction
-    and #31
-    tay : lda #0 : PushA : lda sinTab, y : PushA
-    jsr invert
-    rts
-.D:
-    lda direction
-    and #31
-    eor #&ff : sec : adc #31 ; invert: Acc <- 31-Acc
-    tay : lda #0 : PushA : lda sinTab, y : PushA
-    jsr invert
-    rts
-
+    PushVar8 direction
+    jmp sin
 .noThrust:
     jmp pushZero
     }
 
-.pushZero:
+.pushZero: ; ( -- nn )
     lda #0 : PushA : PushA
     rts
 
-.pushOneE8
-    lda #1 : PushA : lda #0 : PushA
-    rts
-
-.pushMinusOneE8
-    lda #&ff : PushA : lda #0 : PushA
-    rts
-
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; Trig
+;;; Trig...
+
+.cos: ; ( n -- nn )
+    jsr turnNinety
+    jmp sin
+
+.turnNinety: ; ( n -- n )
+    lda 0,x
+    clc : adc #32
+    sta 0,x
+    rts
+
+.sin: ; ( n -- nn )
+    jsr mirrorB
+    PopA : pha
+	jsr mirrorA
+    jsr thirtyOneMinusMaybe
+    jsr sinTableLookup
+    jsr pushZeroByte ; HI byte of resulting answer
+    jsr swap
+    pla : PushA
+    jsr invertMaybe
+    rts
+
+.sinTableLookup: ; ( n -- n ) -- TODO (return nn)
+    lda 0,x ; 0--31
+    and #31
+    tay
+    ;jsr pushZeroByte ;;TODO
+    lda sinTab, y
+    sta 0,x
+    rts
+
+;;; TODO inline?...
+.pushZeroByte: ; ( -- n )
+    lda #0 : PushA
+    rts
+
+.mirrorB: ; ( n -- n p )
+    lda 0,x
+    and #&40
+    PushA
+    rts
+
+.mirrorA: ; ( n -- n p )
+    lda 0,x
+    and #&20
+    PushA
+    rts
+
+.thirtyOneMinusMaybe: ; ( n p -- n )
+    inx
+    lda &ff,x
+    bne thirtyOneMinus
+    rts
+
+.thirtyOneMinus: ; ( n -- n )
+    lda #31
+    sec : sbc 0,x
+    sta 0,x
+    rts
+
+.swap: ; ( n n -- n n )
+    lda 0,x
+    ldy 1,x
+    sta 1,x
+    sty 0,x
+    rts
 
 macro mm B
     EQUB B
@@ -346,6 +333,73 @@ endmacro
 .sinTab: FOR i, 0, 31 : mm INT(SIN((i*PI)/64) * 256) : NEXT
 sinTabSize = *-sinTab
 ASSERT sinTabSize = 32
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; Arithmetic
+
+.decay5: ; ( tt vv -- aa )
+    IF Momentum > 0 : FOR i, 1, Momentum : jsr decay1 : NEXT
+    ENDIF
+    jsr minus
+    rts
+
+.decay1: { ; ( vv -- vv )
+    lda 1,x ;h
+    bmi no
+    jsr pushOne : jsr plus ; TODO increment
+.no:
+    jmp halve
+    }
+
+.pushOne
+    lda #0 : PushA : lda #1 : PushA
+    rts
+
+.halve: ; ( aa -- bb )
+    lda 1,x
+    cmp #&80 ; signed!
+    ror 1,x ; hi
+    ror 0,x ; lo
+    rts
+
+.plus: ; ( pp qq -- rr )
+    clc
+    lda 2, x ; PL
+    adc 0, x ; QL
+    sta 2, x
+    lda 3, x ; PH
+    adc 1, x ; QH
+    sta 3, x
+    inx : inx
+    rts
+
+.minus: ; ( pp qq -- rr )
+    sec
+    lda 2, x ; PL
+    sbc 0, x ; QL
+    sta 2, x
+    lda 3, x ; PH
+    sbc 1, x ; QH
+    sta 3, x
+    inx : inx
+    rts
+
+.invertMaybe: { ; ( nn p -- nn )
+    inx : lda &ff,x
+    beq done
+    jmp invert
+.done:
+    rts }
+
+.invert: ; ( qq -- rr ) ; zero-minus ; TODO: better imp
+    sec
+    lda #0
+    sbc 0, x ; QL
+    sta 0, x
+    lda #0
+    sbc 1, x ; QH
+    sta 1, x
+    rts
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Blit
@@ -407,49 +461,10 @@ macro DY : dec 0,x : endmacro
     sta SMC_r +2
     sta SMC_w +2
     tya ; d
-    .SMC_r eor &3333
-    .SMC_w sta &3333
+    .SMC_r eor &eeee
+    .SMC_w sta &eeee
     rts
     }
-
-.halve: ; ( aa -- bb )
-    lda 1,x
-    cmp #&80 ; signed!
-    ror 1,x ; hi
-    ror 0,x ; lo
-    rts
-
-.plus: ; ( pp qq -- rr )
-    clc
-    lda 2, x ; PL
-    adc 0, x ; QL
-    sta 2, x
-    lda 3, x ; PH
-    adc 1, x ; QH
-    sta 3, x
-    inx : inx
-    rts
-
-.minus: ; ( pp qq -- rr )
-    sec
-    lda 2, x ; PL
-    sbc 0, x ; QL
-    sta 2, x
-    lda 3, x ; PH
-    sbc 1, x ; QH
-    sta 3, x
-    inx : inx
-    rts
-
-.invert: ; ( qq -- rr ) ; zero-minus ; TODO: better imp
-    sec
-    lda #0
-    sbc 0, x ; QL
-    sta 0, x
-    lda #0
-    sbc 1, x ; QH
-    sta 1, x
-    rts
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; calculate screen address from X/Y
@@ -512,10 +527,6 @@ macro DY : dec 0,x : endmacro
 
 .keyShift EQUB 0
 .keyEnter EQUB 0
-;.keyUp    EQUB 0
-;.keyDown  EQUB 0
-;.keyLeft  EQUB 0
-;.keyRight EQUB 0
 .keyCaps  EQUB 0
 .keyCtrl  EQUB 0
 
@@ -528,10 +539,6 @@ endmacro
 .readKeys:
     PollKey -1,   keyShift
     PollKey -74,  keyEnter
-    ;PollKey -58,  keyUp
-    ;PollKey -42,  keyDown
-    ;PollKey -26,  keyLeft
-    ;PollKey -122, keyRight
     PollKey -65,  keyCaps
     PollKey -2,   keyCtrl
     rts
@@ -561,15 +568,9 @@ endmacro
     rts
 
 .printKeyState:
-    ;lda #'.' : { ldy keyLeft  : beq no : lda #'L' : .no } : jsr osasci
-    ;lda #'.' : { ldy keyRight : beq no : lda #'R' : .no } : jsr osasci
-    ;lda #'.' : { ldy keyUp    : beq no : lda #'U' : .no } : jsr osasci
-    ;lda #'.' : { ldy keyDown  : beq no : lda #'D' : .no } : jsr osasci
-    ;lda #' '                                              : jsr osasci
     lda #'.' : { ldy keyCaps : beq no : lda #'A' : .no } : jsr osasci
     lda #'.' : { ldy keyCtrl : beq no : lda #'C' : .no } : jsr osasci
     lda #'.' : { ldy keyShift : beq no : lda #'S' : .no } : jsr osasci
-    ;lda #'.' : { ldy keyEnter : beq no : lda #'E' : .no } : jsr osasci
     rts
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -619,7 +620,7 @@ endmacro
     }
 
 .syncVB: {
-    ;IF SyncAssert : lda vsyncNotify : bne failSync1 : ENDIF ; pre-sync check (more harsh)
+    IF SyncAssert : lda vsyncNotify : bne failSync1 : ENDIF ; pre-sync check (more harsh)
     { .loop : lda vsyncNotify : beq loop }
     IF SyncAssert : cmp #2 : bcs failSync2 : ENDIF ; post-sync check (move forgiving)
     lda #0 : sta vsyncNotify
