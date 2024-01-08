@@ -10,9 +10,18 @@ Momentum = 5 ;; Drag = 1/2**Momentum
 SpeedTurn = 4
 
 SyncAssert = TRUE
-RasterDebugBlit = FALSE ; magenta
-RasterDebugPrepare = FALSE ; blue
-RasterDebugTextInfo = FALSE ; green
+RasterDebugBlit = TRUE
+RasterDebugPrepare = FALSE
+RasterDebugTextInfo = FALSE
+
+white = 0
+cyan = 1
+magenta = 2
+blue = 3
+yellow = 4
+green = 5
+red = 6
+black = 7
 
 ;;; MOS vectors & zero page use
 interruptSaveA = &fc
@@ -32,10 +41,6 @@ osasci = &ffe3
 oswrch = &ffee
 
 screenStart = &3000
-
-cyan = &ff
-yellow = &f0
-red = &0f
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Macros
@@ -147,23 +152,27 @@ org &1100
     copy16i myIRQ, irq1v
     ldx #&90 ; End of stack; grows downwards
     jsr syncVB
-    jsr plotRun
 .loop:
     jsr readKeys
 
-    IF RasterDebugPrepare : lda #3 : sta ula : ENDIF ; blue (prepare)
+    ;;jsr syncVB ; earlier for DEV, so can see full size of green/magenta erase/blit
+
+    IF RasterDebugPrepare : lda #blue : sta ula : ENDIF
     jsr prepare
-    lda #7 : sta ula ; black
+    lda #black : sta ula
 
-    IF RasterDebugTextInfo : lda #5 : sta ula : ENDIF ; green (text-info)
+    IF RasterDebugTextInfo : lda #red : sta ula : ENDIF
     jsr textInfo
-    lda #7 : sta ula ; black
+    lda #black : sta ula
 
-    jsr syncVB
+    jsr syncVB ; proper location
 
-    IF RasterDebugBlit : lda #2 : sta ula : ENDIF ; magenta (blit)
-    jsr blitScene
-    lda #7 : sta ula ; black
+    IF RasterDebugBlit : lda #green : sta ula : ENDIF
+    jsr eraseRun
+    IF RasterDebugBlit : lda #magenta : sta ula : ENDIF
+    jsr plotRun
+
+    lda #black : sta ula
 
     inc frameCounter
     jmp loop
@@ -185,7 +194,7 @@ ThreeQuarters = QuarterTurn + HalfTurn
 .speedX SKIP 2
 .speedY SKIP 2
 .posX EQUW &9000
-.posY EQUW &b000
+.posY EQUW &e000
 
 ;; (last) copies of (just)high-byte of pos, for erasing
 .lastPosX SKIP 1
@@ -443,21 +452,23 @@ Si = S or INVISIBLE
 Wi = W or INVISIBLE
 SWi = SW or INVISIBLE
 
-;;;X = 32 ;; center
+macro Center : EQUB 32 : endmacro ; see center of rotation
+;;;macro Center : EQUB 16 : endmacro ; DONT see center of rotation
+;;;macro Center : endmacro  ; DONT see center of rotation (and dont even waste a byte!)
 
-.outline1:
+.outline1: Center
     EQUB Si,Si, S,W,W,W,SW,N,N, NE,N,N,NE,N,N,NE,N,N,NE, SE,S,S,SE,S,S,SE,S,S,SE,S,S, NW,W,W, 0
 
-.outline2:
+.outline2: Center
     EQUB SWi, S,W,Wi,W,NE,N,NE,N,NE,N,NE,NE,N,NE,NE, S,S,S,S,S,S,S,S,S,S,S,S,S, NW,W,W, 0
 
-.outline3:
+.outline3: Center
     EQUB Wi, SW,W,Wi,W, NE,NE,NE,NE,NE,NE,NE,NE,NE,NE, S,S,S,SW,S,S,S,S,SW,S,S,S,S,S, Ni,NW,W,NW,W, 0
 
-.outline4:
+.outline4: Center
     EQUB Si, SW,W,NW,Wi,W, NE,NE,NE,NE,NE,E,NE,NE,NE,NE,E, S,SW,S,S,SW,S,S,SW,S,S,SW,S,S, Ni,NW,W, 0
 
-.outline5:
+.outline5: Center
     EQUB SWi, SW,NW,NW,W, NE,E,NE,E,NE,NE,E,NE,E,NE,E, S,SW,S,SW,SW,S,SW,S,SW,S,SW, N,NW, 0
 
 .outlines:
@@ -467,28 +478,27 @@ SWi = SW or INVISIBLE
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Blit
 
-.blitScene:
-    jsr eraseRun
-    jmp plotRun
+cyanMask = &ff
+yellowMask = &f0
+redMask = &0f
+blackMask = &00
 
-;;; erase is same as plot, except using last pos
 .eraseRun: ; ( -- )
-    lda #yellow : PushA
     PushVar8 lastPosX
     PushVar8 lastPosY
     PushVar8 lastDirection
     jsr setOrientationFromDirection
-    jsr drawShape
-    PopA : PopA : PopA
+    copy16i erasePointAt, SMC_doPoint+1 : jsr drawShape
+    PopA : PopA
     rts
 
 .plotRun: ; ( -- )
-    lda #yellow : PushA
+    lda #yellowMask : PushA
     PushVar8 posX+1
     PushVar8 posY+1
     PushVar8 direction
     jsr setOrientationFromDirection
-    jsr drawShape
+    copy16i colPointAt, SMC_doPoint+1 : jsr drawShape
     PopA : PopA : PopA
     rts
 
@@ -533,6 +543,7 @@ SWi = SW or INVISIBLE
 .drawShape: { ; ( c x y -- c x y )
     ldy #0
 .loop:
+    ;;cpy #1 : beq done ;; DEV HACK - just see one point
     .*SMC_outline : lda &eeee, y : beq done
     bit n : bne north
     bit s : bne south
@@ -548,7 +559,7 @@ SWi = SW or INVISIBLE
 .pr:
     bit invisible : bne next
     sty SMC_y + 1
-    jsr colPointAt
+    .*SMC_doPoint : jsr &eeee
     .SMC_y : ldy #&ee
 .next:
     iny
@@ -557,30 +568,33 @@ SWi = SW or INVISIBLE
     rts
     }
 
-.colPointAt: ; ( c x y -- c x y ) -- TODO: order x y c
+.colPointAt: ; ( c x y -- c x y ) -- TODO: reorder x y c ?
     jsr calcA ; ( c x y aa fineXmask )
     lda 0,x
     and 5,x
     sta 0,x
     jmp eorAt
 
-;;.cyanPointAt: ; ( x y -- x y )
-;;    jsr calcA
-;;    jmp eorAt
-
 .eorAt: { ; ( aa d -- )
-    ;;PopY ; d
     PopA : sta SMC_d + 1
-    PopA ; a-lo
-    sta SMC_r +1
-    sta SMC_w +1
-    PopA ; a-hi
-    sta SMC_r +2
-    sta SMC_w +2
-    ;;tya ; d
+    PopA : sta SMC_r + 1 : sta SMC_w + 1
+    PopA : sta SMC_r + 2 : sta SMC_w + 2
     .SMC_d lda #&ee
     .SMC_r eor &eeee
     .SMC_w sta &eeee
+    rts
+    }
+
+.erasePointAt: ; ( x y -- x y )
+    jsr calcA ; ( x y aa fineXmask )
+    inx ; drop fineXmask
+    jmp eraseAt
+
+.eraseAt: { ; ( aa -- )
+    PopA : sta SMC +1
+    PopA : sta SMC +2
+    lda #blackMask
+    .SMC sta &eeee
     rts
     }
 
