@@ -7,6 +7,8 @@ Impulse = 2 ;; Thrust = 1/2**Impulse
 Momentum = 5 ;; Drag = 1/2**Momentum
 ;;; MaxSpeed ~= 2**(Momentum - Impulse)
 
+SpeedTurn = 2
+
 SyncAssert = TRUE
 RasterDebugBlit = TRUE ; magenta
 RasterDebugPrepare = TRUE ; blue
@@ -95,6 +97,10 @@ macro PopY
     inx
 endmacro
 
+macro PushLit V
+    lda #V : PushA
+endmacro
+
 macro PushVar8 V
     lda V
     PushA
@@ -166,9 +172,13 @@ org &1100
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; State
 
+QuarterTurn = 64
+HalfTurn = QuarterTurn + QuarterTurn
+ThreeQuarters = QuarterTurn + HalfTurn
+
 .frameCounter EQUB 0
 
-.direction EQUB 0 ; angles increase clockwise
+.direction EQUB ThreeQuarters ; angles increase clockwise
 
 .accelX SKIP 2
 .accelY SKIP 2
@@ -180,6 +190,7 @@ org &1100
 ;; (last) copies of (just)high-byte of pos, for erasing
 .lastPosX SKIP 1
 .lastPosY SKIP 1
+.lastDirection SKIP 1
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Prepare
@@ -211,18 +222,17 @@ endmacro
 .savePos: ; ( -- ) only the position high-bytes
     lda posX+1 : sta lastPosX
     lda posY+1 : sta lastPosY
+    lda direction : sta lastDirection
     rts
 
 .updateDirection: {
     PushVar8 direction
     lda keyCaps : beq no
     lda keyCtrl : bne done ; both
-    dec 0,x
-    dec 0,x
+    FOR i,1,SpeedTurn : dec 0,x : NEXT
     jmp done
     .no : lda keyCtrl : beq done ; neither
-    inc 0,x
-    inc 0,x
+    FOR i,1,SpeedTurn : inc 0,x : NEXT
 .done:
     PopVar8 direction
     rts
@@ -268,8 +278,6 @@ endmacro
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Trig...
-
-QuarterTurn = 64
 
 .cos: ; ( n -- nn )
     jsr turnNinety
@@ -415,6 +423,45 @@ ASSERT sinTabSize = 64
     sta 1, x
     rts
 
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; Outlines
+
+N = 1
+S = 2
+E = 4
+W = 8
+INVISIBLE = 16
+
+NE = N or E
+SE = S or E
+NW = N or W
+SW = S or W
+
+Ni = N or INVISIBLE
+Si = S or INVISIBLE
+Wi = W or INVISIBLE
+SWi = SW or INVISIBLE
+
+.outline1:
+    EQUB Si,Si, S,W,W,W,SW,N,N, NE,N,N,NE,N,N,NE,N,N,NE, SE,S,S,SE,S,S,SE,S,S,SE,S,S, NW,W,W, 0
+
+.outline2:
+    EQUB SWi,SWi, S,W,Wi,W,NE,N,NE,N,NE,N,NE,NE,N,NE,NE, S,S,S,S,S,S,S,S,S,S,S,S,S, NW,W,W, 0
+
+.outline3:
+    EQUB Wi, SW,W,Wi,W, NE,NE,NE,NE,NE,NE,NE,NE,NE,NE, S,S,S,SW,S,S,S,S,SW,S,S,S,S,S, Ni,NW,W,NW,W, 0
+
+.outline4:
+    EQUB Si, SW,W,NW,Wi,W, NE,NE,NE,NE,NE,E,NE,NE,NE,NE,E, S,SW,S,S,SW,S,S,SW,S,S,SW,S,S, Ni,NW,W, 0
+
+.outline5:
+    EQUB SWi, SW,NW,NW,W, NE,E,NE,E,NE,NE,E,NE,E,NE,E, S,SW,S,SW,SW,S,SW,S,SW,S,SW, N,NW, 0
+
+.outlines:
+    EQUW outline1,outline2,outline3,outline4
+    EQUW outline5,outline4,outline3,outline2
+
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Blit
 
@@ -427,6 +474,8 @@ ASSERT sinTabSize = 64
     lda #yellow : PushA
     PushVar8 lastPosX
     PushVar8 lastPosY
+    PushVar8 lastDirection
+    jsr setOrientationFromDirection
     jsr drawShape
     PopA : PopA : PopA
     rts
@@ -435,31 +484,78 @@ ASSERT sinTabSize = 64
     lda #yellow : PushA
     PushVar8 posX+1
     PushVar8 posY+1
+    PushVar8 direction
+    jsr setOrientationFromDirection
     jsr drawShape
     PopA : PopA : PopA
     rts
 
-macro X : jsr colPointAt : endmacro
-macro U : dec 0,x : endmacro
-macro R : inc 1,x : endmacro
-macro D : inc 0,x : endmacro
-macro L : dec 1,x : endmacro
+.setOrientationFromDirection: ; ( d -- )
 
-macro SHIP1
-X:N:X:N:X : N:E:X:N:X:N:X : N:E:X:N:X:N:X : N:E:X:N:X:N:X : N:E:X
-S:E:X:S:X:S:X : S:E:X:S:X:S:X : S:E:X:S:X:S:X : S:E:X:S:X:S:X : N:W:X:W:X:W:X:W:X:W:X:W:X:W:X
-endmacro
+    ;; Set outline...
+    lda 0,x
+    lsr a : lsr a : lsr a ; each outline covers 8 angles
+    and #7 ; take 3 bits (8 outlines in sequence)
+    asl a ; index Y for outline table must be even
+    tay
+    lda outlines,y : sta SMC_outline+1
+    lda outlines+1,y : sta SMC_outline+2
+
+    ;; Set orientation...
+    PopA ; direction
+    lsr a : lsr a : lsr a
+    and #%00011100
+    tay ; 0,4,8,12,16,20,24,28
+    lda orientations,y : sta n : iny
+    lda orientations,y : sta e : iny
+    lda orientations,y : sta s : iny
+    lda orientations,y : sta w
+    rts
+
+.orientations:
+    EQUB W,N,E,S
+    EQUB S,E,N,W
+    EQUB S,W,N,E
+    EQUB W,S,E,N
+    EQUB E,S,W,N
+    EQUB N,W,S,E
+    EQUB N,E,S,W
+    EQUB E,N,W,S
+
+.invisible EQUB INVISIBLE
+.n SKIP 1
+.s SKIP 1
+.e SKIP 1
+.w SKIP 1
 
 .drawShape: { ; ( c x y -- c x y )
-    macro N : R : endmacro
-    macro E : D : endmacro
-    macro S : L : endmacro
-    macro W : U : endmacro
-    SHIP1
+    ldy #0
+.loop:
+    .*SMC_outline : lda &eeee, y : beq done
+    bit n : bne north
+    bit s : bne south
+    jmp ew
+.north: dec 0,x : jmp ew
+.south: inc 0,x : jmp ew
+.ew:
+    bit e : bne east
+    bit w : bne west
+    jmp pr
+.east: inc 1,x : jmp pr
+.west: dec 1,x : jmp pr
+.pr:
+    bit invisible : bne next
+    sty SMC_y + 1
+    jsr colPointAt
+    .SMC_y : ldy #&ee
+.next:
+    iny
+    bne loop
+.done:
     rts
     }
 
-.colPointAt: ; ( c x y -- c x y )
+.colPointAt: ; ( c x y -- c x y ) -- TODO: order x y c
     jsr calcA ; ( c x y aa fineXmask )
     lda 0,x
     and 5,x
@@ -471,14 +567,16 @@ endmacro
 ;;    jmp eorAt
 
 .eorAt: { ; ( aa d -- )
-    PopY ; d
+    ;;PopY ; d
+    PopA : sta SMC_d + 1
     PopA ; a-lo
     sta SMC_r +1
     sta SMC_w +1
     PopA ; a-hi
     sta SMC_r +2
     sta SMC_w +2
-    tya ; d
+    ;;tya ; d
+    .SMC_d lda #&ee
     .SMC_r eor &eeee
     .SMC_w sta &eeee
     rts
@@ -502,7 +600,7 @@ endmacro
     PushA
     lda theA ; a-lo
     PushA
-    ldy theFX
+    ldy theFX ; TODO: avoid using y ?
     lda masks,y
     PushA
     rts
@@ -575,7 +673,7 @@ macro PrHexWord VAR
 endmacro
 
 .textInfo:
-    Position 1,27 : Emit 'A' : Space : PrHexWord accelX : Space : PrHexWord accelY
+    ;Position 1,27 : Emit 'A' : Space : PrHexWord accelX : Space : PrHexWord accelY
     ;Position 1,28 : Emit 'S' : Space : PrHexWord speedX : Space : PrHexWord speedY
     Position 1,30 : Emit 'D' : Space : lda direction : jsr printHexA
     ;Position 1,28 : Emit 'P' : Space : PrHexWord posX : Space : PrHexWord posY
