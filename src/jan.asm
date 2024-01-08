@@ -7,11 +7,11 @@ Impulse = 2 ;; Thrust = 1/2**Impulse
 Momentum = 5 ;; Drag = 1/2**Momentum
 ;;; MaxSpeed ~= 2**(Momentum - Impulse)
 
-SpeedTurn = 2
+SpeedTurn = 4
 
 SyncAssert = TRUE
-RasterDebugBlit = TRUE ; magenta
-RasterDebugPrepare = TRUE ; blue
+RasterDebugBlit = FALSE ; magenta
+RasterDebugPrepare = FALSE ; blue
 RasterDebugTextInfo = FALSE ; green
 
 ;;; MOS vectors & zero page use
@@ -443,11 +443,13 @@ Si = S or INVISIBLE
 Wi = W or INVISIBLE
 SWi = SW or INVISIBLE
 
+;;;X = 32 ;; center
+
 .outline1:
     EQUB Si,Si, S,W,W,W,SW,N,N, NE,N,N,NE,N,N,NE,N,N,NE, SE,S,S,SE,S,S,SE,S,S,SE,S,S, NW,W,W, 0
 
 .outline2:
-    EQUB SWi,SWi, S,W,Wi,W,NE,N,NE,N,NE,N,NE,NE,N,NE,NE, S,S,S,S,S,S,S,S,S,S,S,S,S, NW,W,W, 0
+    EQUB SWi, S,W,Wi,W,NE,N,NE,N,NE,N,NE,NE,N,NE,NE, S,S,S,S,S,S,S,S,S,S,S,S,S, NW,W,W, 0
 
 .outline3:
     EQUB Wi, SW,W,Wi,W, NE,NE,NE,NE,NE,NE,NE,NE,NE,NE, S,S,S,SW,S,S,S,S,SW,S,S,S,S,S, Ni,NW,W,NW,W, 0
