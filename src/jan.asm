@@ -12,7 +12,7 @@ SpeedTurn = 4
 SyncAssert = TRUE
 RasterDebugBlit = TRUE
 RasterDebugPrepare = FALSE
-RasterDebugTextInfo = FALSE
+RasterDebugTextInfo = TRUE
 
 white = 0
 cyan = 1
@@ -48,6 +48,11 @@ screenStart = &3000
 macro copy16i I,V
     lda #LO(I) : sta V
     lda #HI(I) : sta V+1
+endmacro
+
+macro copy16v A,B
+    lda A : sta B
+    lda A+1 : sta B+1
 endmacro
 
 macro Emit C
@@ -132,6 +137,7 @@ endmacro
 guard &100
 org &70
 .msgPtr SKIP 2 ;; TODO: kill
+.ptr SKIP 2
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Start
@@ -151,6 +157,7 @@ org &1100
     jsr replaceWhiteWithCyan
     copy16i myIRQ, irq1v
     ldx #&90 ; End of stack; grows downwards
+    ;;jsr initCachedPoints
     jsr syncVB
 .loop:
     jsr readKeys
@@ -161,18 +168,24 @@ org &1100
     jsr prepare
     lda #black : sta ula
 
-    IF RasterDebugTextInfo : lda #red : sta ula : ENDIF
-    jsr textInfo
-    lda #black : sta ula
-
     jsr syncVB ; proper location
 
-    IF RasterDebugBlit : lda #green : sta ula : ENDIF
+    IF RasterDebugBlit : lda #blue : sta ula : ENDIF
     jsr eraseRun
     IF RasterDebugBlit : lda #magenta : sta ula : ENDIF
     jsr plotRun
 
+    ;;jsr syncVB ; not proper location
+
+    ;;jsr flushCachedPoints
+
     lda #black : sta ula
+
+    IF RasterDebugTextInfo : lda #red : sta ula : ENDIF
+    ;;jsr textInfo
+    lda #black : sta ula
+
+    ;;jsr initCachedPoints
 
     inc frameCounter
     jmp loop
@@ -452,9 +465,9 @@ Si = S or INVISIBLE
 Wi = W or INVISIBLE
 SWi = SW or INVISIBLE
 
-macro Center : EQUB 32 : endmacro ; see center of rotation
+;;;macro Center : EQUB 32 : endmacro ; see center of rotation
 ;;;macro Center : EQUB 16 : endmacro ; DONT see center of rotation
-;;;macro Center : endmacro  ; DONT see center of rotation (and dont even waste a byte!)
+macro Center : endmacro  ; DONT see center of rotation (and dont even waste a byte!)
 
 .outline1: Center
     EQUB Si,Si, S,W,W,W,SW,N,N, NE,N,N,NE,N,N,NE,N,N,NE, SE,S,S,SE,S,S,SE,S,S,SE,S,S, NW,W,W, 0
@@ -500,6 +513,7 @@ blackMask = &00
     jsr setOrientationFromDirection
     copy16i colPointAt, SMC_doPoint+1 : jsr drawShape
     PopA : PopA : PopA
+    ;jsr flushCachedPoints
     rts
 
 .setOrientationFromDirection: ; ( d -- )
@@ -693,8 +707,12 @@ endmacro
     ;Position 1,28 : Emit 'S' : Space : PrHexWord speedX : Space : PrHexWord speedY
     Position 1,30 : Emit 'D' : Space : lda direction : jsr printHexA
     ;Position 1,28 : Emit 'P' : Space : PrHexWord posX : Space : PrHexWord posY
+
+    ;Position 1,31
+    ;lda bufN : jsr printHexA
+
     ;lda frameCounter : jsr printHexA
-    ;Position 1,31 : txa : jsr printHexA ; debug param stack bugs
+    ;txa : jsr printHexA ; debug param stack bugs
     ;Space : jsr printKeyState
     rts
 
@@ -801,6 +819,51 @@ endmacro
     lda #0 : jsr oswrch
     lda #0 : jsr oswrch
     rts
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; cached blitting...
+
+;; .eorAt: ; ( aa d -- )
+;;     jsr eorAt_SAVE
+;;     jsr eorAt_RUN ;; GOAL: do this when flushing!
+;;     rts
+
+;; .eorAt_SAVE:  ; ( aa d -- )
+;;     jsr allocateCacheSpace
+
+;;     copy16v bufP, ptr
+;;     PopA : ldy #2 : sta (ptr),y
+;;     PopA : ldy #0 : sta (ptr),y
+;;     PopA : ldy #1 : sta (ptr),y
+;;     rts
+
+;; .eorAt_RUN:
+;;     copy16v bufP, ptr
+;;     ldy #0 : lda (ptr),y : sta SMC_r + 1 : sta SMC_w + 1
+;;     ldy #1 : lda (ptr),y : sta SMC_r + 2 : sta SMC_w + 2
+;;     ldy #2 : lda (ptr),y
+;;     .SMC_r eor &eeee
+;;     .SMC_w sta &eeee
+;;     rts
+
+;; .allocateCacheSpace:
+;;     inc bufN
+;;     lda bufP : clc : adc #3 : sta bufP : { bcc no : inc bufP+1 : .no }
+;;     rts
+
+;; .initCachedPoints:
+;;     copy16i buf1, bufP
+;;     lda #0 : sta bufN
+;;     rts
+
+;; .flushCachedPoints:
+;;     ;jsr initCachedPoints ;reset
+;;     rts
+
+;; .bufP: SKIP 2
+;; .buf1: SKIP 3*50
+
+;; .bufN : SKIP 1
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 .end:
