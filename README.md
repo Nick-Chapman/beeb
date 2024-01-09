@@ -48,13 +48,14 @@ Eventual goal: write a graphics game.
 - basic thrust control (move the source of bullets)
 - ship: see something!
 
+## jan (January 2024 -- New year; New fun!)
+- thrust and momentum for ship
+- trig for ship rotation
+- sprite(s) for ship: 5 sprites in 32 orientations (mirror: 4,8,8,8,4)
+
 ## NEXT
-- ship: show facing direction
-- ship: proper thrust control
 - ship: collision detection
 - find some easy wins for speedup
-
-- sprite(s) for ship: 5 sprites in 32 orientations (mirror: 4,8,8,8,4)
 - large meteor sprite
 - prepare/plot objects every other frame to allow double number of objects
 
