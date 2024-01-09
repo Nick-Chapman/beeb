@@ -10,9 +10,9 @@ Momentum = 5 ;; Drag = 1/2**Momentum
 SpeedTurn = 4
 
 SyncAssert = TRUE
-RasterDebugBlit = TRUE ; red/magenta
-RasterDebugPrepare = FALSE ; green
-RasterDebugTextInfo = FALSE ; blue
+RasterDebugBlit = TRUE ; magenta
+RasterDebugPrepare = FALSE ; blue
+RasterDebugTextInfo = FALSE ; green
 
 white = 0
 cyan = 1
@@ -161,24 +161,20 @@ org &1100
 .loop:
     jsr readKeys
 
-    ;;jsr syncVB ; DEV, allow see full size of erase/blit
-
     ;; prepare...
     IF RasterDebugPrepare : lda #blue : sta ula : ENDIF
     jsr preparePhase
     lda #black : sta ula
 
     IF RasterDebugTextInfo : lda #green : sta ula : ENDIF
-    jsr textInfo
+    jsr textInfo ;; DEV : if after sync to see full size of erase/blit
     lda #black : sta ula
 
-    jsr syncVB ; proper sync location
+    jsr syncVB
 
-    ;; blit (erase/plot)...
-    IF RasterDebugBlit : lda #red : sta ula : ENDIF
-    jsr erasePhase
+    ;; blit...
     IF RasterDebugBlit : lda #magenta : sta ula : ENDIF
-    jsr plotPhase
+    jsr blitPhase
     lda #black : sta ula
 
     inc frameCounter
@@ -186,19 +182,20 @@ org &1100
     }
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; prepare ; blit(erase/plot)
+;;; Blit
+
+.blitPhase:
+    jsr processEraseBuf
+    jsr processPlotBuf
+    rts
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; Prepare
 
 .preparePhase:
     jsr updateState
     jsr prepareErase
-    rts
-
-.erasePhase:
-    jsr processEraseBuf
-    rts
-
-.plotPhase:
-    jsr plotRun
+    jsr preparePlot
     rts
 
 .prepareErase: ; ( -- )
@@ -214,8 +211,7 @@ org &1100
 .erasePointAt: ; ( x y -- x y )
     jsr calcA ; ( x y aa fineXmask )
     inx ; drop fineXmask
-    jsr eraseAt
-    rts
+    jmp eraseAt
 
 .eraseAt:  ; ( aa -- )
     lda 1,x : jsr pushEraseBuf ;hi -- hi comes first in buffer
@@ -223,7 +219,8 @@ org &1100
     inx : inx
     rts
 
-.plotRun: ; ( -- )
+.preparePlot: ; ( -- )
+    jsr resetPlotBuf
     lda #yellowMask : PushA
     PushVar8 posX+1
     PushVar8 posY+1
@@ -232,6 +229,21 @@ org &1100
     copy16i colPointAt, SMC_doPoint+1 : jsr drawShape
     PopA : PopA : PopA
     rts
+
+.colPointAt: ; ( c x y -- c x y ) -- TODO: reorder x y c ?
+    jsr calcA ; ( c x y aa fineXmask )
+    lda 0,x
+    and 5,x
+    sta 0,x
+    jmp eorAt
+
+.eorAt: { ; ( aa d -- )
+    lda 2,x : jsr pushPlotBuf ; a-hi -- hi comes first in buffer
+    lda 1,x : jsr pushPlotBuf ; a-lo
+    lda 0,x : jsr pushPlotBuf ; d
+    inx : inx : inx
+    rts
+    }
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; State
@@ -257,7 +269,7 @@ ThreeQuarters = QuarterTurn + HalfTurn
 .lastDirection SKIP 1
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; update-state
+;;; Update State
 
 macro PlusEq16 A, B ; A <- A+B
     PushVar16 B
@@ -604,23 +616,6 @@ blackMask = &00
     rts
     }
 
-.colPointAt: ; ( c x y -- c x y ) -- TODO: reorder x y c ?
-    jsr calcA ; ( c x y aa fineXmask )
-    lda 0,x
-    and 5,x
-    sta 0,x
-    jmp eorAt
-
-.eorAt: { ; ( aa d -- )
-    PopA : sta SMC_d + 1
-    PopA : sta SMC_r + 1 : sta SMC_w + 1
-    PopA : sta SMC_r + 2 : sta SMC_w + 2
-    .SMC_d lda #&ee
-    .SMC_r eor &eeee
-    .SMC_w sta &eeee
-    rts
-    }
-
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; calculate screen address from X/Y
 
@@ -714,15 +709,12 @@ endmacro
 .textInfo:
     ;Position 1,27 : Emit 'A' : Space : PrHexWord accelX : Space : PrHexWord accelY
     ;Position 1,28 : Emit 'S' : Space : PrHexWord speedX : Space : PrHexWord speedY
-    Position 1,30 : Emit 'D' : Space : lda direction : jsr printHexA
-    ;Position 1,28 : Emit 'P' : Space : PrHexWord posX : Space : PrHexWord posY
-
-    ;Position 1,31
-    ;lda bufN : jsr printHexA
-
-    ;lda frameCounter : jsr printHexA
-    ;txa : jsr printHexA ; debug param stack bugs
-    ;Space : jsr printKeyState
+    ;Position 1,29 : Emit 'P' : Space : PrHexWord posX : Space : PrHexWord posY
+    ;Position 1,30 : Emit 'D' : Space : lda direction : jsr printHexA
+    Position 0,31
+    ;Space : lda frameCounter : jsr printHexA
+    ;Space : txa : jsr printHexA ; debug param stack bugs
+    Space : jsr printKeyState
     rts
 
 .printKeyState:
@@ -830,7 +822,7 @@ endmacro
     rts
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; erase buffer
+;;; Erase Buffer
 
 .ptrEraseBuf SKIP 1
 { .before: align 256 : print "bytes wasted before align EraseBuf: ", *-before }
@@ -860,15 +852,51 @@ endmacro
     sta EraseBuf,y
     ldy #0
 .loop:
-    lda EraseBuf,y
-    beq done
-    sta SMC+2 ;hi
-    iny
-    lda EraseBuf,y
-    sta SMC+1 ;lo
-    iny
+    lda EraseBuf,y : beq done : iny : sta SMC+2 ;hi
+    lda EraseBuf,y            : iny : sta SMC+1 ;lo
     lda #blackMask
     .SMC : sta &eeee
+    jmp loop
+.done:
+    rts
+}
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; Plot Buffer
+
+.ptrPlotBuf SKIP 1
+{ .before: align 256 : print "bytes wasted before align PlotBuf: ", *-before }
+.PlotBuf SKIP 256
+
+.resetPlotBuf:
+    lda #0
+    sta ptrPlotBuf
+    rts
+
+.pushPlotBuf: ;; ( A --> ) -- TODO: macroize?
+    {
+    ldy ptrPlotBuf
+    sta PlotBuf,y
+    iny
+    beq overflow ; TODO: make dev time check only
+    sty ptrPlotBuf
+    rts
+.overflow:
+    STOP "pushPlotBuf overflow"
+    }
+
+.processPlotBuf:
+    {
+    ldy ptrPlotBuf
+    lda #0 ; no true hi screen byte can be zero
+    sta PlotBuf,y
+    ldy #0
+.loop:
+    lda PlotBuf,y : beq done : iny : sta r+2 : sta w+2
+    lda PlotBuf,y            : iny : sta r+1 : sta w+1
+    lda PlotBuf,y            : iny
+    .r eor &eeee
+    .w sta &eeee
     jmp loop
 .done:
     rts
