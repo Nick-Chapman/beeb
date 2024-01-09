@@ -3,6 +3,10 @@
 Playing around with examples to run on the BBC Micro.
 Eventual goal: write a graphics game.
 
+## Play using JsBeeb
+- [game3](https://bbc.godbolt.org/?&disc1=https://github.com/Nick-Chapman/beeb/tree/main/release/game3.ssd&autoboot)
+- [jan](https://bbc.godbolt.org/?&disc1=https://github.com/Nick-Chapman/beeb/tree/main/release/jan.ssd&autoboot)
+
 ## game1
 - Have A be unaffected by fine-Y adjust, and use FY for y-index when plotting.
 - Use self-mod code for sprite data access avoiding x-index for FX.
