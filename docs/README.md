@@ -1,0 +1,13 @@
+## Play demos in JsBeeb
+- [draw1-1meteor-raster-artifact](https://bbc.godbolt.org/?&disc1=https://nick-chapman.github.io/beeb/draw1-1meteor-raster-artifact.ssd&autoboot)
+- [draw1](https://bbc.godbolt.org/?&disc1=https://nick-chapman.github.io/beeb/draw1.ssd&autoboot)
+- [game1-3small-meteors](https://bbc.godbolt.org/?&disc1=https://nick-chapman.github.io/beeb/game1-3small-meteors.ssd&autoboot)
+- [game1-4meteors](https://bbc.godbolt.org/?&disc1=https://nick-chapman.github.io/beeb/game1-4meteors.ssd&autoboot)
+- [game1-6meteors](https://bbc.godbolt.org/?&disc1=https://nick-chapman.github.io/beeb/game1-6meteors.ssd&autoboot)
+- [game1](https://bbc.godbolt.org/?&disc1=https://nick-chapman.github.io/beeb/game1.ssd&autoboot)
+- [game2](https://bbc.godbolt.org/?&disc1=https://nick-chapman.github.io/beeb/game2.ssd&autoboot)
+- [game3-bullets-from-invisible-ship](https://bbc.godbolt.org/?&disc1=https://nick-chapman.github.io/beeb/game3-bullets-from-invisible-ship.ssd&autoboot)
+- [game3](https://bbc.godbolt.org/?&disc1=https://nick-chapman.github.io/beeb/game3.ssd&autoboot)
+- [jan-preTrig](https://bbc.godbolt.org/?&disc1=https://nick-chapman.github.io/beeb/jan-preTrig.ssd&autoboot)
+- [jan](https://bbc.godbolt.org/?&disc1=https://nick-chapman.github.io/beeb/jan.ssd&autoboot)
+- [keytest](https://bbc.godbolt.org/?&disc1=https://nick-chapman.github.io/beeb/keytest.ssd&autoboot)

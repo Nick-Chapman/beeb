@@ -28,3 +28,6 @@ _build/%.ssd: _build/%.bytes wrap.asm Makefile
 	@ beebasm -S BinFile=$< -i wrap.asm -do $@ -boot Code || rm $@
 
 _build: ; @mkdir -p $@
+
+docs-index:
+	./make-docs-index.sh > docs/README.md
