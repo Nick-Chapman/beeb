@@ -3,8 +3,9 @@
 Playing around with examples to run on the BBC Micro.
 Eventual goal: write a graphics game.
 
-## Play demo in JsBeeb
-- [jan](https://bbc.godbolt.org/?&disc1=https://nick-chapman.github.io/blog/ssd/jan.ssd&autoboot)
+## Play demos in JsBeeb
+- [game3](https://bbc.godbolt.org/?&disc1=https://nick-chapman.github.io/beeb/game3.ssd&autoboot)
+- [jan](https://bbc.godbolt.org/?&disc1=https://nick-chapman.github.io/beeb/jan.ssd&autoboot)
 
 ## game1
 - Have A be unaffected by fine-Y adjust, and use FY for y-index when plotting.
