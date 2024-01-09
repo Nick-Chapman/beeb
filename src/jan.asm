@@ -10,9 +10,9 @@ Momentum = 5 ;; Drag = 1/2**Momentum
 SpeedTurn = 4
 
 SyncAssert = TRUE
-RasterDebugBlit = TRUE
-RasterDebugPrepare = FALSE
-RasterDebugTextInfo = TRUE
+RasterDebugBlit = TRUE ; red/magenta
+RasterDebugPrepare = FALSE ; green
+RasterDebugTextInfo = FALSE ; blue
 
 white = 0
 cyan = 1
@@ -157,39 +157,81 @@ org &1100
     jsr replaceWhiteWithCyan
     copy16i myIRQ, irq1v
     ldx #&90 ; End of stack; grows downwards
-    ;;jsr initCachedPoints
     jsr syncVB
 .loop:
     jsr readKeys
 
-    ;;jsr syncVB ; earlier for DEV, so can see full size of green/magenta erase/blit
+    ;;jsr syncVB ; DEV, allow see full size of erase/blit
 
+    ;; prepare...
     IF RasterDebugPrepare : lda #blue : sta ula : ENDIF
-    jsr prepare
+    jsr preparePhase
     lda #black : sta ula
 
-    jsr syncVB ; proper location
+    IF RasterDebugTextInfo : lda #green : sta ula : ENDIF
+    jsr textInfo
+    lda #black : sta ula
 
-    IF RasterDebugBlit : lda #blue : sta ula : ENDIF
-    jsr eraseRun
+    jsr syncVB ; proper sync location
+
+    ;; blit (erase/plot)...
+    IF RasterDebugBlit : lda #red : sta ula : ENDIF
+    jsr erasePhase
     IF RasterDebugBlit : lda #magenta : sta ula : ENDIF
-    jsr plotRun
-
-    ;;jsr syncVB ; not proper location
-
-    ;;jsr flushCachedPoints
-
+    jsr plotPhase
     lda #black : sta ula
-
-    IF RasterDebugTextInfo : lda #red : sta ula : ENDIF
-    ;;jsr textInfo
-    lda #black : sta ula
-
-    ;;jsr initCachedPoints
 
     inc frameCounter
     jmp loop
     }
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; prepare ; blit(erase/plot)
+
+.preparePhase:
+    jsr updateState
+    jsr prepareErase
+    rts
+
+.erasePhase:
+    jsr processEraseBuf
+    rts
+
+.plotPhase:
+    jsr plotRun
+    rts
+
+.prepareErase: ; ( -- )
+    jsr resetEraseBuf
+    PushVar8 lastPosX
+    PushVar8 lastPosY
+    PushVar8 lastDirection
+    jsr setOrientationFromDirection
+    copy16i erasePointAt, SMC_doPoint+1 : jsr drawShape
+    PopA : PopA
+    rts
+
+.erasePointAt: ; ( x y -- x y )
+    jsr calcA ; ( x y aa fineXmask )
+    inx ; drop fineXmask
+    jsr eraseAt
+    rts
+
+.eraseAt:  ; ( aa -- )
+    lda 1,x : jsr pushEraseBuf ;hi -- hi comes first in buffer
+    lda 0,x : jsr pushEraseBuf ;lo
+    inx : inx
+    rts
+
+.plotRun: ; ( -- )
+    lda #yellowMask : PushA
+    PushVar8 posX+1
+    PushVar8 posY+1
+    PushVar8 direction
+    jsr setOrientationFromDirection
+    copy16i colPointAt, SMC_doPoint+1 : jsr drawShape
+    PopA : PopA : PopA
+    rts
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; State
@@ -207,7 +249,7 @@ ThreeQuarters = QuarterTurn + HalfTurn
 .speedX SKIP 2
 .speedY SKIP 2
 .posX EQUW &9000
-.posY EQUW &e000
+.posY EQUW &b200
 
 ;; (last) copies of (just)high-byte of pos, for erasing
 .lastPosX SKIP 1
@@ -215,7 +257,7 @@ ThreeQuarters = QuarterTurn + HalfTurn
 .lastDirection SKIP 1
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; Prepare
+;;; update-state
 
 macro PlusEq16 A, B ; A <- A+B
     PushVar16 B
@@ -233,7 +275,7 @@ macro ComputeAccel Accel, Thrust, Speed
     PopVar16 Accel
 endmacro
 
-.prepare:
+.updateState:
     jsr savePos ; save where we were before update
     jsr updateDirection ; in repose to key caps/ctrl key presses
     jsr setAccel ; in response to a key presses & existing speed
@@ -496,26 +538,6 @@ yellowMask = &f0
 redMask = &0f
 blackMask = &00
 
-.eraseRun: ; ( -- )
-    PushVar8 lastPosX
-    PushVar8 lastPosY
-    PushVar8 lastDirection
-    jsr setOrientationFromDirection
-    copy16i erasePointAt, SMC_doPoint+1 : jsr drawShape
-    PopA : PopA
-    rts
-
-.plotRun: ; ( -- )
-    lda #yellowMask : PushA
-    PushVar8 posX+1
-    PushVar8 posY+1
-    PushVar8 direction
-    jsr setOrientationFromDirection
-    copy16i colPointAt, SMC_doPoint+1 : jsr drawShape
-    PopA : PopA : PopA
-    ;jsr flushCachedPoints
-    rts
-
 .setOrientationFromDirection: ; ( d -- )
 
     ;; Set outline...
@@ -596,19 +618,6 @@ blackMask = &00
     .SMC_d lda #&ee
     .SMC_r eor &eeee
     .SMC_w sta &eeee
-    rts
-    }
-
-.erasePointAt: ; ( x y -- x y )
-    jsr calcA ; ( x y aa fineXmask )
-    inx ; drop fineXmask
-    jmp eraseAt
-
-.eraseAt: { ; ( aa -- )
-    PopA : sta SMC +1
-    PopA : sta SMC +2
-    lda #blackMask
-    .SMC sta &eeee
     rts
     }
 
@@ -821,49 +830,49 @@ endmacro
     rts
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; cached blitting...
+;;; erase buffer
 
-;; .eorAt: ; ( aa d -- )
-;;     jsr eorAt_SAVE
-;;     jsr eorAt_RUN ;; GOAL: do this when flushing!
-;;     rts
+.ptrEraseBuf SKIP 1
+{ .before: align 256 : print "bytes wasted before align EraseBuf: ", *-before }
+.EraseBuf SKIP 256
 
-;; .eorAt_SAVE:  ; ( aa d -- )
-;;     jsr allocateCacheSpace
+.resetEraseBuf:
+    lda #0
+    sta ptrEraseBuf
+    rts
 
-;;     copy16v bufP, ptr
-;;     PopA : ldy #2 : sta (ptr),y
-;;     PopA : ldy #0 : sta (ptr),y
-;;     PopA : ldy #1 : sta (ptr),y
-;;     rts
+.pushEraseBuf: ;; ( A --> ) -- TODO: macroize?
+    {
+    ldy ptrEraseBuf
+    sta EraseBuf,y
+    iny
+    beq overflow ; TODO: make dev time check only
+    sty ptrEraseBuf
+    rts
+.overflow:
+    STOP "pushEraseBuf overflow"
+    }
 
-;; .eorAt_RUN:
-;;     copy16v bufP, ptr
-;;     ldy #0 : lda (ptr),y : sta SMC_r + 1 : sta SMC_w + 1
-;;     ldy #1 : lda (ptr),y : sta SMC_r + 2 : sta SMC_w + 2
-;;     ldy #2 : lda (ptr),y
-;;     .SMC_r eor &eeee
-;;     .SMC_w sta &eeee
-;;     rts
-
-;; .allocateCacheSpace:
-;;     inc bufN
-;;     lda bufP : clc : adc #3 : sta bufP : { bcc no : inc bufP+1 : .no }
-;;     rts
-
-;; .initCachedPoints:
-;;     copy16i buf1, bufP
-;;     lda #0 : sta bufN
-;;     rts
-
-;; .flushCachedPoints:
-;;     ;jsr initCachedPoints ;reset
-;;     rts
-
-;; .bufP: SKIP 2
-;; .buf1: SKIP 3*50
-
-;; .bufN : SKIP 1
+.processEraseBuf:
+    {
+    ldy ptrEraseBuf
+    lda #0 ; no true hi screen byte can be zero
+    sta EraseBuf,y
+    ldy #0
+.loop:
+    lda EraseBuf,y
+    beq done
+    sta SMC+2 ;hi
+    iny
+    lda EraseBuf,y
+    sta SMC+1 ;lo
+    iny
+    lda #blackMask
+    .SMC : sta &eeee
+    jmp loop
+.done:
+    rts
+}
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 .end:
