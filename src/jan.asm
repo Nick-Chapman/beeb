@@ -200,16 +200,16 @@ org &1100
 
 .prepareErase: ; ( -- )
     jsr resetEraseBuf
-    PushVar8 lastPosX
-    PushVar8 lastPosY
+    PushVar16 lastPosX
+    PushVar8 lastPosY+1 ; only hi
     PushVar8 lastDirection
     jsr setOrientationFromDirection
     copy16i erasePointAt, SMC_doPoint+1 : jsr drawShape
-    PopA : PopA
+    PopA : PopA : PopA
     rts
 
-.erasePointAt: ; ( x y -- x y )
-    jsr calcA ; ( x y aa fineXmask )
+.erasePointAt: ; ( xx y -- xx y )
+    jsr calcA ; ( xx y aa fineXmask )
     inx ; drop fineXmask
     jmp eraseAt
 
@@ -222,18 +222,18 @@ org &1100
 .preparePlot: ; ( -- )
     jsr resetPlotBuf
     lda #yellowMask : PushA
-    PushVar8 posX+1
-    PushVar8 posY+1
+    PushVar16 posX
+    PushVar8 posY+1 ; only hi
     PushVar8 direction
     jsr setOrientationFromDirection
     copy16i colPointAt, SMC_doPoint+1 : jsr drawShape
-    PopA : PopA : PopA
+    PopA : PopA : PopA : PopA
     rts
 
-.colPointAt: ; ( c x y -- c x y ) -- TODO: reorder x y c ?
-    jsr calcA ; ( c x y aa fineXmask )
+.colPointAt: ; ( c xx y -- c xx y ) -- TODO: reorder x y c ?
+    jsr calcA ; ( c xx y aa fineXmask )
     lda 0,x
-    and 5,x
+    and 6,x
     sta 0,x
     jmp eorAt
 
@@ -260,12 +260,12 @@ ThreeQuarters = QuarterTurn + HalfTurn
 .accelY SKIP 2
 .speedX SKIP 2
 .speedY SKIP 2
-.posX EQUW &9000
-.posY EQUW &b200
+.posX EQUB 0, 75
+.posY EQUB 0, 128
 
-;; (last) copies of (just)high-byte of pos, for erasing
-.lastPosX SKIP 1
-.lastPosY SKIP 1
+;; (last) copies of position & direction
+.lastPosX SKIP 2
+.lastPosY SKIP 2
 .lastDirection SKIP 1
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -287,17 +287,26 @@ macro ComputeAccel Accel, Thrust, Speed
     PopVar16 Accel
 endmacro
 
+macro Mod160 V ; V <- V `mod` 160
+    PushVar8 V
+    PopA
+    jsr mod160
+    PushA
+    PopVar8 V
+endmacro
+
 .updateState:
     jsr savePos ; save where we were before update
     jsr updateDirection ; in repose to key caps/ctrl key presses
     jsr setAccel ; in response to a key presses & existing speed
     jsr updateSpeed ; using accel
     jsr updatePos ; using speed
+    Mod160 posX+1
     rts
 
 .savePos: ; ( -- ) only the position high-bytes
-    lda posX+1 : sta lastPosX
-    lda posY+1 : sta lastPosY
+    copy16v posX, lastPosX
+    copy16v posY, lastPosY ; dont need to copy the lo-byte, but hey
     lda direction : sta lastDirection
     rts
 
@@ -335,7 +344,8 @@ endmacro
 .thrustX: { ; ( -- nn )
     lda keyShift : beq noThrust
     PushVar8 direction
-    jmp cos
+    jsr cos
+    jmp halve
 .noThrust:
     jmp pushZero
     }
@@ -588,7 +598,7 @@ blackMask = &00
 .asEast SKIP 1
 .asWest SKIP 1
 
-.drawShape: { ; ( c x y -- c x y )
+.drawShape: { ; ( c xx y -- c xx y )
     ldy #0
 .loop:
     ;;cpy #1 : beq done ;; DEV HACK - just see one point
@@ -599,12 +609,30 @@ blackMask = &00
 .north: dec 0,x : jmp ew
 .south: inc 0,x : jmp ew
 .ew:
+    pha
     bit asEast : bne east
     bit asWest : bne west
     jmp pr
-.east: inc 1,x : jmp pr
-.west: dec 1,x : jmp pr
+.east:
+    lda 1,x
+    clc : adc #128
+    sta 1,x
+    bcc pr
+    lda 2,x
+    clc : adc #1 : jsr mod160
+    sta 2,x
+    jmp pr
+.west:
+    lda 1,x
+    sec : sbc #128
+    sta 1,x
+    bcs pr
+    lda 2,x
+    sec : sbc #1 : jsr mod160
+    sta 2,x
+    jmp pr
 .pr:
+    pla
     bit invisible : bne next
     sty SMC_y + 1
     .*SMC_doPoint : jsr &eeee
@@ -616,18 +644,31 @@ blackMask = &00
     rts
     }
 
+.mod160: {
+    m = 160
+    x = 9
+    clc : adc #x
+    { cmp #(m+x) : bcc no : sbc #m : .no } ; wrap
+    { cmp #x : bcs no : adc #m : .no } ; unwrap
+    sec : sbc #x
+.done:
+    rts
+    }
+
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; calculate screen address from X/Y
 
-.calcA: { ; ( x y -- x y a-hi a-lo fineXmask )
-    ;;PopA ; y
-    lda 0,x
+.calcA: { ; ( xx y -- xx y a-hi a-lo fineXmask )
+    lda 0,x ; y
     pha : and #&7 : sta theFY : pla
     lsr a : lsr a : lsr a : sta theCY
-    ;;PopA ; x
-    lda 1,x
-    pha : and #&3 : sta theFX : pla
-    lsr a : lsr a : sta theCX
+
+    lda 1,x ; x-lo (need just hi-order bit; get it in carry)
+    cmp #&80
+
+    lda 2,x ; x-hi
+    pha : rol a : and #&3 : sta theFX : pla
+    lsr a : sta theCX
     ;; TODO: inline calculateAfromXY ; kill "the"* vars & simplfy!
     jsr calculateAfromXY
     lda theA+1 ; a-hi
