@@ -566,10 +566,10 @@ blackMask = &00
     lsr a : lsr a : lsr a
     and #%00011100
     tay ; 0,4,8,12,16,20,24,28
-    lda orientations,y : sta n : iny
-    lda orientations,y : sta e : iny
-    lda orientations,y : sta s : iny
-    lda orientations,y : sta w
+    lda orientations,y : sta asNorth : iny
+    lda orientations,y : sta asEast : iny
+    lda orientations,y : sta asSouth : iny
+    lda orientations,y : sta asWest
     rts
 
 .orientations:
@@ -583,24 +583,24 @@ blackMask = &00
     EQUB E,N,W,S
 
 .invisible EQUB INVISIBLE
-.n SKIP 1
-.s SKIP 1
-.e SKIP 1
-.w SKIP 1
+.asNorth SKIP 1
+.asSouth SKIP 1
+.asEast SKIP 1
+.asWest SKIP 1
 
 .drawShape: { ; ( c x y -- c x y )
     ldy #0
 .loop:
     ;;cpy #1 : beq done ;; DEV HACK - just see one point
     .*SMC_outline : lda &eeee, y : beq done
-    bit n : bne north
-    bit s : bne south
+    bit asNorth : bne north
+    bit asSouth : bne south
     jmp ew
 .north: dec 0,x : jmp ew
 .south: inc 0,x : jmp ew
 .ew:
-    bit e : bne east
-    bit w : bne west
+    bit asEast : bne east
+    bit asWest : bne west
     jmp pr
 .east: inc 1,x : jmp pr
 .west: dec 1,x : jmp pr
