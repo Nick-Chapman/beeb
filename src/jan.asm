@@ -3,11 +3,13 @@
 ;;; Determine Acceleration via Thrust/Drag.
 
 ;;; Possible values for Impulse/Momentum: 2/5, 3/5, 3/6
-Impulse = 2 ;; Thrust = 1/2**Impulse
-Momentum = 5 ;; Drag = 1/2**Momentum
-;;; MaxSpeed ~= 2**(Momentum - Impulse)
+;;; Impulse = 0 ;; Thrust = 1/2**Impulse
+Momentum = 7 ;; Drag = 1/2**Momentum
+SpeedScale = 4
 
-SpeedTurn = 4
+;;; MaxSpeed ~= 2**(Momentum - Impulse - SpeedScale) pixels/frame
+
+SpeedTurn = 4 ;; TODO: increase!
 
 SyncAssert = TRUE
 RasterDebugBlit = TRUE ; magenta
@@ -61,7 +63,8 @@ macro Emit C
 endmacro
 
 macro Space
-	Emit ' '
+	lda #' '
+    jsr osasci
 endmacro
 
 macro Position X,Y
@@ -166,11 +169,14 @@ org &1100
     jsr preparePhase
     lda #black : sta ula
 
+    ;;jsr syncVB ;; dev
+
+    ;; text-info...
     IF RasterDebugTextInfo : lda #green : sta ula : ENDIF
     jsr textInfo ;; DEV : if after sync to see full size of erase/blit
     lda #black : sta ula
 
-    jsr syncVB
+    jsr syncVB ;; correct
 
     ;; blit...
     IF RasterDebugBlit : lda #magenta : sta ula : ENDIF
@@ -271,22 +277,6 @@ ThreeQuarters = QuarterTurn + HalfTurn
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Update State
 
-macro PlusEq16 A, B ; A <- A+B
-    PushVar16 B
-    PushVar16 A
-    jsr plus
-    PopVar16 A
-endmacro
-
-macro ComputeAccel Accel, Thrust, Speed
-    jsr Thrust
-    IF Impulse > 0 : FOR i, 1, Impulse : jsr halve : NEXT
-    ENDIF
-    PushVar16 Speed
-    jsr decay5
-    PopVar16 Accel
-endmacro
-
 macro Mod160 V ; V <- V `mod` 160
     PushVar8 V
     PopA
@@ -295,13 +285,47 @@ macro Mod160 V ; V <- V `mod` 160
     PopVar8 V
 endmacro
 
+macro PlusEq16 A, B ; A <- A+B
+    PushVar16 B
+    PushVar16 A
+    jsr plus
+    PopVar16 A
+endmacro
+
 .updateState:
-    jsr savePos ; save where we were before update
-    jsr updateDirection ; in repose to key caps/ctrl key presses
-    jsr setAccel ; in response to a key presses & existing speed
-    jsr updateSpeed ; using accel
-    jsr updatePos ; using speed
+    jsr savePos
+    jsr updateDirection ; in response to Caps/Ctrl
+    jsr updateDirectionFromArrows ; in response to Arrow keys (for dev/xdebug)
+
+    ;; X...
+    jsr thrustX
+    PushVar16 speedX
+    jsr decayMomentum
+    jsr minus
+    PopVar16 accelX
+    PlusEq16 speedX, accelX
+    PushVar16 speedX
+    IF SpeedScale > 0 : FOR i, 1, SpeedScale+1 : jsr decay1 : NEXT ;; +1 because X
+    ENDIF
+    PushVar16 posX
+    jsr plus
+    PopVar16 posX
     Mod160 posX+1
+
+    ;; Y...
+    jsr thrustY
+    PushVar16 speedY
+    jsr decayMomentum
+    jsr minus
+    PopVar16 accelY
+    PlusEq16 speedY, accelY
+    PushVar16 speedY
+    IF SpeedScale > 0 : FOR i, 1, SpeedScale : jsr decay1 : NEXT
+    ENDIF
+    PushVar16 posY
+    jsr plus
+    PopVar16 posY
+
     rts
 
 .savePos: ; ( -- ) only the position high-bytes
@@ -323,35 +347,27 @@ endmacro
     rts
     }
 
-.setAccel: ; ( -- )
-    ComputeAccel accelX, thrustX, speedX
-    ComputeAccel accelY, thrustY, speedY
-    rts
-
-.updateSpeed: ; ( -- )
-    PlusEq16 speedX, accelX
-    PlusEq16 speedY, accelY
-    rts
-
-.updatePos: ; ( -- )
-    PlusEq16 posX, speedX
-    PlusEq16 posY, speedY
+.updateDirectionFromArrows:
+    { lda keyRight : beq no : lda #0 : sta direction : .no }
+    { lda keyDown : beq no : lda #QuarterTurn : sta direction : .no }
+    { lda keyLeft : beq no : lda #HalfTurn : sta direction : .no }
+    { lda keyUp : beq no : lda #ThreeQuarters : sta direction : .no }
     rts
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Thrust
 
 .thrustX: { ; ( -- nn )
-    lda keyShift : beq noThrust
+    jsr areWeThrusting : beq noThrust
     PushVar8 direction
     jsr cos
-    jmp halve
+    rts
 .noThrust:
     jmp pushZero
     }
 
 .thrustY: { ; ( -- nn )
-    lda keyShift : beq noThrust
+    jsr areWeThrusting : beq noThrust
     PushVar8 direction
     jmp sin
 .noThrust:
@@ -361,6 +377,17 @@ endmacro
 .pushZero: ; ( -- nn )
     lda #0 : PushA : PushA
     rts
+
+.areWeThrusting:
+    {
+    lda keyShift : bne done
+    lda keyLeft : bne done
+    lda keyRight : bne done
+    lda keyUp : bne done
+    lda keyDown : bne done
+.done:
+    rts
+    }
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Trig...
@@ -445,19 +472,27 @@ ASSERT sinTabSize = 64
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Arithmetic
 
-.decay5: ; ( tt vv -- aa )
+.decayMomentum: ; ( tt vv -- aa )
     IF Momentum > 0 : FOR i, 1, Momentum : jsr decay1 : NEXT
     ENDIF
-    jsr minus
     rts
 
+;;; TODO: how exactly do decay1 and halve differ?
 .decay1: { ; ( vv -- vv )
     lda 1,x ;h
     bmi no
-    jsr pushOne : jsr plus ; TODO increment
+    jsr increment
 .no:
     jmp halve
     }
+
+.increment: ; ( vv -- vv ) ; TODO better imp!
+    jsr pushOne
+    jmp plus
+
+.decrement: ; ( vv -- vv ) ; TODO better imp! -- Any callers?
+    jsr pushOne
+    jmp minus
 
 .pushOne
     lda #0 : PushA : lda #1 : PushA
@@ -720,6 +755,10 @@ blackMask = &00
 .keyEnter EQUB 0
 .keyCaps  EQUB 0
 .keyCtrl  EQUB 0
+.keyUp    EQUB 0
+.keyDown  EQUB 0
+.keyLeft  EQUB 0
+.keyRight EQUB 0
 
 macro PollKey CODE, VAR
     lda #0 : sta VAR
@@ -732,6 +771,10 @@ endmacro
     PollKey -74,  keyEnter
     PollKey -65,  keyCaps
     PollKey -2,   keyCtrl
+    PollKey -58,  keyUp
+    PollKey -42,  keyDown
+    PollKey -26,  keyLeft
+    PollKey -122, keyRight
     rts
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -748,20 +791,40 @@ macro PrHexWord VAR
 endmacro
 
 .textInfo:
-    ;Position 1,27 : Emit 'A' : Space : PrHexWord accelX : Space : PrHexWord accelY
-    ;Position 1,28 : Emit 'S' : Space : PrHexWord speedX : Space : PrHexWord speedY
-    ;Position 1,29 : Emit 'P' : Space : PrHexWord posX : Space : PrHexWord posY
-    ;Position 1,30 : Emit 'D' : Space : lda direction : jsr printHexA
-    Position 0,31
+    {
+    lda frameCounter : and #1 : bne p12 : jmp p34
+.p12:
+    lda frameCounter : and #2 : bne p1 : jmp p2
+.p34:
+    lda frameCounter : and #2 : bne p3 : jmp p4
+.p1:
+    ;;Position 1,28 : Emit 'A' : Space : PrHexWord accelX : Space : PrHexWord accelY
+    rts
+.p2:
+    ;;Position 1,27 : Emit 'D' : Space : lda direction : jsr printHexA
+    ;;Position 0,25 : Space : jsr printKeyState
+    rts
+.p3:
+    ;;Position 1,29 : Emit 'S' : Space : PrHexWord speedX : Space : PrHexWord speedY
+    rts
+.p4:
+    ;;Position 1,30 : Emit 'P' : Space : PrHexWord posX : Space : PrHexWord posY
+    rts
+
     ;Space : lda frameCounter : jsr printHexA
     ;Space : txa : jsr printHexA ; debug param stack bugs
-    Space : jsr printKeyState
     rts
+    }
 
 .printKeyState:
     lda #'.' : { ldy keyCaps : beq no : lda #'A' : .no } : jsr osasci
     lda #'.' : { ldy keyCtrl : beq no : lda #'C' : .no } : jsr osasci
-    lda #'.' : { ldy keyShift : beq no : lda #'S' : .no } : jsr osasci
+    lda #'.' : { ldy keyShift: beq no : lda #'S' : .no } : jsr osasci
+    Space
+    lda #'.' : { ldy keyLeft : beq no : lda #'L' : .no } : jsr osasci
+    lda #'.' : { ldy keyRight: beq no : lda #'R' : .no } : jsr osasci
+    lda #'.' : { ldy keyUp   : beq no : lda #'U' : .no } : jsr osasci
+    lda #'.' : { ldy keyDown : beq no : lda #'D' : .no } : jsr osasci
     rts
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
