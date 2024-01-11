@@ -59,18 +59,16 @@ endmacro
 
 macro Emit C
 	lda #C
-    jsr osasci
+    jsr emit
 endmacro
 
 macro Space
 	lda #' '
-    jsr osasci
+    jsr emit
 endmacro
 
 macro Position X,Y
-    lda #31 : jsr osasci
-    lda #X : jsr osasci
-    lda #Y : jsr osasci
+    copy16i screenStart+16*(Y*40+X), emitPos
 endmacro
 
 macro Puts S
@@ -798,17 +796,17 @@ endmacro
 .p34:
     lda frameCounter : and #2 : bne p3 : jmp p4
 .p1:
-    ;;Position 1,28 : Emit 'A' : Space : PrHexWord accelX : Space : PrHexWord accelY
+    Position 1,28 : Emit 'A' : Space : PrHexWord accelX : Space : PrHexWord accelY
     rts
 .p2:
-    ;;Position 1,27 : Emit 'D' : Space : lda direction : jsr printHexA
-    ;;Position 0,25 : Space : jsr printKeyState
+    Position 1,27 : Emit 'D' : Space : lda direction : jsr printHexA
+    ;Position 0,25 : Space : jsr printKeyState
     rts
 .p3:
-    ;;Position 1,29 : Emit 'S' : Space : PrHexWord speedX : Space : PrHexWord speedY
+    Position 1,29 : Emit 'S' : Space : PrHexWord speedX : Space : PrHexWord speedY
     rts
 .p4:
-    ;;Position 1,30 : Emit 'P' : Space : PrHexWord posX : Space : PrHexWord posY
+    Position 1,30 : Emit 'P' : Space : PrHexWord posX : Space : PrHexWord posY
     rts
 
     ;Space : lda frameCounter : jsr printHexA
@@ -817,14 +815,14 @@ endmacro
     }
 
 .printKeyState:
-    lda #'.' : { ldy keyCaps : beq no : lda #'A' : .no } : jsr osasci
-    lda #'.' : { ldy keyCtrl : beq no : lda #'C' : .no } : jsr osasci
-    lda #'.' : { ldy keyShift: beq no : lda #'S' : .no } : jsr osasci
+    lda #'.' : { ldy keyCaps : beq no : lda #'A' : .no } : jsr emit
+    lda #'.' : { ldy keyCtrl : beq no : lda #'C' : .no } : jsr emit
+    lda #'.' : { ldy keyShift: beq no : lda #'S' : .no } : jsr emit
     Space
-    lda #'.' : { ldy keyLeft : beq no : lda #'L' : .no } : jsr osasci
-    lda #'.' : { ldy keyRight: beq no : lda #'R' : .no } : jsr osasci
-    lda #'.' : { ldy keyUp   : beq no : lda #'U' : .no } : jsr osasci
-    lda #'.' : { ldy keyDown : beq no : lda #'D' : .no } : jsr osasci
+    lda #'.' : { ldy keyLeft : beq no : lda #'L' : .no } : jsr emit
+    lda #'.' : { ldy keyRight: beq no : lda #'R' : .no } : jsr emit
+    lda #'.' : { ldy keyUp   : beq no : lda #'U' : .no } : jsr emit
+    lda #'.' : { ldy keyDown : beq no : lda #'D' : .no } : jsr emit
     rts
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -846,11 +844,11 @@ endmacro
     pha
     and #&f0 : lsr a : lsr a : lsr a : lsr a : tay
     lda digits,y
-    jsr osasci
+    jsr emit
     pla
     and #&f : tay
     lda digits,y
-    jsr osasci
+    jsr emit
     rts
 .digits: EQUS "0123456789abcdef"
     }
@@ -874,7 +872,7 @@ endmacro
     }
 
 .syncVB: {
-    IF SyncAssert : lda vsyncNotify : bne failSync1 : ENDIF ; pre-sync check (more harsh)
+    ;;IF SyncAssert : lda vsyncNotify : bne failSync1 : ENDIF ; pre-sync check (more harsh) ;; TODO
     { .loop : lda vsyncNotify : beq loop }
     IF SyncAssert : cmp #2 : bcs failSync2 : ENDIF ; post-sync check (move forgiving)
     lda #0 : sta vsyncNotify
@@ -1005,6 +1003,49 @@ endmacro
 .done:
     rts
 }
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; (own) emit
+
+macro Add8 V
+    lda V   : clc : adc #8 : sta V
+    lda V+1 :       adc #0 : sta V+1
+endmacro
+
+.emitPos SKIP 2
+
+.emit:
+    {
+    ldy #0 : sty font+1 : sty font+2
+    sec : sbc #32
+    asl a : rol font+2
+    asl a : rol font+2
+    asl a : rol font+2
+    sta font+1
+    lda font+2 : clc : adc #&c0
+    sta font+2
+    copy16v emitPos, pos1+1
+    Add8 emitPos
+    copy16v emitPos, pos2+1
+    Add8 emitPos
+    ldy #0
+.loop:
+    .font : lda &eeee,y
+    pha
+    and #&f0
+    { sta smc+1 : lsr a : lsr a : lsr a : lsr a : .smc : ora #&ee }
+    .pos1 : sta &eeee,y
+    pla
+    and #&f
+    ;asl a : asl a : asl a : asl a
+    { sta smc+1 : asl a : asl a : asl a : asl a : .smc : ora #&ee }
+    .pos2 : sta &eeee,y
+    iny
+    cpy #8 : beq done
+    jmp loop
+.done:
+    rts
+    }
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 .end:
