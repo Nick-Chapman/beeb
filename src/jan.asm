@@ -174,7 +174,7 @@ org &1100
 
     ;; text-info...
     IF RasterDebugTextInfo : lda #green : sta ula : ENDIF
-    jsr textInfo ;; DEV : if after sync to see full size of erase/blit
+    jsr textInfo
     lda #black : sta ula
 
     jsr syncVB ;; correct
@@ -201,49 +201,40 @@ org &1100
 
 .preparePhase:
     jsr updateState
-    jsr prepareErase
-    jsr preparePlot
-    rts
+    jmp preparePlotAndSubsequentErase
 
-.prepareErase: ; ( -- )
+.preparePlotAndSubsequentErase: ; ( -- )
     jsr resetEraseBuf
-    PushVar16 lastPosX
-    PushVar8 lastPosY+1 ; only hi
-    PushVar8 lastDirection
-    jsr setOrientationFromDirection
-    copy16i erasePointAt, SMC_doPoint+1 : jsr drawShape
-    PopA : PopA : PopA
-    rts
-
-.erasePointAt: ; ( xx y -- xx y )
-    jsr calcA ; ( xx y aa fineXmask )
-    inx ; drop fineXmask
-    jmp eraseAt
-
-.eraseAt:  ; ( aa -- )
-    lda 1,x : jsr pushEraseBuf ;hi -- hi comes first in buffer
-    lda 0,x : jsr pushEraseBuf ;lo
-    inx : inx
-    rts
-
-.preparePlot: ; ( -- )
     jsr resetPlotBuf
     lda #yellowMask : PushA
     PushVar16 posX
     PushVar8 posY+1 ; only hi
     PushVar8 direction
     jsr setOrientationFromDirection
-    copy16i colPointAt, SMC_doPoint+1 : jsr drawShape
+    copy16i onPoint, SMC_doPoint+1 : jsr drawShape
     PopA : PopA : PopA : PopA
     rts
 
-.colPointAt: ; ( c xx y -- c xx y ) -- TODO: reorder x y c ?
+.onPoint:
+    jsr erasePointAt ; prepared for next frame
+    jmp colPointAt
+
+.erasePointAt: ; ( xx y -- xx y )
+    jsr calcA ; ( xx y aa fineXmask )
+    inx ; drop fineXmask
+    ;;jmp eraseAt ; TODO fallthrough
+.eraseAt:  ; ( aa -- )
+    lda 1,x : jsr pushEraseBuf ;hi -- hi comes first in buffer
+    lda 0,x : jsr pushEraseBuf ;lo
+    inx : inx
+    rts
+
+.colPointAt: ; ( c xx y -- c xx y )
     jsr calcA ; ( c xx y aa fineXmask )
     lda 0,x
     and 6,x
     sta 0,x
-    jmp eorAt
-
+    ;;jmp eorAt ; TODO fallthrough
 .eorAt: { ; ( aa d -- )
     lda 2,x : jsr pushPlotBuf ; a-hi -- hi comes first in buffer
     lda 1,x : jsr pushPlotBuf ; a-lo
@@ -281,11 +272,6 @@ ThreeQuarters = QuarterTurn + HalfTurn
 .posX EQUB 0, 75
 .posY EQUB 0, 128
 
-;; (last) copies of position & direction
-.lastPosX SKIP 2
-.lastPosY SKIP 2
-.lastDirection SKIP 1
-
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Update State
 
@@ -305,7 +291,6 @@ macro PlusEq16 A, B ; A <- A+B
 endmacro
 
 .updateState:
-    jsr savePos
     jsr updateDirection ; in response to Caps/Ctrl
     jsr updateDirectionFromArrows ; in response to Arrow keys (for dev/xdebug)
 
@@ -338,12 +323,6 @@ endmacro
     jsr plus
     PopVar16 posY
 
-    rts
-
-.savePos: ; ( -- ) only the position high-bytes
-    copy16v posX, lastPosX
-    copy16v posY, lastPosY ; dont need to copy the lo-byte, but hey
-    lda direction : sta lastDirection
     rts
 
 SpeedTurn = 1 ;; TODO: DIE
@@ -505,10 +484,6 @@ endmacro
 .increment: ; ( vv -- vv ) ; TODO better imp!
     jsr pushOne
     jmp plus
-
-.decrement: ; ( vv -- vv ) ; TODO better imp! -- Any callers?
-    jsr pushOne
-    jmp minus
 
 .pushOne
     lda #0 : PushA : lda #1 : PushA
@@ -812,6 +787,8 @@ endmacro
 
 .textInfo:
     {
+    ;;jmp dev ;; TEMP
+
     lda frameCounter : and #1 : bne p12 : jmp p34
 .p12:
     lda frameCounter : and #2 : bne p1 : jmp p2
@@ -831,8 +808,15 @@ endmacro
     Position 1,30 : Emit 'P' : Space : PrHexWord posX : Space : PrHexWord posY
     rts
 
-    ;Space : lda frameCounter : jsr printHexA
+.dev:
+    ;; dev...
+    Position 1,31
+    ;lda frameCounter : jsr printHexA
     ;Space : txa : jsr printHexA ; debug param stack bugs
+    ;Space : lda ptrPlotBuf : jsr printHexA
+    ;Space : lda ptrEraseBufA : jsr printHexA
+    ;Space : lda ptrEraseBufB : jsr printHexA
+    jmp p2
     rts
     }
 
@@ -894,7 +878,7 @@ endmacro
     }
 
 .syncVB: {
-    ;;IF SyncAssert : lda vsyncNotify : bne failSync1 : ENDIF ; pre-sync check (more harsh) ;; TODO
+    IF SyncAssert : lda vsyncNotify : bne failSync1 : ENDIF ; pre-sync check (more harsh)
     { .loop : lda vsyncNotify : beq loop }
     IF SyncAssert : cmp #2 : bcs failSync2 : ENDIF ; post-sync check (move forgiving)
     lda #0 : sta vsyncNotify
@@ -946,38 +930,108 @@ endmacro
     rts
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; Erase Buffer
-
-.ptrEraseBuf SKIP 1
-{ .before: align 256 : print "bytes wasted before align EraseBuf: ", *-before }
-.EraseBuf SKIP 256
+;;; Erase Buffer (unified)
 
 .resetEraseBuf:
-    lda #0
-    sta ptrEraseBuf
-    rts
-
-.pushEraseBuf: ;; ( A --> ) -- TODO: macroize?
     {
-    ldy ptrEraseBuf
-    sta EraseBuf,y
-    iny
-    beq overflow ; TODO: make dev time check only
-    sty ptrEraseBuf
-    rts
-.overflow:
-    STOP "pushEraseBuf overflow"
+    lda frameCounter : and #1 : beq odd ; reversed
+    jmp resetEraseBufA
+.odd:
+    jmp resetEraseBufB
+    }
+
+.pushEraseBuf: ;; ( A --> )
+    {
+    pha
+    lda frameCounter : and #1 : beq odd ;; reversed
+    pla
+    jmp pushEraseBufA
+.odd:
+    pla
+    jmp pushEraseBufB
     }
 
 .processEraseBuf:
     {
-    ldy ptrEraseBuf
+    lda frameCounter : and #1 : bne odd
+    jmp processEraseBufA
+.odd:
+    jmp processEraseBufB
+    }
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; Erase Buffer (A)
+
+.ptrEraseBufA SKIP 1
+{ .before: align 256 : print "bytes wasted before align EraseBufA: ", *-before }
+.EraseBufA SKIP 256
+
+.resetEraseBufA:
+    lda #0
+    sta ptrEraseBufA
+    rts
+
+.pushEraseBufA: ;; ( A --> )
+    {
+    ldy ptrEraseBufA
+    sta EraseBufA,y
+    iny
+    beq overflow ; TODO: make dev time check only
+    sty ptrEraseBufA
+    rts
+.overflow:
+    STOP "pushEraseBufA overflow"
+    }
+
+.processEraseBufA:
+    {
+    ldy ptrEraseBufA
     lda #0 ; no true hi screen byte can be zero
-    sta EraseBuf,y
+    sta EraseBufA,y
     ldy #0
 .loop:
-    lda EraseBuf,y : beq done : iny : sta SMC+2 ;hi
-    lda EraseBuf,y            : iny : sta SMC+1 ;lo
+    lda EraseBufA,y : beq done : iny : sta SMC+2 ;hi
+    lda EraseBufA,y            : iny : sta SMC+1 ;lo
+    lda #blackMask
+    .SMC : sta &eeee
+    jmp loop
+.done:
+    rts
+}
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; Erase Buffer (B)
+
+.ptrEraseBufB SKIP 1
+{ .before: align 256 : print "bytes wasted before align EraseBufB: ", *-before }
+.EraseBufB SKIP 256
+
+.resetEraseBufB:
+    lda #0
+    sta ptrEraseBufB
+    rts
+
+.pushEraseBufB: ;; ( A --> )
+    {
+    ldy ptrEraseBufB
+    sta EraseBufB,y
+    iny
+    beq overflow ; TODO: make dev time check only
+    sty ptrEraseBufB
+    rts
+.overflow:
+    STOP "pushEraseBufB overflow"
+    }
+
+.processEraseBufB:
+    {
+    ldy ptrEraseBufB
+    lda #0 ; no true hi screen byte can be zero
+    sta EraseBufB,y
+    ldy #0
+.loop:
+    lda EraseBufB,y : beq done : iny : sta SMC+2 ;hi
+    lda EraseBufB,y            : iny : sta SMC+1 ;lo
     lda #blackMask
     .SMC : sta &eeee
     jmp loop
@@ -997,7 +1051,7 @@ endmacro
     sta ptrPlotBuf
     rts
 
-.pushPlotBuf: ;; ( A --> ) -- TODO: macroize?
+.pushPlotBuf: ;; ( A --> )
     {
     ldy ptrPlotBuf
     sta PlotBuf,y
