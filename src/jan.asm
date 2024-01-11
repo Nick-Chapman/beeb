@@ -2,12 +2,25 @@
 ;;; New Year. New fun.
 ;;; Determine Acceleration via Thrust/Drag.
 
-;;; Possible values for Impulse/Momentum: 2/5, 3/5, 3/6
-;;; Impulse = 0 ;; Thrust = 1/2**Impulse
-Momentum = 7 ;; Drag = 1/2**Momentum
-SpeedScale = 4
+;;; Time is represented in "frame" units = 1/50s
 
-;;; MaxSpeed ~= 2**(Momentum - Impulse - SpeedScale) pixels/frame
+;;; Screen Pixel Positions (X,Y) are represented as UNSIGNED in 2 bytes
+;;; Y: 0..255 (+8 binary points)
+;;; X: 0..319 (+7 binary points)
+
+ShipMomentumIndex = 7 ; Higher is more momentum (and increased max speed)
+
+;;; Speed (X,Y) is represented as SIGNED in 2 bytes
+;;; With ShipMomentumIndex = 6, max-speed ranges +/- &40 (steps/frame)
+;;; With ShipMomentumIndex = 7, max-speed ranges +/- &80 (steps/frame)
+;;; ShipMomentumIndex > 7 causes overflow and instant direction reversal
+
+;;; Speed is scaled when applied to positions
+;;; We scale X by one more than Y because X-positions have only 7 binary points, not 8
+SpeedScaleY = 4 ; Higher is slower
+SpeedScaleX = SpeedScaleY + 1
+
+;;; The resulting maximum ship-speed approaches +/- 2^(Momentum - SpeedScaleY) pixels/frame
 
 SyncAssert = TRUE
 RasterDebugBlit = TRUE ; magenta
@@ -67,13 +80,6 @@ endmacro
 
 macro Position X,Y
     copy16i screenStart+16*(Y*40+X), emitPos
-endmacro
-
-macro Puts S
-    copy16i msg, msgPtr
-    jmp after
-.msg: EQUS S, 0
-.after: jsr printString
 endmacro
 
 macro STOP S
@@ -136,7 +142,6 @@ endmacro
 guard &100
 org &70
 .msgPtr SKIP 2 ;; TODO: kill
-.ptr SKIP 2
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Start
@@ -312,7 +317,7 @@ endmacro
     PopVar16 accelX
     PlusEq16 speedX, accelX
     PushVar16 speedX
-    IF SpeedScale > 0 : FOR i, 1, SpeedScale+1 : jsr decay1 : NEXT ;; +1 because X
+    IF SpeedScaleX > 0 : FOR i, 1, SpeedScaleX : jsr decay1 : NEXT
     ENDIF
     PushVar16 posX
     jsr plus
@@ -327,7 +332,7 @@ endmacro
     PopVar16 accelY
     PlusEq16 speedY, accelY
     PushVar16 speedY
-    IF SpeedScale > 0 : FOR i, 1, SpeedScale : jsr decay1 : NEXT
+    IF SpeedScaleY > 0 : FOR i, 1, SpeedScaleY : jsr decay1 : NEXT
     ENDIF
     PushVar16 posY
     jsr plus
@@ -484,7 +489,7 @@ endmacro
 ;;; Arithmetic
 
 .decayMomentum: ; ( tt vv -- aa )
-    IF Momentum > 0 : FOR i, 1, Momentum : jsr decay1 : NEXT
+    IF ShipMomentumIndex > 0 : FOR i, 1, ShipMomentumIndex : jsr decay1 : NEXT
     ENDIF
     rts
 
@@ -1054,7 +1059,6 @@ endmacro
     .pos1 : sta &eeee,y
     pla
     and #&f
-    ;asl a : asl a : asl a : asl a
     { sta smc+1 : asl a : asl a : asl a : asl a : .smc : ora #&ee }
     .pos2 : sta &eeee,y
     iny
