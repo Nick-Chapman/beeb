@@ -9,8 +9,6 @@ SpeedScale = 4
 
 ;;; MaxSpeed ~= 2**(Momentum - Impulse - SpeedScale) pixels/frame
 
-SpeedTurn = 4 ;; TODO: increase!
-
 SyncAssert = TRUE
 RasterDebugBlit = TRUE ; magenta
 RasterDebugPrepare = FALSE ; blue
@@ -252,13 +250,24 @@ org &1100
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; State
 
-QuarterTurn = 64
+;;; We resolve only 8 distinct angles per QuarterTurn (for outline & thrust direction)
+AnglesResolvedPerQT = 8
+
+;;; But to control ship rotation speed, we scale that. 0 is too fast; 2 is two slow
+RotSpeedIndex = 1
+
+macro ScaleDirection
+    IF RotSpeedIndex > 0 : FOR i, 1, RotSpeedIndex : lsr a : NEXT
+    ENDIF
+endmacro
+
+QuarterTurn = AnglesResolvedPerQT * (2^RotSpeedIndex)
 HalfTurn = QuarterTurn + QuarterTurn
 ThreeQuarters = QuarterTurn + HalfTurn
 
 .frameCounter EQUB 0
 
-.direction EQUB ThreeQuarters ; angles increase clockwise
+.direction EQUB ThreeQuarters ; start North; angles increase clockwise (0 is East)
 
 .accelX SKIP 2
 .accelY SKIP 2
@@ -332,6 +341,8 @@ endmacro
     lda direction : sta lastDirection
     rts
 
+SpeedTurn = 1 ;; TODO: DIE
+
 .updateDirection: {
     PushVar8 direction
     lda keyCaps : beq no
@@ -379,10 +390,10 @@ endmacro
 .areWeThrusting:
     {
     lda keyShift : bne done
-    lda keyLeft : bne done
-    lda keyRight : bne done
-    lda keyUp : bne done
-    lda keyDown : bne done
+    ;lda keyLeft : bne done
+    ;lda keyRight : bne done
+    ;lda keyUp : bne done
+    ;lda keyDown : bne done
 .done:
     rts
     }
@@ -410,28 +421,19 @@ endmacro
     jsr invertMaybe
     rts
 
-.sinTableLookup: ; ( n -- nn )
-    PopA
-    and #(QuarterTurn-1)
-    tay
-    jsr pushZeroByte ; res-hi
-    lda sinTab, y
-    PushA
-    rts
-
 .pushZeroByte: ; ( -- n )
     lda #0 : PushA
     rts
 
 .mirrorB: ; ( n -- n p )
     lda 0,x
-    and #&80
+    and #HalfTurn
     PushA
     rts
 
 .mirrorA: ; ( n -- n p )
     lda 0,x
-    and #&40
+    and #QuarterTurn
     PushA
     rts
 
@@ -458,14 +460,25 @@ endmacro
 ;;     inx
 ;;     rts
 
+.sinTableLookup: ; ( n -- nn )
+    PopA
+    and #(QuarterTurn-1)
+    ScaleDirection
+    tay
+    jsr pushZeroByte ; res-hi
+    lda sinTab, y
+    PushA
+    rts
+
 macro mm B
     EQUB B
-    ;PRINT B
+    ;;PRINT B
 endmacro
 
-.sinTab: FOR i, 0, QuarterTurn-1 : mm INT(SIN((i*PI)/128) * 256) : NEXT
-sinTabSize = *-sinTab
-ASSERT sinTabSize = 64
+.sinTab:
+    FOR i, 0, AnglesResolvedPerQT-1
+    mm INT(SIN((i*PI)/2/AnglesResolvedPerQT) * 256)
+    NEXT
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Arithmetic
@@ -595,9 +608,12 @@ blackMask = &00
 
 .setOrientationFromDirection: ; ( d -- )
 
+    PopA ; direction
+    ;; direction scaled -> angle
+    ScaleDirection
+    pha
+
     ;; Set outline...
-    lda 0,x
-    lsr a : lsr a : lsr a ; each outline covers 8 angles
     and #7 ; take 3 bits (8 outlines in sequence)
     asl a ; index Y for outline table must be even
     tay
@@ -605,9 +621,8 @@ blackMask = &00
     lda outlines+1,y : sta SMC_outline+2
 
     ;; Set orientation...
-    PopA ; direction
-    lsr a : lsr a : lsr a
-    and #%00011100
+    pla ; angle
+    and #%00011100 ; determine "Octrant" (1/8-of-a-turn-sector)
     tay ; 0,4,8,12,16,20,24,28
     lda orientations,y : sta asNorth : iny
     lda orientations,y : sta asEast : iny
@@ -615,6 +630,8 @@ blackMask = &00
     lda orientations,y : sta asWest
     rts
 
+;;; orientations table; each line is 4 bytes
+;;; and represents the transformation for each 1/8-of-a-turn
 .orientations:
     EQUB W,N,E,S
     EQUB S,E,N,W
