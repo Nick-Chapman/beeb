@@ -64,6 +64,11 @@ oswrch = &ffee
 
 screenStart = &3000
 
+cyanMask = &ff
+yellowMask = &f0
+redMask = &0f
+blackMask = &00
+
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Macros
 
@@ -605,11 +610,6 @@ macro Center : endmacro  ; DONT see center of rotation (and dont even waste a by
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Blit
 
-cyanMask = &ff
-yellowMask = &f0
-redMask = &0f
-blackMask = &00
-
 .setOrientationFromDirection: ; ( d -- )
 
     PopA ; direction
@@ -706,64 +706,6 @@ blackMask = &00
 .done:
     rts
     }
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; calculate screen address from X/Y
-
-.calcA: { ; ( xx y -- xx y a-hi a-lo fineXmask )
-    lda 0,x ; y
-    pha : and #&7 : sta theFY : pla
-    lsr a : lsr a : lsr a : sta theCY
-
-    lda 1,x ; x-lo (need just hi-order bit; get it in carry)
-    cmp #&80
-
-    lda 2,x ; x-hi
-    pha : rol a : and #&3 : sta theFX : pla
-    lsr a : sta theCX
-    ;; TODO: inline calculateAfromXY ; kill "the"* vars & simplfy!
-    jsr calculateAfromXY
-    lda theA+1 ; a-hi
-    PushA
-    lda theA ; a-lo
-    PushA
-    ldy theFX ; TODO: avoid using y ?
-    lda masks,y
-    PushA
-    rts
-    .masks : EQUB &88, &44, &22, &11
-    }
-
-.theCX SKIP 1 ; coarse-X : 0..79
-.theCY SKIP 1 ; coarse-Y : 0..31
-.theFX SKIP 1 ; fine-X   : 0..3
-.theFY SKIP 1 ; fine-Y   : 0..7
-.theA  SKIP 2 ; screen address of the 8x8 char
-
-.calculateAfromXY:
-    ;; (coarse)X                    0..79
-    ;; (coarse)Y                    0..31
-    ;; hbOnRow = X/16               0..4
-    ;; hi(A) = (5*Y+hbOnRow)/2+&30
-    lda theCX : lsr a : lsr a : lsr a : lsr a
-    sta hbOnRow+1
-    lda theCY : asl a : asl a : clc : adc theCY
-    .hbOnRow : adc #0
-    lsr a
-    clc : adc #HI(screenStart)
-    sta theA+1
-    ;; oddRow = Y % 2               0,1
-    ;; Xoffset = oddRow * 16        0,16
-    ;; Xmod = X ^ Xoffset           0..79
-    ;; lo(A) = Xmod * 8
-    lda theCY : and #1              ; oddRow
-    asl a : asl a : asl a : asl a   ; Xoffset
-    eor theCX                       ; Xmod
-    asl a : asl a : asl a           ; Xmod*8
-    sta theA
-    lda theFY
-    clc : adc theA : sta theA ; adjust A with fineY
-    rts
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Keyboard input
@@ -987,7 +929,7 @@ endmacro
 ;;; Erase Buffer (A)
 
 .ptrEraseBufA SKIP 1
-{ .before: align 256 : print "bytes wasted before align EraseBufA: ", *-before }
+;;{ .before: align 256 : print "bytes wasted before align EraseBufA: ", *-before }
 .EraseBufA SKIP 256
 
 .resetEraseBufA:
@@ -1027,7 +969,7 @@ endmacro
 ;;; Erase Buffer (B)
 
 .ptrEraseBufB SKIP 1
-{ .before: align 256 : print "bytes wasted before align EraseBufB: ", *-before }
+;;{ .before: align 256 : print "bytes wasted before align EraseBufB: ", *-before }
 .EraseBufB SKIP 256
 
 .resetEraseBufB:
@@ -1067,7 +1009,7 @@ endmacro
 ;;; Plot Buffer
 
 .ptrPlotBuf SKIP 1
-{ .before: align 256 : print "bytes wasted before align PlotBuf: ", *-before }
+;;{ .before: align 256 : print "bytes wasted before align PlotBuf: ", *-before }
 .PlotBuf SKIP 256
 
 .resetPlotBuf:
@@ -1180,6 +1122,53 @@ endmacro
     dey
     bpl loop
     rts
+    }
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; calculate screen address from X/Y
+
+.calcA: ; ( xx y -- xx y a-hi a-lo fineXmask )
+    {
+    lda 2,x ; x-hi
+    lsr a
+    sta smc_cx+1
+    lsr a : lsr a : lsr a : lsr a
+    sta smc_hbOnRow+1
+
+    lda 0,x ; y
+    lsr a : lsr a : lsr a
+    sta smc_cyA+1
+    sta smc_cyB+1
+    asl a : asl a : clc
+    .smc_cyA : adc #&ee
+    .smc_hbOnRow : adc #&ee
+    lsr a
+    clc : adc #HI(screenStart)
+    PushA ; a-hi
+
+    .smc_cyB : lda #&ee : and #1    ; oddRow
+    asl a : asl a : asl a : asl a   ; Xoffset
+    .smc_cx : eor #&ee              ; Xmod
+    asl a : asl a : asl a           ; Xmod*8
+    sta smc_alo+1
+
+    lda 1,x ; y
+    and #&7
+    clc : .smc_alo : adc #&ee       ; adjust A with fineY
+    PushA ; a-lo
+
+    lda 3,x ; x-lo (only need hi-order bit; rotate into carry)
+    asl a
+    lda 4,x ; x-hi
+    rol a : and #&3
+    tay
+    lda masks,y
+    PushA ; fineXmask
+
+    rts
+
+.masks:
+    EQUB &88, &44, &22, &11
     }
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
