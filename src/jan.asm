@@ -33,9 +33,6 @@ RotSpeedScaleIndex = 1 ; higher is a slower turn
 RotSpeedScale = 2^RotSpeedScaleIndex
 
 SyncAssert = TRUE
-RasterDebugBlit = TRUE ; magenta
-RasterDebugPrepare = FALSE ; blue
-RasterDebugTextInfo = FALSE ; green
 
 white = 0
 cyan = 1
@@ -45,6 +42,8 @@ yellow = 4
 green = 5
 red = 6
 black = 7
+
+macro Ula col : lda #col : sta ula : endmacro
 
 ;;; MOS vectors & zero page use
 interruptSaveA = &fc
@@ -172,30 +171,26 @@ org &1100
     jsr replaceWhiteWithCyan
     copy16i myIRQ, irq1v
     ldx #&90 ; End of stack; grows downwards
-    jsr syncVB
 .loop:
-    jsr readKeys
-
-    ;; prepare...
-    IF RasterDebugPrepare : lda #blue : sta ula : ENDIF
-    jsr preparePhase
-    lda #black : sta ula
-
-    ;;jsr syncVB ;; dev
-
-    ;; text-info...
-    IF RasterDebugTextInfo : lda #green : sta ula : ENDIF
-    jsr textInfo
-    lda #black : sta ula
-
-    jsr syncVB ;; correct
-
+    jsr syncVB
     ;; blit...
-    IF RasterDebugBlit : lda #magenta : sta ula : ENDIF
+    Ula magenta
     jsr blitPhase
-    lda #black : sta ula
-
+    Ula black
+    ;; We must increment the frameCounter after blitting and before the next plot
+    ;; so the dual space erase works correctly
     inc frameCounter
+    jsr readKeys
+    ;; Some early debug nicely pushes all of prepare phase onto the screen
+    jsr debugInfo
+    ;; Prepare phase... (update;plot)
+    ;;Ula green
+    jsr updateState
+    ;;Ula blue
+    jsr preparePlotAndSubsequentErase
+    Ula black
+    ;; info for position, speed, and acceleration. (varying compute effort)
+    jsr textInfo
     jmp loop
     }
 
@@ -209,10 +204,6 @@ org &1100
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Prepare
-
-.preparePhase:
-    jsr updateState
-    jmp preparePlotAndSubsequentErase
 
 .preparePlotAndSubsequentErase: ; ( -- )
     jsr resetEraseBuf
@@ -233,32 +224,29 @@ org &1100
     rts
 
 .onPoint:
+    jsr calcA ; ( c xx y aa fineXmask )
     jsr erasePointAt ; prepared for next frame
-    jmp colPointAt
+
+    ;; Duplicate call to calcA now avoided!
+    ;; inx : inx : inx : jsr calcA
+
+    jsr colPointAt
+    inx : inx : inx
+    rts
 
 .erasePointAt: ; ( xx y -- xx y )
-    jsr calcA ; ( xx y aa fineXmask )
-    inx ; drop fineXmask
-    ;;jmp eraseAt ; TODO fallthrough
-.eraseAt:  ; ( aa -- )
-    lda 1,x : jsr pushEraseBuf ;hi -- hi comes first in buffer
-    lda 0,x : jsr pushEraseBuf ;lo
-    inx : inx
+    lda 2,x : jsr pushEraseBuf ;hi -- hi comes first in buffer
+    lda 1,x : jsr pushEraseBuf ;lo
     rts
 
 .colPointAt: ; ( c xx y -- c xx y )
-    jsr calcA ; ( c xx y aa fineXmask )
     lda 0,x
     and 6,x
     sta 0,x
-    ;;jmp eorAt ; TODO fallthrough
-.eorAt: { ; ( aa d -- )
     lda 2,x : jsr pushPlotBuf ; a-hi -- hi comes first in buffer
     lda 1,x : jsr pushPlotBuf ; a-lo
     lda 0,x : jsr pushPlotBuf ; d
-    inx : inx : inx
     rts
-    }
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; State
@@ -604,6 +592,12 @@ macro Center : endmacro  ; DONT see center of rotation (and dont even waste a by
 .outline5: Center
     EQUB SWi, SW,NW,NW,W, NE,E,NE,E,NE,NE,E,NE,E,NE,E, S,SW,S,SW,SW,S,SW,S,SW,S,SW, N,NW, 0
 
+;; .outline1: EQUB 32,N,N,N,N,0
+;; .outline2: EQUB 32,N,N,NE,N,0
+;; .outline3: EQUB 32,N,NE,N,NE,0
+;; .outline4: EQUB 32,NE,N,NE,NE,0
+;; .outline5: EQUB 32,NE,NE,NE,NE,0
+
 .outlines:
     EQUW outline1,outline2,outline3,outline4
     EQUW outline5,outline4,outline3,outline2
@@ -821,8 +815,6 @@ endmacro
 
 .textInfo:
     {
-    ;;jmp dev ;; TEMP
-
     lda frameCounter : and #1 : bne p12 : jmp p34
 .p12:
     lda frameCounter : and #2 : bne p1 : jmp p2
@@ -842,15 +834,13 @@ endmacro
     Position 1,30 : Emit 'P' : Space : PrHexWord posX : Space : PrHexWord posY
     rts
 
-.dev:
-    ;; dev...
-    Position 1,31
-    ;lda frameCounter : jsr printHexA
-    ;Space : txa : jsr printHexA ; debug param stack bugs
-    ;Space : lda ptrPlotBuf : jsr printHexA
-    ;Space : lda ptrEraseBufA : jsr printHexA
-    ;Space : lda ptrEraseBufB : jsr printHexA
-    jmp p2
+.*debugInfo:
+    Position 1,1
+    ;;lda frameCounter : jsr printHexA
+    Space : txa : jsr printHexA ; debug param stack bugs
+    Space : lda ptrPlotBuf : jsr printHexA
+    Space : lda ptrEraseBufA : jsr printHexA
+    Space : lda ptrEraseBufB : jsr printHexA
     rts
     }
 
