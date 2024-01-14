@@ -180,14 +180,15 @@ org &1100
     jsr syncVB
     ;; blit...
     Ula magenta
-    jsr blitPhase
+    jsr processEraseBuf
+    jsr processPlotBuf
     Ula black
     ;; We must increment the frameCounter after blitting and before the next plot
     ;; so the dual space erase works correctly
     inc frameCounter
     jsr readKeys
     ;; Some early debug nicely pushes all of prepare phase onto the screen
-    jsr debugInfo
+    ;;jsr debugInfo
     ;; Prepare phase... (update;plot)
     ;;Ula green
     jsr updateState
@@ -195,63 +196,9 @@ org &1100
     jsr preparePlotAndSubsequentErase
     Ula black
     ;; info for position, speed, and acceleration. (varying compute effort)
-    jsr textInfo
+    ;jsr textInfo
     jmp loop
     }
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; Blit
-
-.blitPhase:
-    jsr processEraseBuf
-    jsr processPlotBuf
-    rts
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; Prepare
-
-.preparePlotAndSubsequentErase: ; ( -- )
-    jsr resetEraseBuf
-    jsr resetPlotBuf
-    lda #yellowMask : PushA
-    PushVar16 posX
-    PushVar8 posY+1 ; only hi
-    jsr getDirection
-    jsr setOrientationFromDirection
-    copy16i onPoint, SMC_doPoint+1 : jsr drawShape
-    PopA : PopA : PopA : PopA
-    rts
-
-.getDirection: ; ( -- d )
-    PushVar8 direction
-    IF RotSpeedScaleIndex > 0 : FOR i, 1, RotSpeedScaleIndex : lsr 0,x : NEXT
-    ENDIF
-    rts
-
-.onPoint:
-    jsr calcA ; ( c xx y aa fineXmask )
-    jsr erasePointAt ; prepared for next frame
-
-    ;; Duplicate call to calcA now avoided!
-    ;; inx : inx : inx : jsr calcA
-
-    jsr colPointAt
-    inx : inx : inx
-    rts
-
-.erasePointAt: ; ( xx y -- xx y )
-    lda 2,x : jsr pushEraseBuf ;hi -- hi comes first in buffer
-    lda 1,x : jsr pushEraseBuf ;lo
-    rts
-
-.colPointAt: ; ( c xx y -- c xx y )
-    lda 0,x
-    and 6,x
-    sta 0,x
-    lda 2,x : jsr pushPlotBuf ; a-hi -- hi comes first in buffer
-    lda 1,x : jsr pushPlotBuf ; a-lo
-    lda 0,x : jsr pushPlotBuf ; d
-    rts
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; State
@@ -267,6 +214,9 @@ org &1100
 .speedY SKIP 2
 .posX EQUB 0, 75
 .posY EQUB 0, 128
+
+.rockPosX EQUB 0, 100
+.rockPosY EQUB 0, 100
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Update State
@@ -558,7 +508,6 @@ endmacro
     sta 1, x
     rts
 
-
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Outlines
 
@@ -567,6 +516,7 @@ S = 2
 E = 4
 W = 8
 INVISIBLE = 16
+START = 32
 
 NE = N or E
 SE = S or E
@@ -578,8 +528,8 @@ Si = S or INVISIBLE
 Wi = W or INVISIBLE
 SWi = SW or INVISIBLE
 
-;;;macro Center : EQUB 32 : endmacro ; see center of rotation
-;;;macro Center : EQUB 16 : endmacro ; DONT see center of rotation
+;;;macro Center : EQUB START : endmacro ; see center of rotation
+;;;macro Center : EQUB INVISIBLE : endmacro ; DONT see center of rotation
 macro Center : endmacro  ; DONT see center of rotation (and dont even waste a byte!)
 
 .outline1: Center
@@ -607,8 +557,46 @@ macro Center : endmacro  ; DONT see center of rotation (and dont even waste a by
     EQUW outline1,outline2,outline3,outline4
     EQUW outline5,outline4,outline3,outline2
 
+.smallRockOutline:
+    EQUB START, E,SE,NE,E,SE,S, SE,S,SW,S,SW, W,NW,SW,W, NW,NE,NW,NW,N,NE, 0
+
+
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; Blit
+;;; Prepare
+
+.preparePlotAndSubsequentErase: ; ( -- )
+    jsr resetEraseBuf
+    jsr resetPlotBuf
+    ;; Ship
+    lda #yellowMask : PushA
+    PushVar16 posX
+    PushVar8 posY+1 ; only hi
+    jsr getDirection
+    jsr setOrientationFromDirection
+    copy16i onPoint, SMC_doPoint+1 : jsr drawShape
+    PopA : PopA : PopA : PopA
+    ;; Rock
+    lda #cyanMask : PushA
+    PushVar16 rockPosX
+    PushVar8 rockPosY+1 ; only hi
+    copy16i smallRockOutline, SMC_outline+1
+    jsr setNESW
+    copy16i onPoint, SMC_doPoint+1 : jsr drawShape
+    PopA : PopA : PopA : PopA
+    rts
+
+.getDirection: ; ( -- d )
+    PushVar8 direction
+    IF RotSpeedScaleIndex > 0 : FOR i, 1, RotSpeedScaleIndex : lsr 0,x : NEXT
+    ENDIF
+    rts
+
+.setNESW:
+    lda #N : sta asNorth
+    lda #E : sta asEast
+    lda #S : sta asSouth
+    lda #W : sta asWest
+    rts
 
 .setOrientationFromDirection: ; ( d -- )
 
@@ -649,6 +637,30 @@ macro Center : endmacro  ; DONT see center of rotation (and dont even waste a by
 .asSouth SKIP 1
 .asEast SKIP 1
 .asWest SKIP 1
+
+.onPoint:
+    jsr calcA ; ( c xx y aa fineXmask )
+    jsr erasePointAt ; prepared for next frame
+    jsr colPointAt
+    inx : inx : inx
+    rts
+
+.erasePointAt: ; ( xx y -- xx y )
+    lda 2,x : jsr pushEraseBuf ;hi -- hi comes first in buffer
+    lda 1,x : jsr pushEraseBuf ;lo
+    rts
+
+.colPointAt: ; ( c xx y -- c xx y )
+    lda 0,x
+    and 6,x
+    sta 0,x
+    lda 2,x : jsr pushPlotBuf ; a-hi -- hi comes first in buffer
+    lda 1,x : jsr pushPlotBuf ; a-lo
+    lda 0,x : jsr pushPlotBuf ; d
+    rts
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; draw
 
 .drawShape: { ; ( c xx y -- c xx y )
     ldy #0
