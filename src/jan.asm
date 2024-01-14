@@ -165,6 +165,7 @@ org &1100
 .spin: jmp spin
 
 .main: {
+    jsr prepFont4col
     jsr initVia
     jsr mode1
     jsr cursorOff
@@ -1115,6 +1116,17 @@ endmacro
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; (own) emit
+;;; Prepare font tables for 4 colour mode.
+;;; Each char gets 16 bytes of data, instead of 8 as in the original data
+
+numberOfCharsInFont = 96 ; 128-' '
+{ .before: align 256 : print "bytes wasted before font4colTab: ", *-before }
+.font4colTab: skip (numberOfCharsInFont * 16)
+
+macro Add16 V
+    lda V   : clc : adc #16 : sta V
+    lda V+1 :       adc #0  : sta V+1
+endmacro
 
 macro Add8 V
     lda V   : clc : adc #8 : sta V
@@ -1123,35 +1135,60 @@ endmacro
 
 .emitPos SKIP 2
 
+.prepFont4col: {
+    ldx #1
+.loopX:
+    ldy #0
+.loopY:
+    .romData : lda &c000, y
+    pha
+    and #&f0
+    { sta smc+1 : lsr a : lsr a : lsr a : lsr a : .smc : ora #&ee }
+    .fontTab1 : sta font4colTab,y
+    pla
+    and #&f
+    { sta smc+1 : asl a : asl a : asl a : asl a : .smc : ora #&ee }
+    .fontTab2 : sta font4colTab+8,y
+    iny
+    cpy #8 ;; bytes per char of original data
+    beq doneY
+    jmp loopY
+.doneY:
+    inx
+    cpx #numberOfCharsInFont
+    beq doneX
+    Add8 romData+1
+    Add16 fontTab1+1
+    Add16 fontTab2+1
+    jmp loopX
+.doneX:
+    rts
+    }
+
 .emit:
     {
     ldy #0 : sty font+1 : sty font+2
-    sec : sbc #32
+    sec : sbc #' '
+    asl a : rol font+2
     asl a : rol font+2
     asl a : rol font+2
     asl a : rol font+2
     sta font+1
-    lda font+2 : clc : adc #&c0
-    sta font+2
+
+	;; if font4colTab were not aligned:
+    ;; lda font+1 : clc : adc #LO(font4colTab) : sta font+1
+    ;; lda font+2 :       adc #HI(font4colTab) : sta font+2
+	;; but it is aligned, so:
+    clc : lda font+2 : adc #HI(font4colTab) : sta font+2
+
     copy16v emitPos, pos1+1
-    Add8 emitPos
-    copy16v emitPos, pos2+1
-    Add8 emitPos
-    ldy #0
+    Add16 emitPos
+    ldy #15
 .loop:
     .font : lda &eeee,y
-    pha
-    and #&f0
-    { sta smc+1 : lsr a : lsr a : lsr a : lsr a : .smc : ora #&ee }
     .pos1 : sta &eeee,y
-    pla
-    and #&f
-    { sta smc+1 : asl a : asl a : asl a : asl a : .smc : ora #&ee }
-    .pos2 : sta &eeee,y
-    iny
-    cpy #8 : beq done
-    jmp loop
-.done:
+    dey
+    bpl loop
     rts
     }
 
