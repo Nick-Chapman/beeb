@@ -22,6 +22,16 @@ SpeedScaleX = SpeedScaleY + 1
 
 ;;; The resulting maximum ship-speed approaches +/- 2^(Momentum - SpeedScaleY) pixels/frame
 
+;;; We resolve 8 distinct angles per QuarterTurn (for outline & thrust direction)
+
+QuarterTurn = 8
+HalfTurn = 2*QuarterTurn
+ThreeQuarters = 3*QuarterTurn
+FullCircle = 4*QuarterTurn
+
+RotSpeedScaleIndex = 1 ; higher is a slower turn
+RotSpeedScale = 2^RotSpeedScaleIndex
+
 SyncAssert = TRUE
 RasterDebugBlit = TRUE ; magenta
 RasterDebugPrepare = FALSE ; blue
@@ -209,10 +219,16 @@ org &1100
     lda #yellowMask : PushA
     PushVar16 posX
     PushVar8 posY+1 ; only hi
-    PushVar8 direction
+    jsr getDirection
     jsr setOrientationFromDirection
     copy16i onPoint, SMC_doPoint+1 : jsr drawShape
     PopA : PopA : PopA : PopA
+    rts
+
+.getDirection: ; ( -- d )
+    PushVar8 direction
+    IF RotSpeedScaleIndex > 0 : FOR i, 1, RotSpeedScaleIndex : lsr 0,x : NEXT
+    ENDIF
     rts
 
 .onPoint:
@@ -246,24 +262,10 @@ org &1100
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; State
 
-;;; We resolve only 8 distinct angles per QuarterTurn (for outline & thrust direction)
-AnglesResolvedPerQT = 8
-
-;;; But to control ship rotation speed, we scale that. 0 is too fast; 2 is two slow
-RotSpeedIndex = 1
-
-macro ScaleDirection
-    IF RotSpeedIndex > 0 : FOR i, 1, RotSpeedIndex : lsr a : NEXT
-    ENDIF
-endmacro
-
-QuarterTurn = AnglesResolvedPerQT * (2^RotSpeedIndex)
-HalfTurn = QuarterTurn + QuarterTurn
-ThreeQuarters = QuarterTurn + HalfTurn
-
 .frameCounter EQUB 0
 
-.direction EQUB ThreeQuarters ; start North; angles increase clockwise (0 is East)
+;;; start North; angles increase clockwise (0 is East)
+.direction EQUB (RotSpeedScale*ThreeQuarters)
 
 .accelX SKIP 2
 .accelY SKIP 2
@@ -293,6 +295,7 @@ endmacro
 .updateState:
     jsr updateDirection ; in response to Caps/Ctrl
     jsr updateDirectionFromArrows ; in response to Arrow keys (for dev/xdebug)
+    Jsr modulateDirection
 
     ;; X...
     jsr thrustX
@@ -325,26 +328,44 @@ endmacro
 
     rts
 
-SpeedTurn = 1 ;; TODO: DIE
-
 .updateDirection: {
     PushVar8 direction
-    lda keyCaps : beq no
-    lda keyCtrl : bne done ; both
-    FOR i,1,SpeedTurn : dec 0,x : NEXT
+    jsr turnLeft : beq no
+    jsr turnRight : bne done ; both
+    dec 0,x
     jmp done
-    .no : lda keyCtrl : beq done ; neither
-    FOR i,1,SpeedTurn : inc 0,x : NEXT
+    .no : jsr turnRight : beq done ; neither
+    inc 0,x
 .done:
     PopVar8 direction
     rts
     }
 
-.updateDirectionFromArrows:
+.turnLeft:
+    ;;lda keyCapsLAST : bne noTurn ;;edge-direction
+    lda keyCaps
+    rts
+.turnRight:
+    ;;lda keyCtrlLAST : bne noTurn ;;edge-direction
+    lda keyCtrl
+    rts
+.noTurn:
+    lda #0
+    rts
+
+.updateDirectionFromArrows: {
+    QT = QuarterTurn * RotSpeedScale
     { lda keyRight : beq no : lda #0 : sta direction : .no }
-    { lda keyDown : beq no : lda #QuarterTurn : sta direction : .no }
-    { lda keyLeft : beq no : lda #HalfTurn : sta direction : .no }
-    { lda keyUp : beq no : lda #ThreeQuarters : sta direction : .no }
+    { lda keyDown : beq no : lda #QT : sta direction : .no }
+    { lda keyLeft : beq no : lda #(2*QT) : sta direction : .no }
+    { lda keyUp : beq no : lda #(3*QT) : sta direction : .no }
+    rts
+    }
+
+.modulateDirection:
+    lda direction
+    and #(FullCircle * RotSpeedScale - 1)
+    sta direction
     rts
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -352,16 +373,15 @@ SpeedTurn = 1 ;; TODO: DIE
 
 .thrustX: { ; ( -- nn )
     jsr areWeThrusting : beq noThrust
-    PushVar8 direction
-    jsr cos
-    rts
+    jsr getDirection
+    jmp cos
 .noThrust:
     jmp pushZero
     }
 
 .thrustY: { ; ( -- nn )
     jsr areWeThrusting : beq noThrust
-    PushVar8 direction
+    jsr getDirection
     jmp sin
 .noThrust:
     jmp pushZero
@@ -398,7 +418,10 @@ SpeedTurn = 1 ;; TODO: DIE
 .sin: ; ( n -- nn )
     jsr mirrorB
     PopA : pha
-	jsr mirrorA
+    jsr mirrorA
+    lda 1,x
+    and #%00000111 ; fix quadrant
+    sta 1,x
     jsr invertQuadrantMaybe
     jsr sinTableLookup
     pla : PushA
@@ -428,7 +451,7 @@ SpeedTurn = 1 ;; TODO: DIE
     rts
 
 .invertQuadrant: ; ( n -- n )
-    lda #(QuarterTurn-1)
+    lda #(QuarterTurn)
     sec : sbc 0,x
     sta 0,x
     rts
@@ -445,13 +468,19 @@ SpeedTurn = 1 ;; TODO: DIE
 ;;     rts
 
 .sinTableLookup: ; ( n -- nn )
-    PopA
-    and #(QuarterTurn-1)
-    ScaleDirection
-    tay
+    lda 0,x
+    cmp #QuarterTurn
+    beq push256
+    PopY
     jsr pushZeroByte ; res-hi
     lda sinTab, y
     PushA
+    rts
+
+.push256: ; ( n -- nn )
+    inx
+    lda #1 : PushA
+    lda #0 : PushA
     rts
 
 macro mm B
@@ -460,8 +489,8 @@ macro mm B
 endmacro
 
 .sinTab:
-    FOR i, 0, AnglesResolvedPerQT-1
-    mm INT(SIN((i*PI)/2/AnglesResolvedPerQT) * 256)
+    FOR i, 0, QuarterTurn-1
+    mm INT(SIN((i*PI)/2/QuarterTurn) * 256)
     NEXT
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -589,8 +618,6 @@ blackMask = &00
 .setOrientationFromDirection: ; ( d -- )
 
     PopA ; direction
-    ;; direction scaled -> angle
-    ScaleDirection
     pha
 
     ;; Set outline...
@@ -601,7 +628,7 @@ blackMask = &00
     lda outlines+1,y : sta SMC_outline+2
 
     ;; Set orientation...
-    pla ; angle
+    pla ; direction
     and #%00011100 ; determine "Octrant" (1/8-of-a-turn-sector)
     tay ; 0,4,8,12,16,20,24,28
     lda orientations,y : sta asNorth : iny
@@ -755,6 +782,9 @@ blackMask = &00
 .keyLeft  EQUB 0
 .keyRight EQUB 0
 
+;;;.keyCapsLAST  EQUB 0
+;;;.keyCtrlLAST  EQUB 0
+
 macro PollKey CODE, VAR
     lda #0 : sta VAR
     lda #(-CODE-1) : sta system_VIA_portA : lda system_VIA_portA
@@ -762,10 +792,13 @@ macro PollKey CODE, VAR
 endmacro
 
 .readKeys:
+    ;;;lda keyCaps : sta keyCapsLAST
+    ;;;lda keyCtrl : sta keyCtrlLAST
     PollKey -1,   keyShift
     PollKey -74,  keyEnter
-    PollKey -65,  keyCaps
-    PollKey -2,   keyCtrl
+    ;;PollKey -97,  keyCaps ;; Use Tab instead of CapsLock
+    PollKey -65,  keyCaps ;; TODO Also Z (and Tab)
+    PollKey -2,   keyCtrl ;; TODO Also X
     PollKey -58,  keyUp
     PollKey -42,  keyDown
     PollKey -26,  keyLeft
