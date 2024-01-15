@@ -1,8 +1,7 @@
 
 top: build-all
 
-#run: run-bfInHaskell
-run: run-jan
+run: run-noise
 
 game2view: src/game2.asm
 	beebasm -v -i $< -do /dev/null -boot Code
