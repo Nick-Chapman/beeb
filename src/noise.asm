@@ -19,7 +19,6 @@ system_VIA_interruptFlags   = &fe4d
 system_VIA_interruptEnable  = &fe4e
 system_VIA_portA            = &fe4f
 
-soundChipWrite = system_VIA_portB
 ;;soundChipData = &fe41
 soundChipData = system_VIA_portA
 
@@ -168,18 +167,6 @@ endmacro
     lda #%10000010 : sta system_VIA_interruptEnable ; enable just VBlank
     rts
 
-.doKeys:
-    ;; poll keyboard via system VIA portA
-    ;; bottom 7 bits output (key to poll); top bit input (is it pressed?)
-    lda #%01111111 : sta system_VIA_dataDirectionA
-    lda #%00000011 : sta system_VIA_portB ; set bit 3 to 0
-    rts
-
-.doSound:
-    lda #%11111111 : sta system_VIA_dataDirectionA ; (ALL bit output)
-    lda #%00001011 : sta system_VIA_portB ; set bit 3 to 1
-    rts
-
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Keyboard input
 
@@ -195,7 +182,7 @@ endmacro
 
 .readKeys:
     lda keyEnter : sta keyEnterLAST
-    jsr doKeys
+    ;;jsr doKeys
     PollKey -1,   keyShift
     PollKey -74,  keyEnter
     rts
@@ -224,36 +211,40 @@ endmacro
     jsr readKeys
     jsr adjustVolumeMaybe
     jsr syncVB
-    jsr sound
+    jsr setTone
     jmp loop
     }
 
 macro DEL20 : nop:nop:nop:nop:nop:nop:nop:nop:nop:nop : endmacro
 
-macro SEND :
-    lda #0 : sta soundChipWrite
+.pulseWriteSound:
+    ;; switch to sound mode
+    lda #%11111111 : sta system_VIA_dataDirectionA ; (All bits output)
+    lda #%00001011 : sta system_VIA_portB ; set bit 3 to 1
+    ;; pulse sound write
+    lda #%00000000 : sta system_VIA_portB
     DEL20
-    lda #8 : sta soundChipWrite
+    lda #%00001000 : sta system_VIA_portB
     DEL20
+    ;; back to keys mode
+    lda #%00000011 : sta system_VIA_portB ; set bit 3 to 0
+    lda #%01111111 : sta system_VIA_dataDirectionA ; (top bit input)
+    rts
+
+macro SEND
+    sta soundChipData
+    jsr pulseWriteSound
 endmacro
 
-.sound:
-    jsr doSound
-
+.setTone:
     ;; tone on channel 1 (latch)
     lda #%10100000
-    sta soundChipData
     SEND
-
     ;; tone (extra data)
     lda frameCounter
     lsr a : lsr a
-
-    sta soundChipData
     SEND
-
     rts
-
 
 .volumeToggle equb 0
 
@@ -271,16 +262,14 @@ endmacro
     }
 
 .loud:
-    jsr doSound
     ;; max volume on channel 1
-    lda #%10110000 : sta soundChipData
+    lda #%10110000
     SEND
     rts
 
 .silent:
-    jsr doSound
     ;; minimum volume on channel 1
-    lda #%10111111 : sta soundChipData
+    lda #%10111111
     SEND
     rts
 
