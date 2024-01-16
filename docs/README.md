@@ -11,4 +11,6 @@
 - [jan-preTrig](https://bbc.godbolt.org/?&disc1=https://nick-chapman.github.io/beeb/jan-preTrig.ssd&autoboot)
 - [jan](https://bbc.godbolt.org/?&disc1=https://nick-chapman.github.io/beeb/jan.ssd&autoboot)
 - [keytest](https://bbc.godbolt.org/?&disc1=https://nick-chapman.github.io/beeb/keytest.ssd&autoboot)
+- [noise](https://bbc.godbolt.org/?&disc1=https://nick-chapman.github.io/beeb/noise.ssd&autoboot)
 - [own-emit](https://bbc.godbolt.org/?&disc1=https://nick-chapman.github.io/beeb/own-emit.ssd&autoboot)
+- [tick-tock](https://bbc.godbolt.org/?&disc1=https://nick-chapman.github.io/beeb/tick-tock.ssd&autoboot)
