@@ -1,11 +1,13 @@
 # beeb
 
 Playing around with examples to run on the BBC Micro.
-Eventual goal: write a graphics game.
+Goal: Re-Implementation of Acorsoft Meteors.
+[Original Game](https://bbc.godbolt.org/?&disc1=https://nick-chapman.github.io/beeb/Meteors.ssd&autoboot)
 
-## Play demos in JsBeeb
-- [game3](https://bbc.godbolt.org/?&disc1=https://nick-chapman.github.io/beeb/game3.ssd&autoboot)
-- [jan](https://bbc.godbolt.org/?&disc1=https://nick-chapman.github.io/beeb/jan.ssd&autoboot)
+## WIP demos in JsBeeb
+- [2023: Game3 (final state of 2023 work)](https://bbc.godbolt.org/?&disc1=https://nick-chapman.github.io/beeb/game3.ssd&autoboot)
+- [2024: New year; new fun: Ship with thrust](https://bbc.godbolt.org/?&disc1=https://nick-chapman.github.io/beeb/jan.ssd&autoboot)
+- [Sound](https://bbc.godbolt.org/?&disc1=https://nick-chapman.github.io/beeb/tick-tock.ssd&autoboot)
 
 ## game1
 - Have A be unaffected by fine-Y adjust, and use FY for y-index when plotting.
