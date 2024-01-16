@@ -9,6 +9,19 @@ Goal: Re-Implementation of Acorsoft Meteors.
 - [2024: New year; new fun: Ship with thrust](https://bbc.godbolt.org/?&disc1=https://nick-chapman.github.io/beeb/jan.ssd&autoboot)
 - [Sound](https://bbc.godbolt.org/?&disc1=https://nick-chapman.github.io/beeb/tick-tock.ssd&autoboot)
 
+## Resources
+
+- http://www.6502.org/tutorials/6502opcodes.html
+- https://www.masswerk.at/6502/6502_instruction_set.html
+- http://6502.org/users/obelisk/
+- https://www.nesdev.org/wiki/6502_cycle_times
+- https://www.pagetable.com/c64ref/6502/?tab=4
+
+- https://beebwiki.mdfs.net/Keyboard
+- https://tobylobster.github.io/mos/mos/S-s4.html
+- https://www.chibiakumas.com/6502/bbc.php
+- https://www.smspower.org/Development/SN76489
+
 ## game1
 - Have A be unaffected by fine-Y adjust, and use FY for y-index when plotting.
 - Use self-mod code for sprite data access avoiding x-index for FX.
