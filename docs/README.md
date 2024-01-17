@@ -1,6 +1,7 @@
 ## Play demos in JsBeeb
 - [draw1-1meteor-raster-artifact](https://bbc.godbolt.org/?&disc1=https://nick-chapman.github.io/beeb/draw1-1meteor-raster-artifact.ssd&autoboot)
 - [draw1](https://bbc.godbolt.org/?&disc1=https://nick-chapman.github.io/beeb/draw1.ssd&autoboot)
+- [fire](https://bbc.godbolt.org/?&disc1=https://nick-chapman.github.io/beeb/fire.ssd&autoboot)
 - [game1-3small-meteors](https://bbc.godbolt.org/?&disc1=https://nick-chapman.github.io/beeb/game1-3small-meteors.ssd&autoboot)
 - [game1-4meteors](https://bbc.godbolt.org/?&disc1=https://nick-chapman.github.io/beeb/game1-4meteors.ssd&autoboot)
 - [game1-6meteors](https://bbc.godbolt.org/?&disc1=https://nick-chapman.github.io/beeb/game1-6meteors.ssd&autoboot)

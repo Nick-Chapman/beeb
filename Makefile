@@ -1,7 +1,7 @@
 
 top: build-all
 
-run: run-tick-tock
+run: run-fire
 
 game2view: src/game2.asm
 	beebasm -v -i $< -do /dev/null -boot Code
