@@ -232,8 +232,6 @@ endmacro
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; main
 
-.frameCounter equb 0
-
 .main: {
     jsr enableOnlyVBlank
     jsr mode1
@@ -242,17 +240,18 @@ endmacro
     Position 1,1 : puts "Enter: Fire"
     Position 1,2 : puts "Shift: Explode"
     Position 1,3 : puts "Space: Faster!"
+
+    jsr setupChannelThree
+
 .loop
     jsr syncVB
-    inc frameCounter
     jsr readKeys
 
     Position 1,5 : Emit 'K' : Space : jsr printKeyState
-    Position 1,7 : Emit 'F' : Space : lda frameCounter : jsr printHexA
-    Position 1,8 : Emit '0' : Space : jsr printC0state
-    Position 1,9 : Emit '1' : Space : jsr printC1state
-    Position 1,10: Emit '2' : Space : jsr printC2state
-    Position 1,11: Emit '3' : Space : jsr printC3state
+    Position 1,7 : Emit '0' : Space : jsr printC0state
+    Position 1,8 : Emit '1' : Space : jsr printC1state
+    Position 1,9 : Emit '2' : Space : jsr printC2state
+    Position 1,10: Emit '3' : Space : jsr printC3state
 
     jsr makeFireSoundOnEnter
     jsr makeExplosionSoundOnShift
@@ -452,7 +451,12 @@ c1offsetInit = c1stepsEnd - c1steps
     sty c2offset
     rts
 
-.c2data: EQUB &cc, &0b, &c8, &0c, &c3, &0d, &c0, &0e, &cd, &0e, &cc, &0f, &cb, &10, &ca, &11, &cb, &12, &cd, &13, &cb, &12, &ca, &11, &cb, &10, &cc, &0f, &cd, &0e, &c0, &0e, &c3, &0d, &c8, &0c, &cc, &0b, &c2, &0b
+.resetExplosionTuning:
+    lda #0 : sta c2offset
+    rts
+
+.c2data:
+    EQUB &cb, &12, &ca, &11, &cb, &10, &cc, &0f, &cd, &0e, &c0, &0e, &c3, &0d, &c8, &0c, &cc, &0b, &c2, &0b, &cc, &0b, &c8, &0c, &c3, &0d, &c0, &0e, &cd, &0e, &cc, &0f, &cb, &10, &ca, &11, &cb, &12, &cd, &13
 .c2dataEnd
 c2dataSize = c2dataEnd - c2data
 ASSERT c2dataSize = 40
@@ -462,34 +466,36 @@ ASSERT c2dataSize = 40
 
 ;;; attenuation is inverse of volume: 0 maximum; 15 off
 .c3attenuation equb 15 ; initially off
+.c3period skip 1 ; we adjust volume every 4 frames
 
 .printC3state:
     lda c3attenuation : jsr printHexA
+    lda c3period : jsr printHexA
     rts
 
-.doChannelThree:
-    jsr c3reduceVolume
+.setupChannelThree:
+    lda #&e7 : SEND
     rts
 
-.c3reduceVolume: { ; every 4th frame
-    lda frameCounter
+.doChannelThree {
+    lda c3period
+    inc c3period
     and #3
-    bne done ; not a 4th frame
+    bne done ; not a 4th frame, so do nothing
     lda c3attenuation
-    cmp #15
-    beq done ; already silent
-    inc c3attenuation
-    lda c3attenuation
-    ora #$f0 ; to make the volume set data for c3
+    cmp #16
+    beq done ; already silenced
+    ora #$f0 ; set attenuation for c3
     SEND
+    inc c3attenuation
 .done:
     rts
     }
 
 .makeExplosionSound:
-    lda #&e7 : SEND
-    lda #&f0 : SEND
+    jsr resetExplosionTuning
     lda #0 : sta c3attenuation
+    lda #0 : sta c3period
     rts
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
