@@ -1,7 +1,7 @@
 
 top: build-all
 
-run: run-explode
+run: run-render
 
 game2view: src/game2.asm
 	beebasm -v -i $< -do /dev/null -boot Code
