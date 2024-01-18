@@ -484,6 +484,11 @@ SW = S or W
 
     .*SMC_drawBuffer : ldx #&77 ; BUFFER
 
+    ;; open the buffer for writing here. opening way to select buffer based on FX
+    txa : asl a : tay
+    lda buffers,   y : sta bufP
+    lda buffers+1, y : sta bufP+1
+
     lda theA+1 : WriteB ; A-hi first
     lda theA : WriteB
 
@@ -708,9 +713,9 @@ SW = S or W
     ;; save X so draw routine can access the offset
     stx SMC_drawBuffer+1
     ;; open the buffer  for writing
-    txa : asl a : tay
-    lda buffers,   y : sta bufP
-    lda buffers+1, y : sta bufP+1
+    ;txa : asl a : tay
+    ;lda buffers,   y : sta bufP
+    ;lda buffers+1, y : sta bufP+1
     rts
 
 .phase equb 2 ; cycles 2,1,0
