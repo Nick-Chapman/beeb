@@ -285,25 +285,23 @@ endmacro
     {
     lda theX+1
     lsr a
-    sta smc_cx+1 : sta theCX
+    sta theCX
     lsr a : lsr a : lsr a : lsr a
     sta smc_hbOnRow+1
 
     lda theY+1
     lsr a : lsr a : lsr a
     sta theCY
-    sta smc_cyA+1 ; TODO: dont bother with smc since I am maintaining zero-page vars
-    sta smc_cyB+1
     asl a : asl a : clc
-    .smc_cyA : adc #&ee
+    adc theCY
     .smc_hbOnRow : adc #&ee
     lsr a
     clc : adc #HI(screenStart)
     sta theA+1
 
-    .smc_cyB : lda #&ee : and #1    ; oddRow
+    lda theCY : and #1              ; oddRow
     asl a : asl a : asl a : asl a   ; Xoffset
-    .smc_cx : eor #&ee              ; Xmod
+    eor theCX                       ; Xmod
     asl a : asl a : asl a           ; Xmod*8
     sta smc_alo+1
 
