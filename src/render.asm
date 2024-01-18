@@ -277,7 +277,7 @@ macro WriteB ; bufP, X:buf#, A:data (uses y)
     cpy #bufferSize : { bne ok : jmp overflow : .ok } ;; TODO: dev only
     sta (bufP),y
 endmacro
-    
+
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Calculate screen address from X/Y (ORIG, and faster!)
 
@@ -485,7 +485,7 @@ SW = S or W
     bit invisible : bne next
 
     .*SMC_drawBuffer : ldx #&77 ; BUFFER
-    
+
     lda theA+1 : WriteB ; A-hi first
     lda theA : WriteB
 
@@ -653,17 +653,14 @@ SW = S or W
     jmp plotRockM
 
 .plotFirstHalf:
-    Ula blue
     jsr plotRock1
     jsr plotRock3
     Ula black
     rts
 
 .plotSecondHalf:
-    Ula blue
     jsr plotRock2
     jsr plotRock4
-    Ula black
     rts
 
 
@@ -671,7 +668,7 @@ SW = S or W
 ;;; Render
 
 .renderWithEor: { ; X:buf#
-	
+
     txa : asl a : tay
     lda buffers,   y : sta smc0+1 : sta smc1+1 : sta smc2+1 : sta smc3+1
     lda buffers+1, y : sta smc0+2 : sta smc1+2 : sta smc2+2 : sta smc3+2
@@ -694,39 +691,17 @@ SW = S or W
     rts
     }
 
-B1 = 0
-B2 = 1
-B3 = 2
-
-.render12:
-    Ula magenta
-    ldx #B1
-    jsr renderWithEor
-    ldx #B2
-    jsr renderWithEor
-    Ula black
-    rts
-
-.render23:
-    Ula magenta
-    ldx #B2
-    jsr renderWithEor
-    ldx #B3
-    jsr renderWithEor
-    Ula black
-    rts
-
-.render31:
-    Ula magenta
-    ldx #B3
-    jsr renderWithEor
-    ldx #B1
-    jsr renderWithEor
-    Ula black
-    rts
-
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; main/loop
+
+.frameNumber skip 1
+
+.semiPlot: {
+    lda frameNumber : and #1 : bne odd
+    jmp plotFirstHalf
+.odd:
+    jmp plotSecondHalf
+    }
 
 .selectBuf: ;X:buf#
     ;; reset the buffer offset to the start of the buffer
@@ -740,51 +715,47 @@ B3 = 2
     lda buffers+1, y : sta bufP+1
     rts
 
+.phase equb 2 ; cycles 2,1,0
+
+.nextPhase: {
+    dec phase
+    bpl done
+    lda #2 : sta phase
+.done:
+    rts
+    }
+
+.selectPlotBufferForPhase:
+    ldx phase
+    jmp selectBuf
+
+.renderForPhase:
+    ;; render most recent buffer plotted in. & one from 2 steps ago
+    { lda phase : cmp #2 : beq no : ldx #0 : jsr renderWithEor : .no }
+    { lda phase : cmp #0 : beq no : ldx #1 : jsr renderWithEor : .no }
+    { lda phase : cmp #1 : beq no : ldx #2 : jsr renderWithEor : .no }
+    rts
+
 .main: {
     jsr init
     jsr initPositions
 .loop:
-    jsr readKeys
-    jsr updatePositions
-    ldx #B1 : jsr selectBuf
-    jsr plotFirstHalf
-    jsr syncVB
-    jsr render12
 
+    inc frameNumber
+    jsr nextPhase
     jsr readKeys
     jsr updatePositions
-    ldx #B2 : jsr selectBuf
-    jsr plotSecondHalf
-    jsr syncVB
-    jsr render23
+    jsr selectPlotBufferForPhase
 
-    jsr readKeys
-    jsr updatePositions
-    ldx #B3 : jsr selectBuf
-    jsr plotFirstHalf
-    jsr syncVB
-    jsr render31
+    Ula blue
+    jsr semiPlot
+    Ula black
 
-    jsr readKeys
-    jsr updatePositions
-    ldx #B1 : jsr selectBuf
-    jsr plotSecondHalf
     jsr syncVB
-    jsr render12
 
-    jsr readKeys
-    jsr updatePositions
-    ldx #B2 : jsr selectBuf
-    jsr plotFirstHalf
-    jsr syncVB
-    jsr render23
-
-    jsr readKeys
-    jsr updatePositions
-    ldx #B3 : jsr selectBuf
-    jsr plotSecondHalf
-    jsr syncVB
-    jsr render31
+    Ula magenta
+    jsr renderForPhase
+    Ula black
 
     jmp loop
     }
