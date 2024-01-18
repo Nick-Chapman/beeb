@@ -57,7 +57,6 @@ org &70
 
 .screenP skip 2
 
-.bufO skip 1
 .bufP skip 2
 
 .theX skip 2 ; plot from Hi byte + hi-bit of LO byte
@@ -69,10 +68,8 @@ org &70
 .theFY SKIP 1 ; fine-Y   : 0..7
 .theA SKIP 2  ; screen address of the 8x8 char
 
-
 .outlineIndex skip 1
 .outlineMotion skip 1
-
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Start
@@ -204,9 +201,9 @@ endmacro
     }
 
 .syncVB: {
-    ;;IF SyncAssert : lda vsyncNotify : bne failSync1 : ENDIF ; pre-sync check (more harsh)
+    IF SyncAssert : lda vsyncNotify : bne failSync1 : ENDIF ; pre-sync check (more harsh)
     { .loop : lda vsyncNotify : beq loop }
-    ;;IF SyncAssert : cmp #2 : bcs failSync2 : ENDIF ; post-sync check (move forgiving)
+    IF SyncAssert : cmp #2 : bcs failSync2 : ENDIF ; post-sync check (move forgiving)
     lda #0 : sta vsyncNotify
     rts
 .failSync1:
@@ -262,53 +259,25 @@ endmacro
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Buffers
 
-;;; TODO: different sizes for different buffers
-;;; for now, all have same size
 bufferSize = 255
-
 .b0: skip bufferSize
 .b1: skip bufferSize
 .b2: skip bufferSize
-.buffers: EQUW b0, b1, b2 ; starting addresses
+.buffers: EQUW b0, b1, b2
 .buffersEnd:
 numberOfBuffers = (buffersEnd-buffers)/2
-PRINT numberOfBuffers
-.offsets: skip numberOfBuffers ; TODO: do we need to track all these?
-
-.selectBuffer: ; X:buf# --> bufP (use A,Y)
-    txa : asl a : tay
-    lda buffers,   y : sta bufP
-    lda buffers+1, y : sta bufP+1
-    rts
-
-.openBstart: ; X:buf# --> bufP/bufO (use A)
-    jsr selectBuffer
-    ;;lda offsets, x
-    lda #0
-    sta bufO
-    rts
-
-;;; TODO: do we need to push bufO back into offsets???
-;;; Once we are done filling a buffer, we process from the start anyway!
-;;; only reason is to see how many writes we made
-;;; TODO: when we have sep buffers per mask, then we will have multiple 'open' at once
-;;.closeB: ; X:buf#, bufO (use A)
-;;    lda bufO : sta offsets,x
-;;    rts
+.offsets: skip numberOfBuffers
 
 .overflow:
-    lda bufO : jsr printHexA
-    Crash "-overflow"
+    Crash "overflow"
 
-macro WriteB ; bufO/bufP, A:data (use y)
-    ;Emit 'w'
-    ;Space : pha : jsr printHexA : pla
-    ldy bufO
-    inc bufO
+macro WriteB ; bufP, X:buf#, A:data (uses y)
+    ldy offsets,x
+    inc offsets,x
     cpy #bufferSize : { bne ok : jmp overflow : .ok } ;; TODO: dev only
     sta (bufP),y
 endmacro
-
+    
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Calculate screen address from X/Y (ORIG, and faster!)
 
@@ -480,10 +449,12 @@ SW = S or W
 .asEast equb E
 .asWest equb W
 
+
 .rts:
     rts
 
 .drawOutline: { ; into open buffer; (starting)theX/theY -- get modified (use outlineIndex)
+    jsr calcA
     ldx #0
 .loop:
     ;cpx #1 : beq rts ;; DEV HACK - just see one point
@@ -512,6 +483,9 @@ SW = S or W
 .pr:
     lda outlineMotion
     bit invisible : bne next
+
+    .*SMC_drawBuffer : ldx #&77 ; BUFFER
+    
     lda theA+1 : WriteB ; A-hi first
     lda theA : WriteB
 
@@ -531,29 +505,6 @@ SW = S or W
 .edgeRight: lda keyRightLAST : bne nope : lda keyRight : rts
 .edgeUp: lda keyUpLAST : bne nope : lda keyUp : rts
 .edgeDown: lda keyDownLAST : bne nope : lda keyDown : rts
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; info
-
-;; .debugBufferInfo:
-;;     Space : ldy #0 : lda offsets,y : jsr printHexA
-;;     Space : ldy #1 : lda offsets,y : jsr printHexA
-;;     Space : ldy #2 : lda offsets,y : jsr printHexA
-;;     Space : ldy #3 : lda offsets,y : jsr printHexA
-;;     Space : ldy #4 : lda offsets,y : jsr printHexA
-;;     rts
-
-;; .info:
-;;     Ula green
-;;     Position 1,1
-;;     jsr printKeyState
-;;     ;;Space : lda theX+1 : jsr printHexA : lda theX : jsr printHexA
-;;     ;;Space : lda theY+1 : jsr printHexA : lda theY : jsr printHexA
-;;     Space : lda theCX : jsr printHexA : Space : lda theFX : jsr printHexA
-;;     Space : lda theCY : jsr printHexA : Space : lda theFY : jsr printHexA
-;;     Space : lda theA+1 : jsr printHexA : lda theA : jsr printHexA
-;;     Ula black
-;;     rts
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; main/loop
@@ -673,44 +624,38 @@ SW = S or W
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Plot
 
-.plotRockM: ;X:buf#
+.plotRockM:
     Copy16i mediumRockOutline, SMC_outline+1
     jmp drawOutline
 
-.plotRockS: ;X:buf#
+.plotRockS:
     Copy16i smallRockOutline, SMC_outline+1
     jmp drawOutline
-
 
 .plotRock1:
     Copy16v rock1X, theX
     Copy16v rock1Y, theY
-    jsr calcA
     jmp plotRockS
 
 .plotRock2:
     Copy16v rock2X, theX
     Copy16v rock2Y, theY
-    jsr calcA
     jmp plotRockS
 
 .plotRock3:
     Copy16v rock3X, theX
     Copy16v rock3Y, theY
-    jsr calcA
     jmp plotRockM
 
 .plotRock4:
     Copy16v rock4X, theX
     Copy16v rock4Y, theY
-    jsr calcA
     jmp plotRockM
 
 .plotFirstHalf:
     Ula blue
     jsr plotRock1
     jsr plotRock3
-    lda #0 : WriteB
     Ula black
     rts
 
@@ -718,7 +663,6 @@ SW = S or W
     Ula blue
     jsr plotRock2
     jsr plotRock4
-    lda #0 : WriteB
     Ula black
     rts
 
@@ -726,44 +670,25 @@ SW = S or W
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Render
 
-.renderWithEor: ; X:buf#
-    {
-    ;; V1/2
-    ;;jsr selectBuffer
-    ;;ldy #0 ; read from start
-
+.renderWithEor: { ; X:buf#
+	
     txa : asl a : tay
-    lda buffers,   y : sta smc1+1 : sta smc2+1 : sta smc3+1
-    lda buffers+1, y : sta smc1+2 : sta smc2+2 : sta smc3+2
+    lda buffers,   y : sta smc0+1 : sta smc1+1 : sta smc2+1 : sta smc3+1
+    lda buffers+1, y : sta smc0+2 : sta smc1+2 : sta smc2+2 : sta smc3+2
 
-    ldx #0
+    ;; Close the buffer (add the terminating null at offset)
+    ldy offsets,x
+    lda #0
+    .smc0 : sta &7777,y
+
+    ldx #0 ; buffer index
     ldy #0
 .loop:
-    ;; V1...
-    ;; lda (bufP),y : beq done : iny : sta r+2 : sta w+2
-    ;; lda (bufP),y            : iny : sta r+1 : sta w+1
-    ;; lda (bufP),y            : iny
-    ;; .r eor &7777 ;; TODO: use y-indexed; avoid SMC ?
-    ;; .w sta &7777
-
-    ;; V2...
-    ;; lda (bufP),y : beq done : iny : sta screenP+1
-    ;; lda (bufP),y            : iny : sta screenP
-    ;; lda (bufP),y            : iny
-    ;; sty restoreY+1
-    ;; ldy #0
-    ;; eor (screenP),y
-    ;; sta (screenP),y
-    ;; .restoreY : ldy #&77
-
-    ;; V3... quicker!
     .smc1 : lda &7777,x : beq done : inx : sta screenP+1
     .smc2 : lda &7777,x            : inx : sta screenP
     .smc3 : lda &7777,x            : inx
-
     eor (screenP),y
     sta (screenP),y
-
     jmp loop
 .done:
     rts
@@ -803,50 +728,60 @@ B3 = 2
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; main/loop
 
+.selectBuf: ;X:buf#
+    ;; reset the buffer offset to the start of the buffer
+    lda #0
+    sta offsets,x
+    ;; save X so draw routine can access the offset
+    stx SMC_drawBuffer+1
+    ;; open the buffer  for writing
+    txa : asl a : tay
+    lda buffers,   y : sta bufP
+    lda buffers+1, y : sta bufP+1
+    rts
+
 .main: {
     jsr init
     jsr initPositions
-
 .loop:
-
     jsr readKeys
     jsr updatePositions
-    ldx #B1 : jsr openBstart
+    ldx #B1 : jsr selectBuf
     jsr plotFirstHalf
     jsr syncVB
     jsr render12
 
     jsr readKeys
     jsr updatePositions
-    ldx #B2 : jsr openBstart
+    ldx #B2 : jsr selectBuf
     jsr plotSecondHalf
     jsr syncVB
     jsr render23
 
     jsr readKeys
     jsr updatePositions
-    ldx #B3 : jsr openBstart
+    ldx #B3 : jsr selectBuf
     jsr plotFirstHalf
     jsr syncVB
     jsr render31
 
     jsr readKeys
     jsr updatePositions
-    ldx #B1 : jsr openBstart
+    ldx #B1 : jsr selectBuf
     jsr plotSecondHalf
     jsr syncVB
     jsr render12
 
     jsr readKeys
     jsr updatePositions
-    ldx #B2 : jsr openBstart
+    ldx #B2 : jsr selectBuf
     jsr plotFirstHalf
     jsr syncVB
     jsr render23
 
     jsr readKeys
     jsr updatePositions
-    ldx #B3 : jsr openBstart
+    ldx #B3 : jsr selectBuf
     jsr plotSecondHalf
     jsr syncVB
     jsr render31
