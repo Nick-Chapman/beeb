@@ -275,14 +275,6 @@ numberOfBuffers = (buffersEnd-buffers)/2
 PRINT numberOfBuffers
 .offsets: skip numberOfBuffers ; TODO: do we need to track all these?
 
-;; .debugBufferInfo:
-;;     Space : ldy #0 : lda offsets,y : jsr printHexA
-;;     Space : ldy #1 : lda offsets,y : jsr printHexA
-;;     Space : ldy #2 : lda offsets,y : jsr printHexA
-;;     Space : ldy #3 : lda offsets,y : jsr printHexA
-;;     Space : ldy #4 : lda offsets,y : jsr printHexA
-;;     rts
-
 .selectBuffer: ; X:buf# --> bufP (use A,Y)
     txa : asl a : tay
     lda buffers,   y : sta bufP
@@ -546,6 +538,97 @@ SW = S or W
     }
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; control
+
+.nope: lda #0 : rts
+.edgeLeft: lda keyLeftLAST : bne nope : lda keyLeft : rts
+.edgeRight: lda keyRightLAST : bne nope : lda keyRight : rts
+.edgeUp: lda keyUpLAST : bne nope : lda keyUp : rts
+.edgeDown: lda keyDownLAST : bne nope : lda keyDown : rts
+    
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; info
+	
+;; .debugBufferInfo:
+;;     Space : ldy #0 : lda offsets,y : jsr printHexA
+;;     Space : ldy #1 : lda offsets,y : jsr printHexA
+;;     Space : ldy #2 : lda offsets,y : jsr printHexA
+;;     Space : ldy #3 : lda offsets,y : jsr printHexA
+;;     Space : ldy #4 : lda offsets,y : jsr printHexA
+;;     rts
+
+;; .info:
+;;     Ula green
+;;     Position 1,1
+;;     jsr printKeyState
+;;     ;;Space : lda theX+1 : jsr printHexA : lda theX : jsr printHexA
+;;     ;;Space : lda theY+1 : jsr printHexA : lda theY : jsr printHexA
+;;     Space : lda theCX : jsr printHexA : Space : lda theFX : jsr printHexA
+;;     Space : lda theCY : jsr printHexA : Space : lda theFY : jsr printHexA
+;;     Space : lda theA+1 : jsr printHexA : lda theA : jsr printHexA
+;;     Ula black
+;;     rts
+    
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; main/loop
+
+;;; track positions of rocks
+
+.rock1X skip 2
+.rock1Y skip 2
+.rock2X skip 2
+.rock2Y skip 2
+    
+.initPositions:
+    Copy16i &1000, rock1X
+    Copy16i &1000, rock1Y
+    Copy16i &4000, rock2X
+    Copy16i &4000, rock2Y
+    rts
+
+.rock1Up: dec rock1Y+1 : rts
+.rock1Down: inc rock1Y+1 : rts
+
+.rock1Left:
+    Copy16v rock1X, theX
+    jsr moveLeft
+    Copy16v theX, rock1X
+    rts
+
+.rock1Right:
+    Copy16v rock1X, theX
+    jsr moveRight
+    Copy16v theX, rock1X
+    rts
+
+.rock2Up: dec rock2Y+1 : rts
+.rock2Down: inc rock2Y+1 : rts
+
+.rock2Left:
+    Copy16v rock2X, theX
+    jsr moveLeft
+    Copy16v theX, rock2X
+    rts
+
+.rock2Right:
+    Copy16v rock2X, theX
+    jsr moveRight
+    Copy16v theX, rock2X
+    rts
+
+.updatePositions:
+    jsr edgeUp : { beq no : jsr rock1Up : .no }
+    jsr edgeDown : { beq no : jsr rock1Down : .no }
+    jsr edgeLeft : { beq no : jsr rock1Left : .no }
+    jsr edgeRight : { beq no : jsr rock1Right : .no }
+    jsr edgeUp : { beq no : jsr rock2Up : .no }
+    jsr edgeDown : { beq no : jsr rock2Down : .no }
+    jsr edgeLeft : { beq no : jsr rock2Left : .no }
+    jsr edgeRight : { beq no : jsr rock2Right : .no }
+    rts
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Plot
 
 .plotRock: ;X:buf#
@@ -554,6 +637,33 @@ SW = S or W
     jsr drawOutline
     rts
     }
+
+.plotRock1:
+    Copy16v rock1X, theX
+    Copy16v rock1Y, theY
+    jsr calcA
+    jmp plotRock
+	
+.plotRock2:
+    Copy16v rock2X, theX
+    Copy16v rock2Y, theY
+    jsr calcA
+    jmp plotRock
+
+.plotFirstHalf:
+    Ula blue
+    jsr plotRock1
+    lda #0 : WriteB
+    Ula black
+    rts
+
+.plotSecondHalf:
+    Ula blue
+    jsr plotRock2
+    lda #0 : WriteB
+    Ula black
+    rts
+
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Render
@@ -573,75 +683,10 @@ SW = S or W
 .done:
     rts
     }
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; control
-
-.nope: lda #0 : rts
-.edgeLeft: lda keyLeftLAST : bne nope : lda keyLeft : rts
-.edgeRight: lda keyRightLAST : bne nope : lda keyRight : rts
-.edgeUp: lda keyUpLAST : bne nope : lda keyUp : rts
-.edgeDown: lda keyDownLAST : bne nope : lda keyDown : rts
-    
-    
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; main/loop
-
-;;; track positions of rocks
-
-.rock1X skip 2
-.rock1Y skip 2
-    
-.initPositions:
-    Copy16i 10, rock1X
-    Copy16i 10, rock1Y
-    rts
-
-.rock1Up: dec rock1Y+1 : rts
-.rock1Down: inc rock1Y+1 : rts
-
-.rock1Left:
-    Copy16v rock1X, theX
-    jsr moveLeft
-    Copy16v theX, rock1X
-    rts
-
-.rock1Right:
-    Copy16v rock1X, theX
-    jsr moveRight
-    Copy16v theX, rock1X
-    rts
-
-.updatePositions:
-    jsr edgeUp : { beq no : jsr rock1Up : .no }
-    jsr edgeDown : { beq no : jsr rock1Down : .no }
-    jsr edgeLeft : { beq no : jsr rock1Left : .no }
-    jsr edgeRight : { beq no : jsr rock1Right : .no }
-    rts
-
-.plotRock1:
-    Copy16v rock1X, theX
-    Copy16v rock1Y, theY
-    jsr calcA
-    jmp plotRock
     
 B1 = 1
 B2 = 2
 B3 = 3
-
-.plotFirstHalf:
-    Ula blue
-    jsr plotRock1
-    lda #0 : WriteB
-    Ula black
-    rts
-
-;; .plotSecondHalf:
-;;     Ula blue
-;;     jsr plotRock2
-;;     lda #0 : WriteB
-;;     Ula black
-;;     rts
 
 .render12:
     Ula magenta
@@ -652,47 +697,59 @@ B3 = 3
     Ula black
     rts
 
-;; .render23:
-;;     Ula magenta
-;;     ldx #B2
-;;     jsr renderWithEor
-;;     ldx #B3
-;;     jsr renderWithEor
-;;     Ula black
-;;     rts
-
-;; .render31:
-;;     Ula magenta
-;;     ldx #B3
-;;     jsr renderWithEor
-;;     ldx #B1
-;;     jsr renderWithEor
-;;     Ula black
-;;     rts
-
-.info:
-    Ula green
-    Position 1,1
-    jsr printKeyState
-    ;;Space : lda theX+1 : jsr printHexA : lda theX : jsr printHexA
-    ;;Space : lda theY+1 : jsr printHexA : lda theY : jsr printHexA
-    Space : lda theCX : jsr printHexA : Space : lda theFX : jsr printHexA
-    Space : lda theCY : jsr printHexA : Space : lda theFY : jsr printHexA
-    Space : lda theA+1 : jsr printHexA : lda theA : jsr printHexA
+.render23:
+    Ula magenta
+    ldx #B2
+    jsr renderWithEor
+    ldx #B3
+    jsr renderWithEor
     Ula black
     rts
+
+.render31:
+    Ula magenta
+    ldx #B3
+    jsr renderWithEor
+    ldx #B1
+    jsr renderWithEor
+    Ula black
+    rts
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; main/loop
 
 .main: {
     jsr init
     jsr initPositions
 
 .loop:
+
     jsr readKeys
     jsr updatePositions
     ldx #B1 : jsr openBstart
     jsr plotFirstHalf
     jsr syncVB
-    ;jsr info
+    jsr render12
+
+    jsr readKeys
+    jsr updatePositions
+    ldx #B2 : jsr openBstart
+    jsr plotSecondHalf
+    jsr syncVB
+    jsr render23
+
+    jsr readKeys
+    jsr updatePositions
+    ldx #B3 : jsr openBstart
+    jsr plotFirstHalf
+    jsr syncVB
+    jsr render31
+
+    jsr readKeys
+    jsr updatePositions
+    ldx #B1 : jsr openBstart
+    jsr plotSecondHalf
+    jsr syncVB
     jsr render12
 
     jsr readKeys
@@ -700,45 +757,14 @@ B3 = 3
     ldx #B2 : jsr openBstart
     jsr plotFirstHalf
     jsr syncVB
-    ;jsr info
-    jsr render12
-    
+    jsr render23
 
-    ;; jsr updatePositions
-    ;; ldx #B1 : jsr openBstart
-    ;; jsr plotFirstHalf
-    ;; jsr syncVB
-    ;; jsr render12
-
-    ;; jsr updatePositions
-    ;; ldx #B2 : jsr openBstart
-    ;; jsr plotSecondHalf
-    ;; jsr syncVB
-    ;; jsr render23
-
-    ;; jsr updatePositions
-    ;; ldx #B3 : jsr openBstart
-    ;; jsr plotFirstHalf
-    ;; jsr syncVB
-    ;; jsr render31
-
-    ;; jsr updatePositions
-    ;; ldx #B1 : jsr openBstart
-    ;; jsr plotSecondHalf
-    ;; jsr syncVB
-    ;; jsr render12
-
-    ;; jsr updatePositions
-    ;; ldx #B2 : jsr openBstart
-    ;; jsr plotFirstHalf
-    ;; jsr syncVB
-    ;; jsr render23
-
-    ;; jsr updatePositions
-    ;; ldx #B3 : jsr openBstart
-    ;; jsr plotSecondHalf
-    ;; jsr syncVB
-    ;; jsr render31
+    jsr readKeys
+    jsr updatePositions
+    ldx #B3 : jsr openBstart
+    jsr plotSecondHalf
+    jsr syncVB
+    jsr render31
 
     jmp loop
     }
