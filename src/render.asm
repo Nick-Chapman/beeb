@@ -1,4 +1,4 @@
-
+ 
 ;;; Rework plot and render code to use multiple buffers.
 
 SyncAssert = TRUE
@@ -246,7 +246,7 @@ endmacro
 .init:
     lda #%01111111 : sta system_VIA_interruptEnable ; disable all interrupts
     lda #%10000010 : sta system_VIA_interruptEnable ; enable just VBlank
-	
+    
     ;; start in keys mode
     lda #%00000011 : sta system_VIA_portB ; set bit 3 to 0
     lda #%01111111 : sta system_VIA_dataDirectionA ; (top bit input)
@@ -267,9 +267,7 @@ bufferSize = 200
 .b0: skip bufferSize
 .b1: skip bufferSize
 .b2: skip bufferSize
-.b3: skip bufferSize
-.b4: skip bufferSize
-.buffers: EQUW b0, b1, b2, b3, b4 ; starting addresses
+.buffers: EQUW b0, b1, b2 ; starting addresses
 .buffersEnd:
 numberOfBuffers = (buffersEnd-buffers)/2
 PRINT numberOfBuffers
@@ -353,20 +351,6 @@ endmacro
 
 .masks:
     EQUB &88, &44, &22, &11
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; incremental movement
-
-;; NEW, called from drawOutline    
-.moveLeft:
-    lda theX   : sec : sbc #&80                                          : sta theX
-    lda theX+1 :       sbc   #0 : { cmp #&ff : bne no : lda #159 : .no } : sta theX+1
-    rts
-    
-.moveRight:
-    lda theX   : clc : adc #&80                                        : sta theX
-    lda theX+1 :       adc   #0 : { cmp #160 : bne no : lda #0 : .no } : sta theX+1
-    rts
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -509,20 +493,20 @@ SW = S or W
     bit asSouth : bne south
     jmp ew
 .north:
-    jsr up1
+    jsr up1 ; TODO inline
     jmp ew
 .south:
-    jsr down1
+    jsr down1 ; TODO inline
 .ew:
     lda outlineMotion
     bit asEast : bne east
     bit asWest : bne west
     jmp pr
 .east:
-    jsr right1 ; TODO: inline?
+    jsr right1 ; TODO: inline
     jmp pr
 .west:
-    jsr left1 ; TODO: inline?
+    jsr left1 ; TODO: inline
 .pr:
     lda outlineMotion
     bit invisible : bne next
@@ -548,7 +532,7 @@ SW = S or W
     
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; info
-	
+    
 ;; .debugBufferInfo:
 ;;     Space : ldy #0 : lda offsets,y : jsr printHexA
 ;;     Space : ldy #1 : lda offsets,y : jsr printHexA
@@ -580,10 +564,20 @@ SW = S or W
 .rock2Y skip 2
     
 .initPositions:
-    Copy16i &1000, rock1X
-    Copy16i &1000, rock1Y
-    Copy16i &4000, rock2X
-    Copy16i &4000, rock2Y
+    Copy16i &3000, rock1X
+    Copy16i &6000, rock1Y
+    Copy16i &5000, rock2X
+    Copy16i &9000, rock2Y
+    rts
+
+.moveLeft:
+    lda theX   : sec : sbc #&80                                          : sta theX
+    lda theX+1 :       sbc   #0 : { cmp #&ff : bne no : lda #159 : .no } : sta theX+1
+    rts
+    
+.moveRight:
+    lda theX   : clc : adc #&80                                        : sta theX
+    lda theX+1 :       adc   #0 : { cmp #160 : bne no : lda #0 : .no } : sta theX+1
     rts
 
 .rock1Up: dec rock1Y+1 : rts
@@ -643,7 +637,7 @@ SW = S or W
     Copy16v rock1Y, theY
     jsr calcA
     jmp plotRock
-	
+    
 .plotRock2:
     Copy16v rock2X, theX
     Copy16v rock2Y, theY
@@ -684,9 +678,9 @@ SW = S or W
     rts
     }
     
-B1 = 1
-B2 = 2
-B3 = 3
+B1 = 0
+B2 = 1
+B3 = 2
 
 .render12:
     Ula magenta
