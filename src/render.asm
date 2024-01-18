@@ -1,4 +1,4 @@
- 
+
 ;;; Rework plot and render code to use multiple buffers.
 
 SyncAssert = TRUE
@@ -55,6 +55,8 @@ endmacro
 org &70
 .msgPtr skip 2
 
+.screenP skip 2
+
 .bufO skip 1
 .bufP skip 2
 
@@ -67,10 +69,10 @@ org &70
 .theFY SKIP 1 ; fine-Y   : 0..7
 .theA SKIP 2  ; screen address of the 8x8 char
 
-    
+
 .outlineIndex skip 1
 .outlineMotion skip 1
-    
+
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Start
@@ -83,7 +85,7 @@ org &1100
 
 .spin: jmp spin
 
-    
+
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; printString, printHexA, emit
 
@@ -157,7 +159,7 @@ endmacro
 .keyDownLAST  EQUB 0
 .keyLeftLAST  EQUB 0
 .keyRightLAST EQUB 0
-    
+
 macro PollKey CODE, VAR
     lda #0 : sta VAR
     lda #(-CODE-1) : sta system_VIA_portA : lda system_VIA_portA
@@ -246,7 +248,7 @@ endmacro
 .init:
     lda #%01111111 : sta system_VIA_interruptEnable ; disable all interrupts
     lda #%10000010 : sta system_VIA_interruptEnable ; enable just VBlank
-    
+
     ;; start in keys mode
     lda #%00000011 : sta system_VIA_portB ; set bit 3 to 0
     lda #%01111111 : sta system_VIA_dataDirectionA ; (top bit input)
@@ -262,7 +264,7 @@ endmacro
 
 ;;; TODO: different sizes for different buffers
 ;;; for now, all have same size
-bufferSize = 200
+bufferSize = 255
 
 .b0: skip bufferSize
 .b1: skip bufferSize
@@ -290,9 +292,9 @@ PRINT numberOfBuffers
 ;;; Once we are done filling a buffer, we process from the start anyway!
 ;;; only reason is to see how many writes we made
 ;;; TODO: when we have sep buffers per mask, then we will have multiple 'open' at once
-.closeB: ; X:buf#, bufO (use A)
-    lda bufO : sta offsets,x
-    rts
+;;.closeB: ; X:buf#, bufO (use A)
+;;    lda bufO : sta offsets,x
+;;    rts
 
 .overflow:
     lda bufO : jsr printHexA
@@ -389,7 +391,7 @@ endmacro
     ; wrap line
     { bne no : lda #0 : sta theCX : jsr upA8 : .no }
     rts
-    
+
 .upA8: ; A -- TODO:inline?
     lda theA : sec : sbc #&80 : sta theA
     lda theA+1     : sbc #2   : sta theA+1
@@ -529,10 +531,10 @@ SW = S or W
 .edgeRight: lda keyRightLAST : bne nope : lda keyRight : rts
 .edgeUp: lda keyUpLAST : bne nope : lda keyUp : rts
 .edgeDown: lda keyDownLAST : bne nope : lda keyDown : rts
-    
+
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; info
-    
+
 ;; .debugBufferInfo:
 ;;     Space : ldy #0 : lda offsets,y : jsr printHexA
 ;;     Space : ldy #1 : lda offsets,y : jsr printHexA
@@ -552,7 +554,7 @@ SW = S or W
 ;;     Space : lda theA+1 : jsr printHexA : lda theA : jsr printHexA
 ;;     Ula black
 ;;     rts
-    
+
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; main/loop
 
@@ -562,19 +564,27 @@ SW = S or W
 .rock1Y skip 2
 .rock2X skip 2
 .rock2Y skip 2
-    
+.rock3X skip 2
+.rock3Y skip 2
+.rock4X skip 2
+.rock4Y skip 2
+
 .initPositions:
     Copy16i &3000, rock1X
     Copy16i &6000, rock1Y
     Copy16i &5000, rock2X
     Copy16i &9000, rock2Y
+    Copy16i &2000, rock3X
+    Copy16i &B000, rock3Y
+    Copy16i &4000, rock4X
+    Copy16i &D000, rock4Y
     rts
 
 .moveLeft:
     lda theX   : sec : sbc #&80                                          : sta theX
     lda theX+1 :       sbc   #0 : { cmp #&ff : bne no : lda #159 : .no } : sta theX+1
     rts
-    
+
 .moveRight:
     lda theX   : clc : adc #&80                                        : sta theX
     lda theX+1 :       adc   #0 : { cmp #160 : bne no : lda #0 : .no } : sta theX+1
@@ -610,6 +620,36 @@ SW = S or W
     Copy16v theX, rock2X
     rts
 
+.rock3Up: dec rock3Y+1 : rts
+.rock3Down: inc rock3Y+1 : rts
+
+.rock3Left:
+    Copy16v rock3X, theX
+    jsr moveLeft
+    Copy16v theX, rock3X
+    rts
+
+.rock3Right:
+    Copy16v rock3X, theX
+    jsr moveRight
+    Copy16v theX, rock3X
+    rts
+
+.rock4Up: dec rock4Y+1 : rts
+.rock4Down: inc rock4Y+1 : rts
+
+.rock4Left:
+    Copy16v rock4X, theX
+    jsr moveLeft
+    Copy16v theX, rock4X
+    rts
+
+.rock4Right:
+    Copy16v rock4X, theX
+    jsr moveRight
+    Copy16v theX, rock4X
+    rts
+
 .updatePositions:
     jsr edgeUp : { beq no : jsr rock1Up : .no }
     jsr edgeDown : { beq no : jsr rock1Down : .no }
@@ -619,34 +659,57 @@ SW = S or W
     jsr edgeDown : { beq no : jsr rock2Down : .no }
     jsr edgeLeft : { beq no : jsr rock2Left : .no }
     jsr edgeRight : { beq no : jsr rock2Right : .no }
+    jsr edgeUp : { beq no : jsr rock3Up : .no }
+    jsr edgeDown : { beq no : jsr rock3Down : .no }
+    jsr edgeLeft : { beq no : jsr rock3Left : .no }
+    jsr edgeRight : { beq no : jsr rock3Right : .no }
+    jsr edgeUp : { beq no : jsr rock4Up : .no }
+    jsr edgeDown : { beq no : jsr rock4Down : .no }
+    jsr edgeLeft : { beq no : jsr rock4Left : .no }
+    jsr edgeRight : { beq no : jsr rock4Right : .no }
     rts
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Plot
 
-.plotRock: ;X:buf#
-    {
+.plotRockM: ;X:buf#
     Copy16i mediumRockOutline, SMC_outline+1
-    jsr drawOutline
-    rts
-    }
+    jmp drawOutline
+
+.plotRockS: ;X:buf#
+    Copy16i smallRockOutline, SMC_outline+1
+    jmp drawOutline
+
 
 .plotRock1:
     Copy16v rock1X, theX
     Copy16v rock1Y, theY
     jsr calcA
-    jmp plotRock
-    
+    jmp plotRockS
+
 .plotRock2:
     Copy16v rock2X, theX
     Copy16v rock2Y, theY
     jsr calcA
-    jmp plotRock
+    jmp plotRockS
+
+.plotRock3:
+    Copy16v rock3X, theX
+    Copy16v rock3Y, theY
+    jsr calcA
+    jmp plotRockM
+
+.plotRock4:
+    Copy16v rock4X, theX
+    Copy16v rock4Y, theY
+    jsr calcA
+    jmp plotRockM
 
 .plotFirstHalf:
     Ula blue
     jsr plotRock1
+    jsr plotRock3
     lda #0 : WriteB
     Ula black
     rts
@@ -654,6 +717,7 @@ SW = S or W
 .plotSecondHalf:
     Ula blue
     jsr plotRock2
+    jsr plotRock4
     lda #0 : WriteB
     Ula black
     rts
@@ -664,20 +728,47 @@ SW = S or W
 
 .renderWithEor: ; X:buf#
     {
-    jsr selectBuffer
-    ldy #0 ; read from start
+    ;; V1/2
+    ;;jsr selectBuffer
+    ;;ldy #0 ; read from start
+
+    txa : asl a : tay
+    lda buffers,   y : sta smc1+1 : sta smc2+1 : sta smc3+1
+    lda buffers+1, y : sta smc1+2 : sta smc2+2 : sta smc3+2
+
+    ldx #0
+    ldy #0
 .loop:
-    ;Emit 'R'
-    lda (bufP),y : beq done : iny : sta r+2 : sta w+2
-    lda (bufP),y            : iny : sta r+1 : sta w+1
-    lda (bufP),y            : iny
-    .r eor &7777 ;; TODO: use y-indexed; avoid SMC ?
-    .w sta &7777
+    ;; V1...
+    ;; lda (bufP),y : beq done : iny : sta r+2 : sta w+2
+    ;; lda (bufP),y            : iny : sta r+1 : sta w+1
+    ;; lda (bufP),y            : iny
+    ;; .r eor &7777 ;; TODO: use y-indexed; avoid SMC ?
+    ;; .w sta &7777
+
+    ;; V2...
+    ;; lda (bufP),y : beq done : iny : sta screenP+1
+    ;; lda (bufP),y            : iny : sta screenP
+    ;; lda (bufP),y            : iny
+    ;; sty restoreY+1
+    ;; ldy #0
+    ;; eor (screenP),y
+    ;; sta (screenP),y
+    ;; .restoreY : ldy #&77
+
+    ;; V3... quicker!
+    .smc1 : lda &7777,x : beq done : inx : sta screenP+1
+    .smc2 : lda &7777,x            : inx : sta screenP
+    .smc3 : lda &7777,x            : inx
+
+    eor (screenP),y
+    sta (screenP),y
+
     jmp loop
 .done:
     rts
     }
-    
+
 B1 = 0
 B2 = 1
 B3 = 2
