@@ -1,6 +1,39 @@
 
 ;;; Objects, with render loop and synced update
 
+;;; DONE
+;;; - control rocks with arrows (tab/caps - select arrow-lock)
+;;; - tab/shift - toggle rock activeness/visibility (last/this bit)
+
+;;; TODO
+;;; - reinstate drawing: unplot/plot, consulting this/last active-bit
+;;; - position of selected object(s) controlled by arrows
+;;; - different outlines: medium, small rock
+;;; - debug: show frames-since-last-rendered per object
+;;; - random position when spawn (become active)
+;;; - object/outline for ship; render in yellow
+;;; - objects/outlines for bullets; render in red
+
+;;; - object hit bit, dev: tab/return (no longer need debug/dev control of activeness)
+;;; - hit logic: hit object becomes inactive; other objects activated
+;;; - child rock inherits position(+ random delta) from parent
+;;; - encode large rock outline
+;;; - full rock destruction logic: large -> 2medium -> 4small
+
+;;; - collision detection in render phase: controls hit bit
+;;; - full collision logic: bullet kills ship/rock (& itself); rock kills ship
+
+;;; - rock movement controlled by speed
+;;; - random speed when spawned (become active)
+;;; - child rock inherits speed(+ random delta) from parent
+
+;;; - reinstate ship controls: thrust/direction
+;;; - bullet firing (spawn) & bullet death on timer (state: frameCounter when spawned)
+
+;;; - sounds
+;;; - scoring
+;;; - game logic: start, level cleared, gameover
+
 screenStart = &3000
 
 ;;; MOS vectors & zero page use
@@ -348,7 +381,7 @@ endmacro
     rti
 .vblank:
     sta system_VIA_interruptFlags ; ack
-    ;;lda vsyncNotify : bne crash ;; TODO
+    ;;lda vsyncNotify : bne crash ;; TODO: like to reinstate
     inc vsyncNotify
     lda interruptSaveA
     rti
