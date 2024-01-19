@@ -65,9 +65,6 @@ org &1100
 
 .spin: jmp spin
 
-;;; increase the image size, so the switch-on beep has time to finish while loading
-skip 1000
-
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Printing
 

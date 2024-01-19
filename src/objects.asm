@@ -8,21 +8,20 @@
 ;;; - position of selected object(s) controlled by arrows
 ;;; - different outlines: medium, small rock
 ;;; - debug: show frames-since-last-rendered per object
+;;; - object/outline for ship; render in yellow
+;;; - object/outline for bullets; render in red
+;;; - object hit bit: updated by collision detection in render phase
+;;; - collision logic: bullet kills ship/rock (& itself); rock kills ship
 
 ;;; TODO
-;;; - random position when spawn (become active)
-;;; - object/outline for ship; render in yellow
-;;; - objects/outlines for bullets; render in red
+;;; - collision logic: rock must not collide with itself!
 
-;;; - object hit bit, dev: tab/return (no longer need debug/dev control of activeness)
 ;;; - hit logic: hit object becomes inactive; other objects activated
 ;;; - child rock inherits position(+ random delta) from parent
 ;;; - encode large rock outline
 ;;; - full rock destruction logic: large -> 2medium -> 4small
 
-;;; - collision detection in render phase: controls hit bit
-;;; - full collision logic: bullet kills ship/rock (& itself); rock kills ship
-
+;;; - random position when spawn (become active)
 ;;; - rock movement controlled by speed
 ;;; - random speed when spawned (become active)
 ;;; - child rock inherits speed(+ random delta) from parent
@@ -39,10 +38,6 @@
 interruptSaveA = &fc
 irq1v = &204
 
-;;; Mode-1 screen
-screenStart = &3000
-screenEnd = &8000
-
 ;;; Sheila
 ula                         = &fe21
 system_VIA_portB            = &fe40
@@ -55,6 +50,15 @@ system_VIA_portA            = &fe4f
 ;;; MOS entry points
 osasci = &ffe3
 oswrch = &ffee
+
+;;; Mode-1
+screenStart = &3000
+screenEnd = &8000
+
+cyanMask = &ff
+yellowMask = &f0
+redMask = &0f
+blackMask = &00
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Copy
@@ -296,26 +300,11 @@ endmacro
     Space
     lda #'.' : { ldy keyTab  : beq no : lda #'T' : .no } : jsr emit
     Space
-    lda #'.' : { ldy keyLeft : beq no : lda #'L' : .no } : jsr emit
-    lda #'.' : { ldy keyRight: beq no : lda #'R' : .no } : jsr emit
     lda #'.' : { ldy keyUp   : beq no : lda #'U' : .no } : jsr emit
     lda #'.' : { ldy keyDown : beq no : lda #'D' : .no } : jsr emit
+    lda #'.' : { ldy keyLeft : beq no : lda #'L' : .no } : jsr emit
+    lda #'.' : { ldy keyRight: beq no : lda #'R' : .no } : jsr emit
     rts
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; outlines
-
-N = 1
-S = 2
-E = 4
-W = 8
-INVISIBLE = 16
-START = 32
-
-NE = N or E
-SE = S or E
-NW = N or W
-SW = S or W
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Calculate screen address from X/Y (ORIG, and faster!)
@@ -454,7 +443,28 @@ SW = S or W
     rts }
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; draw
+;;; Outline movement control
+
+N = 1
+S = 2
+E = 4
+W = 8
+INVISIBLE = 16
+START = 32
+
+;;;macro Center : EQUB START : endmacro ; see center of rotation
+;;;macro Center : EQUB INVISIBLE : endmacro ; DONT see center of rotation
+macro Center : endmacro  ; DONT see center of rotation (and dont even waste a byte!)
+
+NE = N or E
+SE = S or E
+NW = N or W
+SW = S or W
+
+Ni = N or INVISIBLE
+Si = S or INVISIBLE
+Wi = W or INVISIBLE
+SWi = SW or INVISIBLE
 
 .invisible equb INVISIBLE
 .asNorth equb N
@@ -462,17 +472,20 @@ SW = S or W
 .asEast equb E
 .asWest equb W
 
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; draw
+
 .outlineIndex skip 1
 .outlineMotion skip 1
 
 .drawOutline: {
-    stx saveX+1
     jsr calcA
-    ldx #0
+    lda #0 : sta isHit,x
+    ldy #0
 .loop:
-    .*SMC_outline : lda &7777, x : beq rts
-    inx
-    stx outlineIndex
+    .*SMC_outline : lda &7777, y : beq rts
+    iny
+    sty outlineIndex
     sta outlineMotion
     bit asNorth : bne north
     bit asSouth : bne south
@@ -495,16 +508,34 @@ SW = S or W
 .pr:
     lda outlineMotion
     bit invisible : bne next
-    ldy theFX
-    lda masks,y
-    ldy #0
-    eor (theA),y
-    sta (theA),y
+
+    ;; TODO: optimize this logic better...
+    ;; TODO: avoid all collision detection when unplotting
+
+    ;; get/stash the existing byte at this screen address
+    ldy #0 : lda (theA),y
+    sta existing+1
+
+	;; get the fine-x pixel-plot-position mask
+    ldy theFX : lda masks,y
+    ;; and combine with a mask for the colours we consider as hitting us
+    .*SMC_hitMask : and #00 ; default, wont detect hits
+    bit existing+1
+    { beq noHit : lda #1 : sta isHit,x : .noHit }
+
+	;; get the fine-x pixel-plot-position mask (again)
+    ldy theFX : lda masks,y
+    ;; combine this with the colour mask for the colour we wish to plot
+    .*SMC_colourMask : and #77
+
+    ;; eor the byte to be plotted with the existing byte
+    .existing : eor #77
+    ldy #0 : sta (theA),y
+
 .next:
-    ldx outlineIndex
+    ldy outlineIndex
     jmp loop
 .rts:
-    .saveX : ldx #&77
     rts
     }
 
@@ -535,9 +566,12 @@ SW = S or W
 NumberObjects = 8
 
 .myOutline skip 2*NumberObjects
+.myColour skip NumberObjects
 
 .isActive skip NumberObjects ; state that is desired for the object
 .isArrowLocked skip NumberObjects ; move using arrows for dev/debuf
+
+.isHit skip NumberObjects ; set during render phase
 
 ;; current position (double prec)
 .obX skip 2*NumberObjects
@@ -563,13 +597,27 @@ endmacro
     rts
     }
 
+;;.moveUp: inc obY+1, y : rts ;; TODO: inc only supports indexing with x!
+.moveUp:   lda obY+1, y : sec : sbc #1 : sta obY+1, y : rts
+.moveDown: lda obY+1, y : clc : adc #1 : sta obY+1, y : rts
+
+.moveLeft:
+    lda obX, y   : sec : sbc #&80                                          : sta obX, y
+    lda obX+1, y :       sbc   #0 : { cmp #&ff : bne no : lda #159 : .no } : sta obX+1, y
+    rts
+
+.moveRight:
+    lda obX, y   : clc : adc #&80                                        : sta obX, y
+    lda obX+1, y :       adc   #0 : { cmp #160 : bne no : lda #0 : .no } : sta obX+1, y
+    rts
+
 .updatePositionIfArrowLocked: {
     lda isArrowLocked, x : beq no
     txa : asl a : tay
-    CheckPress keyLeft  : { beq no : lda obX+1, y : sec : sbc #1 : sta obX+1, y : : .no }
-    CheckPress keyRight : { beq no : lda obX+1, y : clc : adc #1 : sta obX+1, y : : .no }
-    CheckPress keyUp    : { beq no : lda obY+1, y : sec : sbc #1 : sta obY+1, y : : .no }
-    CheckPress keyDown  : { beq no : lda obY+1, y : clc : adc #1 : sta obY+1, y : : .no }
+    CheckPress keyUp    : { beq no : jsr moveUp    : .no }
+    CheckPress keyDown  : { beq no : jsr moveDown  : .no }
+    CheckPress keyLeft  : { beq no : jsr moveLeft  : .no }
+    CheckPress keyRight : { beq no : jsr moveRight : .no }
 .no:
     rts
     }
@@ -604,6 +652,10 @@ endmacro
     lda frameCounter : sec : sbc lastRenderedFrame, x : jsr printHexA
     Space : lda #'.' : { cpx selectedN : bne no : lda #'*' : .no } : jsr emit
     Space : lda #'.' : { ldy isArrowLocked, x : beq no : lda #'M' : .no } : jsr emit
+
+    Space : lda #'.' : { ldy isHit, x : beq no : lda #'H' : .no } : jsr emit
+    ;;Space : lda isHit, x : jsr printHexA
+
     ;;Space : lda #'0' : { ldy isActive, x : beq no : lda #'1' : .no } : jsr emit
     ;;lda #'0' : { ldy lastActive, x : beq no : lda #'1' : .no } : jsr emit
     rts
@@ -611,26 +663,32 @@ endmacro
 .renderObject: {
     ;;Position 1,30 : Emit 'r' : txa : jsr printHexA
     jsr debugObject
-    ;; Unplot if we were active when last rendered
-    lda lastActive, x : beq afterUnplot
+    ;; set colour & outline
     txa : asl a : tay
     Copy16yv myOutline, SMC_outline+1
+    lda myColour, x : sta SMC_colourMask+1
+
+    ;; unplot (if we were active when last rendered)
+    lda lastActive, x : beq afterUnplot
     Copy16yv lastX, theX
     Copy16yv lastY, theY
+    lda #blackMask : sta SMC_hitMask+1 ; no hit detection when unplotting
     jsr drawOutline
 .afterUnplot:
-    ;; (re)plot if we are to be active now
+
+    ;; (re)plot if (we are to be active now)
     lda isActive, x : beq afterPlot
     txa : asl a : tay
-    Copy16yv myOutline, SMC_outline+1
     Copy16yv obX, theX
     Copy16yv obY, theY
+    lda #redMask : sta SMC_hitMask+1 ; hit detection when plotting
     jsr drawOutline
     ;; remember position at which we rendered
     txa : asl a : tay
     Copy16yy obX, lastX
     Copy16yy obY, lastY
 .afterPlot:
+
     ;; remember our activeness state
     lda isActive, x : sta lastActive, x
     lda frameCounter : sta lastRenderedFrame, x
@@ -666,7 +724,7 @@ endmacro
     rti
 .vblank:
     sta system_VIA_interruptFlags ; ack
-    lda vsyncNotify : bne crash ;; TODO: reinstate when have less debug
+    lda vsyncNotify : bne crash
     inc vsyncNotify
     lda interruptSaveA
     rti
@@ -727,15 +785,36 @@ endmacro
     equb START, E,E,NE,NE,E,E,E,E,SE,SE,E,SE,SE, SW,SW,SW,SE,SE,SE,S,S,SW,SW,SW,W,W
     equb NW,NW,SW,SW,W,W,W, NW,NW,NW,NE,NE,NW,NW,NW,N,N,NE,NE, 0
 
+.shipOutline1: Center
+    equb Si,Si, S,W,W,W,SW,N,N, NE,N,N,NE,N,N,NE,N,N,NE, SE,S,S,SE,S,S,SE,S,S,SE,S,S, NW,W,W, 0
+
+.bulletOutline:
+    equb START, E, SW, NW, NE, 0
+
 .createRockS:
     txa : asl a : tay
     Copy16iy smallRockOutline, myOutline
+    lda #cyanMask : sta myColour, x
     jmp createObject
 
 .createRockM:
     txa : asl a : tay
     Copy16iy mediumRockOutline, myOutline
+    lda #cyanMask : sta myColour, x
     jmp createObject
+
+.createShip:
+    txa : asl a : tay
+    Copy16iy shipOutline1, myOutline
+    lda #yellowMask : sta myColour, x
+    jmp createObject
+
+.createBullet:
+    txa : asl a : tay
+    Copy16iy bulletOutline, myOutline
+    lda #redMask : sta myColour, x
+    jmp createObject
+    rts
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Game init.
@@ -744,10 +823,9 @@ endmacro
     ;;ldx #0 : jsr createRockM
     ldx #1 : jsr createRockS
     ldx #2 : jsr createRockM
-    ldx #3 : jsr createRockM
-    ldx #4 : jsr createRockS
-    ldx #5 : jsr createRockS
-    ldx #6 : jsr createRockM
+    ldx #3 : jsr createShip
+    ldx #4 : jsr createBullet
+    ldx #5 : jsr createRockM
     rts
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
