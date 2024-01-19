@@ -12,13 +12,13 @@
 ;;; - object/outline for bullets; render in red
 ;;; - object hit bit: updated by collision detection in render phase
 ;;; - collision logic: bullet kills ship/rock (& itself); rock kills ship
+;;; - large rock outline. woohoo!
 
 ;;; TODO
 ;;; - collision logic: rock must not collide with itself!
 
 ;;; - hit logic: hit object becomes inactive; other objects activated
 ;;; - child rock inherits position(+ random delta) from parent
-;;; - encode large rock outline
 ;;; - full rock destruction logic: large -> 2medium -> 4small
 
 ;;; - random position when spawn (become active)
@@ -785,6 +785,13 @@ endmacro
     equb START, E,E,NE,NE,E,E,E,E,SE,SE,E,SE,SE, SW,SW,SW,SE,SE,SE,S,S,SW,SW,SW,W,W
     equb NW,NW,SW,SW,W,W,W, NW,NW,NW,NE,NE,NW,NW,NW,N,N,NE,NE, 0
 
+.largeRockOutline:
+    equb START
+    equb E,E,E,E,E,E,E,E, SE,SE,SE,SE, E,E,E,E,E,E, SE,SE,SE,SE,SE, SW,SW,SW,SW,SW, SE,SE,SE, S,S
+    equb SW,SW,SW,SW,SW,SW,SW, W,W,W,W,W, NW,NW,NW,NW, SW,SW,SW, W,W,W, NW,NW,NW
+    equb N,N,N,N, NW,NW, N,N,N,N, NE,NE,NE,NE, NW,NW,NW, NE,NE,NE,NE, 0
+
+
 .shipOutline1: Center
     equb Si,Si, S,W,W,W,SW,N,N, NE,N,N,NE,N,N,NE,N,N,NE, SE,S,S,SE,S,S,SE,S,S,SE,S,S, NW,W,W, 0
 
@@ -800,6 +807,12 @@ endmacro
 .createRockM:
     txa : asl a : tay
     Copy16iy mediumRockOutline, myOutline
+    lda #cyanMask : sta myColour, x
+    jmp createObject
+
+.createRockL:
+    txa : asl a : tay
+    Copy16iy largeRockOutline, myOutline
     lda #cyanMask : sta myColour, x
     jmp createObject
 
@@ -821,11 +834,12 @@ endmacro
 
 .initObjects:
     ;;ldx #0 : jsr createRockM
-    ldx #1 : jsr createRockS
-    ldx #2 : jsr createRockM
-    ldx #3 : jsr createShip
-    ldx #4 : jsr createBullet
+    ldx #1 : jsr createRockL
+    ldx #2 : jsr createRockL
+    ldx #3 : jsr createBullet
+    ldx #4 : jsr createShip
     ldx #5 : jsr createRockM
+    ldx #6 : jsr createRockS
     rts
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
