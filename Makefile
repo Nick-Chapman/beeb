@@ -1,7 +1,9 @@
 
-top: build-all
+top: _build/objects.ssd
 
-run: run-nosync
+all: build-all
+
+run: run-objects
 
 game2view: src/game2.asm
 	beebasm -v -i $< -do /dev/null -boot Code
@@ -14,6 +16,7 @@ build-all: _build $(ssds)
 
 run-%: _build/%.ssd
 	b-em $<
+	#b-em -sp2 $< # 25% speed
 
 _build/%.ssd: src/%.asm Makefile
 	@ echo Building $<
