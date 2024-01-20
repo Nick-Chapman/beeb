@@ -11,7 +11,7 @@
 ;;; - object/outline for ship; render in yellow
 ;;; - object/outline for bullets; render in red
 ;;; - object hit bit: updated by collision detection in render phase
-;;; - collision logic: bullet kills ship/rock (& itself); rock kills ship
+;;; - collision logic: bullet hits ship/rock (& itself); rock hits ship
 ;;; - large rock outline. woohoo!
 
 ;;; TODO
@@ -60,6 +60,8 @@ yellowMask = &f0
 redMask = &0f
 blackMask = &00
 
+NUM = 8 ;; Number of objects, indexed consitently using X-register
+
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Copy
 
@@ -70,24 +72,25 @@ macro Copy16iv I,V
     lda #HI(I) : sta V+1
 endmacro
 
-macro Copy16iy I,V
-    lda #LO(I) : sta V, y
-    lda #HI(I) : sta V+1, y
-endmacro
-
 macro Copy16v A,B
     lda A   : sta B
     lda A+1 : sta B+1
 endmacro
-
-macro Copy16yv A,B
-    lda A, y   : sta B
-    lda A+1, y : sta B+1
+    
+;;; Per-object tables of two-byte values are stored with with split LO and HI bytes
+macro Copy16ix I,V
+    lda #LO(I) : sta V,               x
+    lda #HI(I) : sta V+NUM, x
 endmacro
 
-macro Copy16yy A,B
-    lda A, y   : sta B, y
-    lda A+1, y : sta B+1, y
+macro Copy16xv A,B
+    lda A,     x : sta B
+    lda A+NUM, x : sta B+1
+endmacro
+
+macro Copy16xx A,B
+    lda A, x     : sta B, x
+    lda A+NUM, x : sta B+NUM, x
 endmacro
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -386,12 +389,12 @@ endmacro
     { bne no : lda #0 : sta theCX : jsr upA8 : .no }
     rts
 
-.upA8: ; A -- TODO:inline?
+.upA8: ; A
     lda theA : sec : sbc #&80 : sta theA
     lda theA+1     : sbc #2   : sta theA+1
     rts
 
-.downA8: ; A -- TODO:inline?
+.downA8: ; A
     lda theA : clc : adc #&80 : sta theA
     lda theA+1     : adc #2   : sta theA+1
     rts
@@ -548,7 +551,7 @@ SWi = SW or INVISIBLE
 
 .stepSelectedObject:
     inc selectedN
-    lda selectedN : cmp #NumberObjects : { bne no : lda #0 : sta selectedN : .no }
+    lda selectedN : cmp #NUM : { bne no : lda #0 : sta selectedN : .no }
     rts
 
 .updateSelectedObjectOnTab:
@@ -563,19 +566,17 @@ SWi = SW or INVISIBLE
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Objects... state tables & update
 
-NumberObjects = 8
+.myOutline skip 2*NUM
+.myColour skip NUM
 
-.myOutline skip 2*NumberObjects
-.myColour skip NumberObjects
+.isActive skip NUM ; state that is desired for the object
+.isArrowLocked skip NUM ; move using arrows for dev/debuf
 
-.isActive skip NumberObjects ; state that is desired for the object
-.isArrowLocked skip NumberObjects ; move using arrows for dev/debuf
-
-.isHit skip NumberObjects ; set during render phase
+.isHit skip NUM ; set during render phase
 
 ;; current position (double prec)
-.obX skip 2*NumberObjects
-.obY skip 2*NumberObjects
+.obX skip 2*NUM
+.obY skip 2*NUM
 
 macro ToggleA
 	eor #1 : and #1
@@ -597,23 +598,21 @@ endmacro
     rts
     }
 
-;;.moveUp: inc obY+1, y : rts ;; TODO: inc only supports indexing with x!
-.moveUp:   lda obY+1, y : sec : sbc #1 : sta obY+1, y : rts
-.moveDown: lda obY+1, y : clc : adc #1 : sta obY+1, y : rts
+.moveUp:   dec obY+NUM, x : rts
+.moveDown: inc obY+NUM, x : rts
 
 .moveLeft:
-    lda obX, y   : sec : sbc #&80                                          : sta obX, y
-    lda obX+1, y :       sbc   #0 : { cmp #&ff : bne no : lda #159 : .no } : sta obX+1, y
+    lda obX, x     : sec : sbc #&80                                          : sta obX, x
+    lda obX+NUM, x :       sbc   #0 : { cmp #&ff : bne no : lda #159 : .no } : sta obX+NUM, x
     rts
 
 .moveRight:
-    lda obX, y   : clc : adc #&80                                        : sta obX, y
-    lda obX+1, y :       adc   #0 : { cmp #160 : bne no : lda #0 : .no } : sta obX+1, y
+    lda obX,     x : clc : adc #&80                                          : sta obX, x
+    lda obX+NUM, x :       adc   #0 : { cmp #160 : bne no : lda #0   : .no } : sta obX+NUM, x
     rts
 
 .updatePositionIfArrowLocked: {
     lda isArrowLocked, x : beq no
-    txa : asl a : tay
     CheckPress keyUp    : { beq no : jsr moveUp    : .no }
     CheckPress keyDown  : { beq no : jsr moveDown  : .no }
     CheckPress keyLeft  : { beq no : jsr moveLeft  : .no }
@@ -633,13 +632,13 @@ endmacro
 ;;; Render object
 
 ;;; object was active on last render, so we drew it on screen
-.lastActive skip NumberObjects
+.lastActive skip NUM
 
 ;;; position we drew object on screen (double prec)
-.lastX skip 2*NumberObjects
-.lastY skip 2*NumberObjects ; TODO: dont need HI-byte here
+.lastX skip 2*NUM
+.lastY skip 2*NUM ; TODO: dont need/use HI-byte
 
-.lastRenderedFrame skip NumberObjects
+.lastRenderedFrame skip NUM
 
 macro DebugPositionForObject
     lda #31 : jsr osasci
@@ -652,10 +651,7 @@ endmacro
     lda frameCounter : sec : sbc lastRenderedFrame, x : jsr printHexA
     Space : lda #'.' : { cpx selectedN : bne no : lda #'*' : .no } : jsr emit
     Space : lda #'.' : { ldy isArrowLocked, x : beq no : lda #'M' : .no } : jsr emit
-
     Space : lda #'.' : { ldy isHit, x : beq no : lda #'H' : .no } : jsr emit
-    ;;Space : lda isHit, x : jsr printHexA
-
     ;;Space : lda #'0' : { ldy isActive, x : beq no : lda #'1' : .no } : jsr emit
     ;;lda #'0' : { ldy lastActive, x : beq no : lda #'1' : .no } : jsr emit
     rts
@@ -664,29 +660,26 @@ endmacro
     ;;Position 1,30 : Emit 'r' : txa : jsr printHexA
     jsr debugObject
     ;; set colour & outline
-    txa : asl a : tay
-    Copy16yv myOutline, SMC_outline+1
+    Copy16xv myOutline, SMC_outline+1
     lda myColour, x : sta SMC_colourMask+1
 
     ;; unplot (if we were active when last rendered)
     lda lastActive, x : beq afterUnplot
-    Copy16yv lastX, theX
-    Copy16yv lastY, theY
+    Copy16xv lastX, theX
+    Copy16xv lastY, theY
     lda #blackMask : sta SMC_hitMask+1 ; no hit detection when unplotting
     jsr drawOutline
 .afterUnplot:
 
     ;; (re)plot if (we are to be active now)
     lda isActive, x : beq afterPlot
-    txa : asl a : tay
-    Copy16yv obX, theX
-    Copy16yv obY, theY
+    Copy16xv obX, theX
+    Copy16xv obY, theY
     lda #redMask : sta SMC_hitMask+1 ; hit detection when plotting
     jsr drawOutline
     ;; remember position at which we rendered
-    txa : asl a : tay
-    Copy16yy obX, lastX
-    Copy16yy obY, lastY
+    Copy16xx obX, lastX
+    Copy16xx obY, lastY
 .afterPlot:
 
     ;; remember our activeness state
@@ -694,22 +687,6 @@ endmacro
     lda frameCounter : sta lastRenderedFrame, x
     rts
     }
-
-.createObject:
-    ;; set generic update/render behaviour
-    txa : asl a : tay
-    Copy16iy updateObject, updateF
-    Copy16iy renderObject, renderF
-    ;; start everything active
-    inc isActive, x
-    ;; object 2 is initially controlled by arrows
-    { cpx #2 : bne no : inc isArrowLocked, x : .no }
-    ;; setup initial position based on obj#
-    txa : asl a : tay : asl a : asl a : asl a
-    sta obX+1, y
-    asl a
-    sta obY+1, y
-    rts
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; IRQ, VBlank syncing
@@ -735,15 +712,14 @@ endmacro
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; onSync
 
-.updateF skip 2*NumberObjects
+.updateF skip 2*NUM
 .updateN: skip 1
 
 .updateObjects: {
     lda #0 : sta updateN
 .loop:
-    ldx updateN : cpx #NumberObjects : { bne no : rts : .no }
-    txa : asl a : tay ;; TODO: can we avoid this pain everywhere
-    Copy16yv updateF, dispatch+1
+    ldx updateN : cpx #NUM : { bne no : rts : .no }
+    Copy16xv updateF, dispatch+1
     .dispatch : jsr &7777
     inc updateN
     jmp loop
@@ -762,21 +738,20 @@ endmacro
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Render loop.
 
-.renderF skip 2*NumberObjects
+.renderF skip 2*NUM
 .renderN: skip 1
 .renderLoop: {
 .loop:
     lda vsyncNotify : { beq no : dec vsyncNotify : jsr onSync : .no }
-    lda renderN : cmp #NumberObjects : { bne no : lda #0 : sta renderN : .no }
-    tax : asl a : tay
-    Copy16yv renderF, dispatch+1
+    ldx renderN : cpx #NUM : { bne no : ldx #0 : stx renderN : .no }
+    Copy16xv renderF, dispatch+1
     .dispatch : jsr &7777
     inc renderN
     jmp loop
     }
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; Rocks
+;;; outlines
 
 .smallRockOutline:
     equb START,E,SE,NE,E,SE,S, SE,S,SW,S,SW, W,NW,SW,W, NW,NE,NW,NW,N,NE, 0
@@ -791,40 +766,52 @@ endmacro
     equb SW,SW,SW,SW,SW,SW,SW, W,W,W,W,W, NW,NW,NW,NW, SW,SW,SW, W,W,W, NW,NW,NW
     equb N,N,N,N, NW,NW, N,N,N,N, NE,NE,NE,NE, NW,NW,NW, NE,NE,NE,NE, 0
 
-
 .shipOutline1: Center
     equb Si,Si, S,W,W,W,SW,N,N, NE,N,N,NE,N,N,NE,N,N,NE, SE,S,S,SE,S,S,SE,S,S,SE,S,S, NW,W,W, 0
 
 .bulletOutline:
     equb START, E, SW, NW, NE, 0
 
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; create
+
+.createObject:
+    ;; set generic update/render behaviour
+    Copy16ix renderObject, renderF
+    Copy16ix updateObject, updateF
+    ;; start everything active
+    inc isActive, x
+    ;; object 2 is initially controlled by arrows
+    { cpx #2 : bne no : inc isArrowLocked, x : .no }
+    ;; setup initial HI-byte of position, based on obj#
+    txa : asl a : asl a : asl a : asl a
+    sta obX+NUM, x
+    asl a
+    sta obY+NUM, x
+    rts
+
 .createRockS:
-    txa : asl a : tay
-    Copy16iy smallRockOutline, myOutline
+    Copy16ix smallRockOutline, myOutline
     lda #cyanMask : sta myColour, x
     jmp createObject
 
 .createRockM:
-    txa : asl a : tay
-    Copy16iy mediumRockOutline, myOutline
+    Copy16ix mediumRockOutline, myOutline
     lda #cyanMask : sta myColour, x
     jmp createObject
 
 .createRockL:
-    txa : asl a : tay
-    Copy16iy largeRockOutline, myOutline
+    Copy16ix largeRockOutline, myOutline
     lda #cyanMask : sta myColour, x
     jmp createObject
 
 .createShip:
-    txa : asl a : tay
-    Copy16iy shipOutline1, myOutline
+    Copy16ix shipOutline1, myOutline
     lda #yellowMask : sta myColour, x
     jmp createObject
 
 .createBullet:
-    txa : asl a : tay
-    Copy16iy bulletOutline, myOutline
+    Copy16ix bulletOutline, myOutline
     lda #redMask : sta myColour, x
     jmp createObject
     rts
