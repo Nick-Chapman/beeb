@@ -76,7 +76,7 @@ macro Copy16v A,B
     lda A   : sta B
     lda A+1 : sta B+1
 endmacro
-    
+
 ;;; Per-object tables of two-byte values are stored with with split LO and HI bytes
 macro Copy16ix I,V
     lda #LO(I) : sta V,               x
@@ -510,37 +510,19 @@ SWi = SW or INVISIBLE
     jsr left1
 .pr:
     lda outlineMotion
-    bit invisible : bne next
-
-    ;; TODO: optimize this logic better...
-    ;; TODO: avoid all collision detection when unplotting
-
-    ;; get/stash the existing byte at this screen address
-    ldy #0 : lda (theA),y
-    sta existing+1
-
-	;; get the fine-x pixel-plot-position mask
-    ldy theFX : lda masks,y
-    ;; and combine with a mask for the colours we consider as hitting us
-    .*SMC_hitMask : and #00 ; default, wont detect hits
-    bit existing+1
-    { beq noHit : lda #1 : sta isHit,x : .noHit }
-
-	;; get the fine-x pixel-plot-position mask (again)
-    ldy theFX : lda masks,y
-    ;; combine this with the colour mask for the colour we wish to plot
-    .*SMC_colourMask : and #77
-
-    ;; eor the byte to be plotted with the existing byte
-    .existing : eor #77
-    ldy #0 : sta (theA),y
-
-.next:
+    bit invisible : bne nextPoint
+    .*SMC_onPoint : jmp &7777
+.*nextPoint:
     ldy outlineIndex
     jmp loop
 .rts:
     rts
     }
+
+macro SetOutlineAndOnPoint
+    Copy16xv myOutline, SMC_outline+1
+    Copy16xv myOnPoint, SMC_onPoint+1
+endmacro
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Global state
@@ -565,9 +547,6 @@ SWi = SW or INVISIBLE
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Objects... state tables & update
-
-.myOutline skip 2*NUM
-.myColour skip NUM
 
 .isActive skip NUM ; state that is desired for the object
 .isArrowLocked skip NUM ; move using arrows for dev/debuf
@@ -659,29 +638,22 @@ endmacro
 .renderObject: {
     ;;Position 1,30 : Emit 'r' : txa : jsr printHexA
     jsr debugObject
-    ;; set colour & outline
-    Copy16xv myOutline, SMC_outline+1
-    lda myColour, x : sta SMC_colourMask+1
-
+    SetOutlineAndOnPoint
     ;; unplot (if we were active when last rendered)
     lda lastActive, x : beq afterUnplot
     Copy16xv lastX, theX
     Copy16xv lastY, theY
-    lda #blackMask : sta SMC_hitMask+1 ; no hit detection when unplotting
     jsr drawOutline
 .afterUnplot:
-
     ;; (re)plot if (we are to be active now)
     lda isActive, x : beq afterPlot
     Copy16xv obX, theX
     Copy16xv obY, theY
-    lda #redMask : sta SMC_hitMask+1 ; hit detection when plotting
     jsr drawOutline
     ;; remember position at which we rendered
     Copy16xx obX, lastX
     Copy16xx obY, lastY
 .afterPlot:
-
     ;; remember our activeness state
     lda isActive, x : sta lastActive, x
     lda frameCounter : sta lastRenderedFrame, x
@@ -772,6 +744,79 @@ endmacro
 .bulletOutline:
     equb START, E, SW, NW, NE, 0
 
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; colour choice & collision detection (onPoint)
+
+.myOutline skip 2*NUM
+.myOnPoint skip 2*NUM
+
+.yellow_onPoint: {
+    ;; get/stash the existing byte at this screen address
+    ldy #0 : lda (theA),y
+    sta existing+1
+	;; get the fine-x pixel-plot-position mask
+    ldy theFX : lda masks,y
+    ;; and combine with a mask for the colours we consider as hitting us
+    ;;.*SMC_hitMask
+    and #&ff ; detect hits with anything
+    bit existing+1
+    { beq noHit : lda #1 : sta isHit,x : .noHit }
+	;; get the fine-x pixel-plot-position mask (again)
+    ldy theFX : lda masks,y
+    ;; combine this with the colour mask for the colour we wish to plot
+    ;;.*SMC_colourMask
+    and #yellowMask ;redMask
+    ;; eor the byte to be plotted with the existing byte
+    .existing : eor #77
+    ldy #0 : sta (theA),y
+    jmp nextPoint ; not rts!
+    }
+
+.red_onPoint: {
+    ;; get/stash the existing byte at this screen address
+    ldy #0 : lda (theA),y
+    sta existing+1
+	;; get the fine-x pixel-plot-position mask
+    ldy theFX : lda masks,y
+    ;; and combine with a mask for the colours we consider as hitting us
+    ;;.*SMC_hitMask
+    and #&ff ; detect hits with anything
+    bit existing+1
+    { beq noHit : lda #1 : sta isHit,x : .noHit }
+	;; get the fine-x pixel-plot-position mask (again)
+    ldy theFX : lda masks,y
+    ;; combine this with the colour mask for the colour we wish to plot
+    ;;.*SMC_colourMask
+    and #redMask
+    ;; eor the byte to be plotted with the existing byte
+    .existing : eor #77
+    ldy #0 : sta (theA),y
+    jmp nextPoint ; not rts!
+    }
+
+.cyan_onPoint: {
+    ;; get/stash the existing byte at this screen address
+    ldy #0 : lda (theA),y
+    sta existing+1
+	;; get the fine-x pixel-plot-position mask
+    ldy theFX : lda masks,y
+    ;; and combine with a mask for the colours we consider as hitting us
+    ;;.*SMC_hitMask
+    and #&ff ; detect hits with anything
+    bit existing+1
+    { beq noHit : lda #1 : sta isHit,x : .noHit }
+	;; get the fine-x pixel-plot-position mask (again)
+    ldy theFX : lda masks,y
+    ;; combine this with the colour mask for the colour we wish to plot
+    ;;.*SMC_colourMask
+    and #cyanMask ;; TODO: not necesary!
+    ;; eor the byte to be plotted with the existing byte
+    .existing : eor #77
+    ldy #0 : sta (theA),y
+    jmp nextPoint ; not rts!
+    }
+
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; create
 
@@ -790,29 +835,22 @@ endmacro
     sta obY+NUM, x
     rts
 
-.createRockS:
-    Copy16ix smallRockOutline, myOutline
-    lda #cyanMask : sta myColour, x
+.createRock:
+    Copy16ix cyan_onPoint, myOnPoint
     jmp createObject
 
-.createRockM:
-    Copy16ix mediumRockOutline, myOutline
-    lda #cyanMask : sta myColour, x
-    jmp createObject
-
-.createRockL:
-    Copy16ix largeRockOutline, myOutline
-    lda #cyanMask : sta myColour, x
-    jmp createObject
+.createRockS: Copy16ix smallRockOutline, myOutline : jmp createRock
+.createRockM: Copy16ix mediumRockOutline, myOutline : jmp createRock
+.createRockL: Copy16ix largeRockOutline, myOutline : jmp createRock
 
 .createShip:
-    Copy16ix shipOutline1, myOutline
-    lda #yellowMask : sta myColour, x
+    Copy16ix shipOutline1, myOutline ;; TODO: multple outlines!
+    Copy16ix yellow_onPoint, myOnPoint
     jmp createObject
 
 .createBullet:
     Copy16ix bulletOutline, myOutline
-    lda #redMask : sta myColour, x
+    Copy16ix red_onPoint, myOnPoint
     jmp createObject
     rts
 
