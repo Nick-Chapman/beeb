@@ -16,23 +16,25 @@
 ;;; - collision logic: rocks must not collide with each other (same for bullets)
 ;;; - (rethink physical->logic colour mapping to red & cyan are on separate bit planes)
 ;;; - collision detection on plot & unplot
+;;; - hit logic: hit object becomes inactive
 
 ;;; TODO
-;;; - hit logic: hit object becomes inactive; other objects activated
-;;; - child rock inherits position(+ random delta) from parent
-;;; - full rock destruction logic: large -> 2medium -> 4small
+;;; - game logic: start, rocks remaining count, level cleared, gameover
 
+;;; - hit during unplot, dont replot
+;;; - hit rock: deactivated; other objects activated
+;;; - full rock destruction logic: large -> 2medium -> 4small
+;;; - bullet firing (spawn) & bullet death on timer (state: frameCounter when spawned)
+
+;;; - child rock inherits position(+ random delta) from parent
 ;;; - random position when spawn (become active)
 ;;; - rock movement controlled by speed
 ;;; - random speed when spawned (become active)
 ;;; - child rock inherits speed(+ random delta) from parent
-
 ;;; - reinstate ship controls: thrust/direction
-;;; - bullet firing (spawn) & bullet death on timer (state: frameCounter when spawned)
 
 ;;; - sounds
 ;;; - scoring
-;;; - game logic: start, level cleared, gameover
 
 
 ;;; MOS vectors & zero page use
@@ -56,7 +58,7 @@ oswrch = &ffee
 screenStart = &3000
 screenEnd = &8000
 
-NUM = 32 ;; Number of objects, indexed consitently using X-register
+NUM = 8 ;; Number of objects, indexed consitently using X-register
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Copy
@@ -165,11 +167,11 @@ org &1100
     pha
     and #&f0 : lsr a : lsr a : lsr a : lsr a : tay
     lda digits,y
-    jsr emit
+    jsr osasci
     pla
     and #&f : tay
     lda digits,y
-    jsr emit
+    jsr osasci
     rts
 .digits: EQUS "0123456789abcdef"
     }
@@ -478,7 +480,6 @@ SWi = SW or INVISIBLE
 
 .drawOutline: {
     jsr calcA
-    lda #0 : sta isHit,x
     ldy #0
 .loop:
     .*SMC_outline : lda &7777, y : beq rts
@@ -515,11 +516,52 @@ SWi = SW or INVISIBLE
     }
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; Objects... per-object state tables
+
+;;; per-object functions to call in the update/render phase
+.updateF skip 2*NUM
+.renderF skip 2*NUM
+
+;;; per-object specializations
+.myOutline skip 2*NUM
+.myPlot skip 2*NUM
+.myUnPlot skip 2*NUM
+
+.isActive skip NUM ; state that is desired for the object; set in update
+.isRendered skip NUM ; reflection of activeness when rendered
+.isHit skip NUM ; set during render phase; consulted during update
+
+;;; object position, set during update
+.obX skip 2*NUM
+.obY skip 2*NUM
+
+;;; object position when rendered, so we can correctly unplot
+.lastX skip 2*NUM
+.lastY skip 2*NUM ; TODO: dont need/use HI-byte
+
+;;; dev/debug...
+.isArrowLocked skip NUM ; move using arrows for dev/debuf
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; colour choice & collision detection (onPoint)
 
 .masks:     equb &88, &44, &22, &11
 .redMasks:  equb &08, &04, &02, &01
 .cyanMasks: equb &80, &40, &20, &10
+
+.shipUnPlot: {
+    ;; plot
+    ldy theFX : lda masks,y
+    ldy #0
+    eor (theA),y
+    sta (theA),y
+    ;; hit (after unplotting)
+    ldy theFX : lda masks,y
+    ldy #0
+    and (theA),y
+    { beq noHit : inc isHit,x : .noHit }
+    jmp nextPoint
+    }
 
 .shipPlot: {
     ;; hit
@@ -567,6 +609,7 @@ SWi = SW or INVISIBLE
 ;;; Global state
 
 .frameCounter: skip 1
+.lastRenderedFrameObject0 skip 1
 
 .selectedN: skip 1
 
@@ -585,33 +628,12 @@ SWi = SW or INVISIBLE
     rts
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; Objects... state tables & update
+;;; Objects... update logic (for DEV)
 
-.isActive skip NUM ; state that is desired for the object
-.isArrowLocked skip NUM ; move using arrows for dev/debuf
-
-.isHit skip NUM ; set during render phase
-
-;; current position (double prec)
-.obX skip 2*NUM
-.obY skip 2*NUM
-
-macro ToggleA
-	eor #1 : and #1
-endmacro
-
-.updateActivenessOnShift: {
-    CheckPress keyShift : beq no
-    cpx selectedN : bne no
-    lda isActive, x : ToggleA : sta isActive, x ; spawn/die
-.no:
-    rts
-    }
-
-.updateArrowLockOnCtrl: {
+.toggleArrowLockOnCtrl: {
     CheckPress keyCtrl : beq no
     cpx selectedN : bne no
-    lda isArrowLocked, x : ToggleA : sta isArrowLocked, x
+    lda isArrowLocked, x : eor #1 : and #1 : sta isArrowLocked, x
 .no:
     rts
     }
@@ -639,51 +661,97 @@ endmacro
     rts
     }
 
-.updateObject:
+.toggleActiveness:
+    lda isActive, x
+    beq spawnObject
+    jmp killObject
+
+.toggleActivenessOnShift: {
+    CheckPress keyShift : beq no
+    cpx selectedN : bne no
+    jsr toggleActiveness
+.no:
+    rts
+    }
+
+.updateObjectDEV:
     ;;Position 1,30 : Emit 'U' : txa : jsr printHexA
-    jsr updateActivenessOnShift
-    jsr updateArrowLockOnCtrl
+    jsr toggleActivenessOnShift
+    jsr toggleArrowLockOnCtrl
     jsr updatePositionIfArrowLocked
+    rts
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; Objects... update (for Game)
+
+.spawnObject: { ; become active
+    ;; TODO: update object KIND count
+    lda isActive, x
+    bne no ; already active
+    lda #1 : sta isActive, x
+.no:
+    rts
+    }
+
+.killObject: { ; become inactive
+    ;; TODO: update object KIND count
+    lda isActive, x
+    beq no ; already dead
+    lda #0 : sta isActive, x
+.no:
+    rts
+    }
+
+.updateObject:
+    jsr updateObjectDEV
+    rts
+
+.dieIfHit:
+    lda isHit, x : bne killObject
+    rts
+
+.rockUpdate:
+    jsr dieIfHit
+    jsr updateObject
+    rts
+
+.shipUpdate:
+    jsr dieIfHit
+    jsr updateObject
+    rts
+
+.bulletUpdate:
+    jsr dieIfHit
+    jsr updateObject
     rts
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Render object
 
-;;; object was active on last render, so we drew it on screen
-.lastActive skip NUM
-
-;;; position we drew object on screen (double prec)
-.lastX skip 2*NUM
-.lastY skip 2*NUM ; TODO: dont need/use HI-byte
-
-.lastRenderedFrame skip NUM
-
-.myOutline skip 2*NUM
-.myPlot skip 2*NUM
-.myUnPlot skip 2*NUM
-
 macro DebugPositionForObject
     lda #31 : jsr osasci
-    lda #30 : jsr osasci
-    txa : jsr osasci
+    lda #31 : jsr osasci ; Xpos
+    txa : jsr osasci ; Ypos
 endmacro
 
 .debugObject:
     DebugPositionForObject
-    lda frameCounter : sec : sbc lastRenderedFrame, x : jsr printHexA
     Space : lda #'.' : { cpx selectedN : bne no : lda #'*' : .no } : jsr emit
     Space : lda #'.' : { ldy isArrowLocked, x : beq no : lda #'M' : .no } : jsr emit
-    Space : lda #'.' : { ldy isHit, x : beq no : lda #'H' : .no } : jsr emit
-    ;;Space : lda #'0' : { ldy isActive, x : beq no : lda #'1' : .no } : jsr emit
-    ;;lda #'0' : { ldy lastActive, x : beq no : lda #'1' : .no } : jsr emit
+
+    Space
+    lda #'.' : { ldy isActive, x : beq no : lda #'a' : .no } : jsr emit
+    lda #'.' : { ldy isRendered, x : beq no : lda #'r' : .no } : jsr emit
+    lda #'.' : { ldy isHit, x : beq no : lda #'H' : .no } : jsr emit
     rts
 
 .renderObject: {
     ;;Position 1,30 : Emit 'r' : txa : jsr printHexA
     jsr debugObject
+    lda #0 : sta isHit,x
     Copy16xv myOutline, SMC_outline+1
     ;; unplot (if we were active when last rendered)
-    lda lastActive, x : beq afterUnplot
+    lda isRendered, x : beq afterUnplot
     Copy16xv myUnPlot, SMC_onPoint+1
     Copy16xv lastX, theX
     Copy16xv lastY, theY
@@ -700,8 +768,7 @@ endmacro
     Copy16xx obY, lastY
 .afterPlot:
     ;; remember our activeness state
-    lda isActive, x : sta lastActive, x
-    lda frameCounter : sta lastRenderedFrame, x
+    lda isActive, x : sta isRendered, x
     rts
     }
 
@@ -727,11 +794,9 @@ endmacro
     }
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; onSync
+;;; onSync (update-all)
 
-.updateF skip 2*NUM
 .updateN: skip 1
-
 .updateObjects: {
     lda #0 : sta updateN
 .loop:
@@ -746,7 +811,7 @@ endmacro
     inc frameCounter
     jsr playSounds
     jsr readKeys
-    ;;Position 1,1 : lda frameCounter : jsr printHexA
+    ;; Position 1,0 : lda frameCounter : jsr printHexA
     ;; Space : jsr printKeyState
     jsr updateGlobalState
     jsr updateObjects
@@ -755,12 +820,33 @@ endmacro
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Render loop.
 
-.renderF skip 2*NUM
+;;; show a nice representation of how many frames lag we have
+;;; if frameCounter-lastRenderedFrame is 1 (or less) then we have no lag
+;;; if 2 then we have a lag of 1, etc. show each unit iif lag with a "x" otherwise "."
+.printLag: {
+    lda frameCounter : sec : sbc lastRenderedFrameObject0
+    tay : beq zero
+    lda #'+'
+.loop:
+    dey : beq done : jsr emit : jmp loop
+.zero:
+    lda #'@' : jsr emit ; we rendered everything and the frame count has not advanced at all!
+.done:
+    lda #' ' : jsr emit
+    rts
+    }
+
 .renderN: skip 1
 .renderLoop: {
 .loop:
     lda vsyncNotify : { beq no : dec vsyncNotify : jsr onSync : .no }
-    ldx renderN : cpx #NUM : { bne no : ldx #0 : stx renderN : .no }
+    ldx renderN : cpx #NUM : bne notZeroObject
+    ldx #0 : stx renderN
+    Position 1,30
+    ;;lda frameCounter : sec : sbc lastRenderedFrameObject0 : jsr printHexA : Space
+    jsr printLag
+    lda frameCounter : sta lastRenderedFrameObject0
+.notZeroObject:
     Copy16xv renderF, dispatch+1
     .dispatch : jsr &7777
     inc renderN
@@ -795,11 +881,8 @@ endmacro
 .createObject:
     ;; set generic update/render behaviour
     Copy16ix renderObject, renderF
-    Copy16ix updateObject, updateF
     ;; start everything active
     inc isActive, x
-    ;; object 2 is initially controlled by arrows
-    { cpx #16 : bmi no : inc isArrowLocked, x : .no }
     ;; setup initial HI-byte of position, based on obj#
     txa : and #3 : asl a : asl a : asl a : asl a
     sta obX+NUM, x
@@ -810,6 +893,7 @@ endmacro
 .createRock:
     Copy16ix rockPlot, myPlot
     Copy16ix rockPlot, myUnPlot
+    Copy16ix rockUpdate, updateF
     jmp createObject
 
 .createRockS: Copy16ix smallRockOutline, myOutline : jmp createRock
@@ -819,13 +903,15 @@ endmacro
 .createShip:
     Copy16ix shipOutline1, myOutline ;; TODO: multple outlines!
     Copy16ix shipPlot, myPlot
-    Copy16ix shipPlot, myUnPlot
+    Copy16ix shipUnPlot, myUnPlot
+    Copy16ix shipUpdate, updateF
     jmp createObject
 
 .createBullet:
     Copy16ix bulletOutline, myOutline
     Copy16ix bulletPlot, myPlot
     Copy16ix bulletPlot, myUnPlot
+    Copy16ix bulletUpdate, updateF
     jmp createObject
     rts
 
@@ -833,15 +919,14 @@ endmacro
 ;;; Game init.
 
 .initObjects:
+    ldx #0 : jsr createRockS
+    ldx #1 : jsr createRockM
+    ldx #2 : jsr createRockL
+    ldx #3 : jsr createRockL
+    ldx #4 : jsr createBullet : stx selectedN
+    ldx #5 : jsr createShip : inc isArrowLocked, x
     ldx #6 : jsr createBullet
-    ldx #10 : jsr createShip
-    ldx #14 : jsr createRockM
-
-    ldx #17 : jsr createShip
-    ldx #18 : jsr createRockM
-    ldx #19 : jsr createBullet
-
-    lda #17 : sta selectedN
+    ldx #7 : jsr createBullet
     rts
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
