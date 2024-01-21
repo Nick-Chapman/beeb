@@ -896,7 +896,7 @@ endmacro
 
 ;;; show a nice representation of how many frames lag we have
 ;;; if frameCounter-lastRenderedFrame is 1 (or less) then we have no lag
-;;; if 2 then we have a lag of 1, etc. show each unit iif lag with a "x" otherwise "."
+;;; if 2 then we have a lag of 1, etc. show each unit off lag with a "+"
 .printLag: {
     lda frameCounter : sec : sbc lastRenderedFrameObject0
     tay : beq zero
