@@ -13,10 +13,11 @@
 ;;; - object hit bit: updated by collision detection in render phase
 ;;; - collision logic: bullet hits ship/rock (& itself); rock hits ship
 ;;; - large rock outline. woohoo!
+;;; - collision logic: rocks must not collide with each other (same for bullets)
+;;; - (rethink physical->logic colour mapping to red & cyan are on separate bit planes)
+;;; - collision detection on plot & unplot
 
 ;;; TODO
-;;; - collision logic: rock must not collide with itself!
-
 ;;; - hit logic: hit object becomes inactive; other objects activated
 ;;; - child rock inherits position(+ random delta) from parent
 ;;; - full rock destruction logic: large -> 2medium -> 4small
@@ -55,17 +56,10 @@ oswrch = &ffee
 screenStart = &3000
 screenEnd = &8000
 
-cyanMask = &ff
-yellowMask = &f0
-redMask = &0f
-blackMask = &00
-
-NUM = 8 ;; Number of objects, indexed consitently using X-register
+NUM = 32 ;; Number of objects, indexed consitently using X-register
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Copy
-
-;;; expect y = 2*x (where x = obj#)
 
 macro Copy16iv I,V
     lda #LO(I) : sta V
@@ -148,7 +142,7 @@ org &1100
     jmp main
 
 ;;; increase the image size, so the switch-on beep has time to finish while loading
-skip 1000
+;;; skip 1000
 
 .spin: jmp spin
 
@@ -194,23 +188,28 @@ skip 1000
 .cursorOff:
     lda #23 : jsr oswrch
     lda #1 : jsr oswrch
-    lda #0 : jsr oswrch
-    lda #0 : jsr oswrch
-    lda #0 : jsr oswrch
-    lda #0 : jsr oswrch
-    lda #0 : jsr oswrch
-    lda #0 : jsr oswrch
-    lda #0 : jsr oswrch
-    lda #0 : jsr oswrch
+    lda #0 :
+    jsr oswrch : jsr oswrch : jsr oswrch : jsr oswrch
+    jsr oswrch : jsr oswrch : jsr oswrch : jsr oswrch
     rts
 
-.replaceWhiteWithCyan:
+.replaceYellowWithCyan:
+    lda #19 : jsr oswrch
+    lda #2 : jsr oswrch ; logical yellow
+    lda #6 : jsr oswrch ; physical cyan
+    lda #0 : jsr oswrch : jsr oswrch : jsr oswrch
+    rts
+
+.replaceWhiteWithYellow:
     lda #19 : jsr oswrch
     lda #3 : jsr oswrch ; logical white
-    lda #6 : jsr oswrch ; physical cyan
-    lda #0 : jsr oswrch
-    lda #0 : jsr oswrch
-    lda #0 : jsr oswrch
+    lda #3 : jsr oswrch ; physical yellow
+    lda #0 : jsr oswrch : jsr oswrch : jsr oswrch
+    rts
+
+.setupColours:
+    jsr replaceYellowWithCyan
+    jsr replaceWhiteWithYellow
     rts
 
 .setupZeroRts: {
@@ -227,7 +226,7 @@ skip 1000
     lda #%01111111 : sta system_VIA_dataDirectionA ; (top bit input)
     jsr mode1
     jsr cursorOff
-    jsr replaceWhiteWithCyan
+    jsr setupColours
     jsr setupZeroRts
     rts
 
@@ -345,12 +344,8 @@ endmacro
     asl a
     lda theX+1
     rol a : and #&3 : sta theFX
-
     rts
     }
-
-.masks:
-    EQUB &88, &44, &22, &11
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; incremental movement -- copied from game3
@@ -519,17 +514,61 @@ SWi = SW or INVISIBLE
     rts
     }
 
-macro SetOutlineAndOnPoint
-    Copy16xv myOutline, SMC_outline+1
-    Copy16xv myOnPoint, SMC_onPoint+1
-endmacro
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; colour choice & collision detection (onPoint)
+
+.masks:     equb &88, &44, &22, &11
+.redMasks:  equb &08, &04, &02, &01
+.cyanMasks: equb &80, &40, &20, &10
+
+.shipPlot: {
+    ;; hit
+    ldy theFX : lda masks,y
+    ldy #0
+    and (theA),y
+    { beq noHit : inc isHit,x : .noHit }
+    ;; plot
+    ldy theFX : lda masks,y
+    ldy #0
+    eor (theA),y
+    sta (theA),y
+    jmp nextPoint
+    }
+
+.bulletPlot: {
+    ;; hit
+    ldy theFX : lda cyanMasks,y
+    ldy #0
+    and (theA),y
+    { beq noHit : inc isHit,x : .noHit }
+	;; plot
+    ldy theFX : lda redMasks,y
+    ldy #0
+    eor (theA),y
+    sta (theA),y
+    jmp nextPoint
+    }
+
+.rockPlot: {
+    ;; hit
+    ldy theFX : lda redMasks,y
+    ldy #0
+    and (theA),y
+    { beq noHit : inc isHit,x : .noHit }
+	;; plot
+    ldy theFX : lda cyanMasks,y
+    ldy #0
+    eor (theA),y
+    sta (theA),y
+    jmp nextPoint
+    }
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Global state
 
 .frameCounter: skip 1
 
-.selectedN: equb 1
+.selectedN: skip 1
 
 .stepSelectedObject:
     inc selectedN
@@ -619,6 +658,10 @@ endmacro
 
 .lastRenderedFrame skip NUM
 
+.myOutline skip 2*NUM
+.myPlot skip 2*NUM
+.myUnPlot skip 2*NUM
+
 macro DebugPositionForObject
     lda #31 : jsr osasci
     lda #30 : jsr osasci
@@ -638,15 +681,17 @@ endmacro
 .renderObject: {
     ;;Position 1,30 : Emit 'r' : txa : jsr printHexA
     jsr debugObject
-    SetOutlineAndOnPoint
+    Copy16xv myOutline, SMC_outline+1
     ;; unplot (if we were active when last rendered)
     lda lastActive, x : beq afterUnplot
+    Copy16xv myUnPlot, SMC_onPoint+1
     Copy16xv lastX, theX
     Copy16xv lastY, theY
     jsr drawOutline
 .afterUnplot:
     ;; (re)plot if (we are to be active now)
     lda isActive, x : beq afterPlot
+    Copy16xv myPlot, SMC_onPoint+1
     Copy16xv obX, theX
     Copy16xv obY, theY
     jsr drawOutline
@@ -744,79 +789,6 @@ endmacro
 .bulletOutline:
     equb START, E, SW, NW, NE, 0
 
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; colour choice & collision detection (onPoint)
-
-.myOutline skip 2*NUM
-.myOnPoint skip 2*NUM
-
-.yellow_onPoint: {
-    ;; get/stash the existing byte at this screen address
-    ldy #0 : lda (theA),y
-    sta existing+1
-	;; get the fine-x pixel-plot-position mask
-    ldy theFX : lda masks,y
-    ;; and combine with a mask for the colours we consider as hitting us
-    ;;.*SMC_hitMask
-    and #&ff ; detect hits with anything
-    bit existing+1
-    { beq noHit : lda #1 : sta isHit,x : .noHit }
-	;; get the fine-x pixel-plot-position mask (again)
-    ldy theFX : lda masks,y
-    ;; combine this with the colour mask for the colour we wish to plot
-    ;;.*SMC_colourMask
-    and #yellowMask ;redMask
-    ;; eor the byte to be plotted with the existing byte
-    .existing : eor #77
-    ldy #0 : sta (theA),y
-    jmp nextPoint ; not rts!
-    }
-
-.red_onPoint: {
-    ;; get/stash the existing byte at this screen address
-    ldy #0 : lda (theA),y
-    sta existing+1
-	;; get the fine-x pixel-plot-position mask
-    ldy theFX : lda masks,y
-    ;; and combine with a mask for the colours we consider as hitting us
-    ;;.*SMC_hitMask
-    and #&ff ; detect hits with anything
-    bit existing+1
-    { beq noHit : lda #1 : sta isHit,x : .noHit }
-	;; get the fine-x pixel-plot-position mask (again)
-    ldy theFX : lda masks,y
-    ;; combine this with the colour mask for the colour we wish to plot
-    ;;.*SMC_colourMask
-    and #redMask
-    ;; eor the byte to be plotted with the existing byte
-    .existing : eor #77
-    ldy #0 : sta (theA),y
-    jmp nextPoint ; not rts!
-    }
-
-.cyan_onPoint: {
-    ;; get/stash the existing byte at this screen address
-    ldy #0 : lda (theA),y
-    sta existing+1
-	;; get the fine-x pixel-plot-position mask
-    ldy theFX : lda masks,y
-    ;; and combine with a mask for the colours we consider as hitting us
-    ;;.*SMC_hitMask
-    and #&ff ; detect hits with anything
-    bit existing+1
-    { beq noHit : lda #1 : sta isHit,x : .noHit }
-	;; get the fine-x pixel-plot-position mask (again)
-    ldy theFX : lda masks,y
-    ;; combine this with the colour mask for the colour we wish to plot
-    ;;.*SMC_colourMask
-    and #cyanMask ;; TODO: not necesary!
-    ;; eor the byte to be plotted with the existing byte
-    .existing : eor #77
-    ldy #0 : sta (theA),y
-    jmp nextPoint ; not rts!
-    }
-
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; create
 
@@ -827,16 +799,17 @@ endmacro
     ;; start everything active
     inc isActive, x
     ;; object 2 is initially controlled by arrows
-    { cpx #2 : bne no : inc isArrowLocked, x : .no }
+    { cpx #16 : bmi no : inc isArrowLocked, x : .no }
     ;; setup initial HI-byte of position, based on obj#
-    txa : asl a : asl a : asl a : asl a
+    txa : and #3 : asl a : asl a : asl a : asl a
     sta obX+NUM, x
-    asl a
+    txa : and #%11111100 : asl a : asl a : asl a
     sta obY+NUM, x
     rts
 
 .createRock:
-    Copy16ix cyan_onPoint, myOnPoint
+    Copy16ix rockPlot, myPlot
+    Copy16ix rockPlot, myUnPlot
     jmp createObject
 
 .createRockS: Copy16ix smallRockOutline, myOutline : jmp createRock
@@ -845,12 +818,14 @@ endmacro
 
 .createShip:
     Copy16ix shipOutline1, myOutline ;; TODO: multple outlines!
-    Copy16ix yellow_onPoint, myOnPoint
+    Copy16ix shipPlot, myPlot
+    Copy16ix shipPlot, myUnPlot
     jmp createObject
 
 .createBullet:
     Copy16ix bulletOutline, myOutline
-    Copy16ix red_onPoint, myOnPoint
+    Copy16ix bulletPlot, myPlot
+    Copy16ix bulletPlot, myUnPlot
     jmp createObject
     rts
 
@@ -858,13 +833,15 @@ endmacro
 ;;; Game init.
 
 .initObjects:
-    ;;ldx #0 : jsr createRockM
-    ldx #1 : jsr createRockL
-    ldx #2 : jsr createRockL
-    ldx #3 : jsr createBullet
-    ldx #4 : jsr createShip
-    ldx #5 : jsr createRockM
-    ldx #6 : jsr createRockS
+    ldx #6 : jsr createBullet
+    ldx #10 : jsr createShip
+    ldx #14 : jsr createRockM
+
+    ldx #17 : jsr createShip
+    ldx #18 : jsr createRockM
+    ldx #19 : jsr createBullet
+
+    lda #17 : sta selectedN
     rts
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
