@@ -20,10 +20,11 @@
 ;;; - record per object kind; track per kind counts; incdec on spawn/kill
 ;;; - hit rock: deactivated; other objects activated
 ;;; - full rock destruction logic: large -> 2medium -> 4small
+;;; - hit during unplot, dont replot to avoid incorrect secondary collission.
 
 ;;; TODO
-;;; - hit during unplot, dont replot to avoid incorrect secondary collission.
 ;;; - bullet firing (spawn) & bullet death on timer (state: frameCounter when spawned)
+;;; - ship direction control and multiple outlines
 
 ;;; - child rock inherits position(+ random delta) from parent
 ;;; - random position when spawn (become active)
@@ -58,7 +59,7 @@ oswrch = &ffee
 screenStart = &3000
 screenEnd = &8000
 
-NUM = 16 ;; Number of objects, indexed consitently using X-register
+NUM = 8 ;; Number of objects, indexed consitently using X-register
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Copy
@@ -689,7 +690,6 @@ KindBullet = 2
     }
 
 .updateObjectDEV:
-    ;;Position 1,30 : Emit 'U' : txa : jsr printHexA
     jsr toggleActivenessOnShift
     jsr toggleArrowLockOnCtrl
     jsr updatePositionIfArrowLocked
@@ -729,7 +729,6 @@ KindBullet = 2
 
 .crackWhenHit: {
     lda isHit, x : beq no
-    jsr killObject
     stx restoreX+1
     lda childB, x : pha
     lda childA, x : tax : jsr spawnObject
@@ -742,12 +741,12 @@ KindBullet = 2
 .rockUpdate:
     jsr dieWhenHit
     jsr updateObject
+    ;;jsr updatePositionIfArrowLocked ;; make rocks faster
     rts
 
 .parentRockUpdate:
     jsr crackWhenHit
-    jsr updateObject
-    rts
+    jmp rockUpdate
 
 .shipUpdate:
     ;;jsr dieWhenHit ;; DEV
@@ -780,18 +779,22 @@ endmacro
     rts
 
 .renderObject: {
-    ;;Position 1,30 : Emit 'r' : txa : jsr printHexA
     jsr debugObject
-    lda #0 : sta isHit,x
+    lda #0 : sta isHit,x ; clear hit counter
     Copy16xv myOutline, SMC_outline+1
-    ;; unplot (if we were active when last rendered)
+
+    ;; if we are rendered, unplot...
     lda isRendered, x : beq afterUnplot
     Copy16xv myUnPlot, SMC_onPoint+1
     Copy16xv lastX, theX
     Copy16xv lastY, theY
     jsr drawOutline
+    lda #0 : sta isRendered, x
 .afterUnplot:
-    ;; (re)plot if (we are to be active now)
+
+	;; if detect hit during unplot, DONT re-plot to avoid incorrect secondary collision
+    lda isHit, x : bne afterPlot
+    ;; if we are active, plot...
     lda isActive, x : beq afterPlot
     Copy16xv myPlot, SMC_onPoint+1
     Copy16xv obX, theX
@@ -800,9 +803,11 @@ endmacro
     ;; remember position at which we rendered
     Copy16xx obX, lastX
     Copy16xx obY, lastY
+    lda #1 : sta isRendered, x
 .afterPlot:
+
     ;; remember our activeness state
-    lda isActive, x : sta isRendered, x
+    ;;lda isActive, x : sta isRendered, x
     rts
     }
 
@@ -845,7 +850,7 @@ endmacro
     inc frameCounter
     jsr playSounds
     jsr readKeys
-    ;; Position 1,0 : lda frameCounter : jsr printHexA
+    Position 34,31 : lda frameCounter : jsr printHexA : Space : lda renderN : jsr printHexA
     ;; Space : jsr printKeyState
     jsr updateGlobalState
     jsr updateObjects
@@ -889,7 +894,7 @@ endmacro
     ;;lda frameCounter : sec : sbc lastRenderedFrameObject0 : jsr printHexA : Space
     jsr printLag
     lda frameCounter : sta lastRenderedFrameObject0
-    jsr printCounts
+    ;;jsr printCounts
 .notZeroObject:
     Copy16xv renderF, dispatch+1
     .dispatch : jsr &7777
@@ -930,6 +935,7 @@ endmacro
     sta obX+NUM, x
     txa : and #%11111100 : asl a : asl a : asl a
     sta obY+NUM, x
+    ;;inc isArrowLocked, x ; moving everything!
     rts
 
 .createRock:
@@ -976,15 +982,15 @@ endmacro
 ;;; Game init.
 
 .initObjects:
-    ldx #0 : jsr createRockS : stx selectedN
-    ldx #1 : jsr createRockS
-    ldx #2 : jsr createRockS
-    ldx #3 : jsr createRockS
-    ldx #5 : jsr createRockM : lda #0 : sta childA, x : lda #1 : sta childB, x
-    ldx #6 : jsr createRockM : lda #2 : sta childA, x : lda #3 : sta childB, x
-    ldx #9 : jsr createRockL : lda #5 : sta childA, x : lda #6 : sta childB, x
-    ldx #14 : jsr createShip : inc isArrowLocked, x
-    ;ldx #15 : jsr createBullet
+    ldx #0 : jsr createShip : inc isArrowLocked, x : stx selectedN
+    ldx #1 : jsr createRockL : lda #2 : sta childA, x : lda #3 : sta childB, x
+    ldx #2 : jsr createRockM : lda #4 : sta childA, x : lda #5 : sta childB, x
+    ldx #3 : jsr createRockM : lda #6 : sta childA, x : lda #7 : sta childB, x
+    ldx #4 : jsr createRockS
+    ldx #5 : jsr createRockS
+    ldx #6 : jsr createRockS
+    ldx #7 : jsr createRockS
+    ;;ldx #8 : jsr createBullet
     rts
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
