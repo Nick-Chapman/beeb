@@ -17,11 +17,11 @@
 ;;; - (rethink physical->logic colour mapping to red & cyan are on separate bit planes)
 ;;; - collision detection on plot & unplot
 ;;; - hit logic: hit object becomes inactive
+;;; - record per object kind; track per kind counts; incdec on spawn/kill
 
 ;;; TODO
-;;; - game logic: start, rocks remaining count, level cleared, gameover
 
-;;; - hit during unplot, dont replot
+;;; - hit during unplot, dont replot to avoid incorrect secondary collission.
 ;;; - hit rock: deactivated; other objects activated
 ;;; - full rock destruction logic: large -> 2medium -> 4small
 ;;; - bullet firing (spawn) & bullet death on timer (state: frameCounter when spawned)
@@ -35,6 +35,7 @@
 
 ;;; - sounds
 ;;; - scoring
+;;; - game logic: start, level cleared, gameover
 
 
 ;;; MOS vectors & zero page use
@@ -542,6 +543,13 @@ SWi = SW or INVISIBLE
 ;;; dev/debug...
 .isArrowLocked skip NUM ; move using arrows for dev/debuf
 
+.myKind skip NUM
+
+KindShip = 0
+KindRock = 1
+KindBullet = 2
+.countPerKind skip 3
+
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; colour choice & collision detection (onPoint)
 
@@ -610,6 +618,10 @@ SWi = SW or INVISIBLE
 
 .frameCounter: skip 1
 .lastRenderedFrameObject0 skip 1
+
+.activeRockCount skip 1
+.activeBulletCount skip 1
+.shipAlive skip 1
 
 .selectedN: skip 1
 
@@ -684,20 +696,20 @@ SWi = SW or INVISIBLE
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Objects... update (for Game)
 
-.spawnObject: { ; become active
-    ;; TODO: update object KIND count
+.spawnObject: {
     lda isActive, x
     bne no ; already active
     lda #1 : sta isActive, x
+    ldy myKind, x : lda countPerKind, y : clc : adc #1 : sta countPerKind, y
 .no:
     rts
     }
 
-.killObject: { ; become inactive
-    ;; TODO: update object KIND count
+.killObject: {
     lda isActive, x
     beq no ; already dead
     lda #0 : sta isActive, x
+    ldy myKind, x : lda countPerKind, y : sec : sbc #1 : sta countPerKind, y
 .no:
     rts
     }
@@ -716,7 +728,7 @@ SWi = SW or INVISIBLE
     rts
 
 .shipUpdate:
-    jsr dieIfHit
+    ;;jsr dieIfHit ;; DEV
     jsr updateObject
     rts
 
@@ -836,6 +848,15 @@ endmacro
     rts
     }
 
+.printCounts: {
+    Position 28,30
+    lda #'s' : jsr emit : lda countPerKind + KindShip : jsr printHexA
+    Space : lda #'r' : jsr emit : lda countPerKind + KindRock : jsr printHexA
+    Space : lda #'b' : jsr emit : lda countPerKind + KindBullet : jsr printHexA
+    rts
+    }
+
+
 .renderN: skip 1
 .renderLoop: {
 .loop:
@@ -846,6 +867,7 @@ endmacro
     ;;lda frameCounter : sec : sbc lastRenderedFrameObject0 : jsr printHexA : Space
     jsr printLag
     lda frameCounter : sta lastRenderedFrameObject0
+    jsr printCounts
 .notZeroObject:
     Copy16xv renderF, dispatch+1
     .dispatch : jsr &7777
@@ -881,8 +903,6 @@ endmacro
 .createObject:
     ;; set generic update/render behaviour
     Copy16ix renderObject, renderF
-    ;; start everything active
-    inc isActive, x
     ;; setup initial HI-byte of position, based on obj#
     txa : and #3 : asl a : asl a : asl a : asl a
     sta obX+NUM, x
@@ -894,6 +914,8 @@ endmacro
     Copy16ix rockPlot, myPlot
     Copy16ix rockPlot, myUnPlot
     Copy16ix rockUpdate, updateF
+    lda #KindRock : sta myKind, x
+    jsr spawnObject
     jmp createObject
 
 .createRockS: Copy16ix smallRockOutline, myOutline : jmp createRock
@@ -905,6 +927,8 @@ endmacro
     Copy16ix shipPlot, myPlot
     Copy16ix shipUnPlot, myUnPlot
     Copy16ix shipUpdate, updateF
+    lda #KindShip : sta myKind, x
+    jsr spawnObject
     jmp createObject
 
 .createBullet:
@@ -912,8 +936,9 @@ endmacro
     Copy16ix bulletPlot, myPlot
     Copy16ix bulletPlot, myUnPlot
     Copy16ix bulletUpdate, updateF
+    lda #KindBullet : sta myKind, x
+    jsr spawnObject
     jmp createObject
-    rts
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Game init.
