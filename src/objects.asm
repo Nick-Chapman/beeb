@@ -59,7 +59,7 @@ oswrch = &ffee
 screenStart = &3000
 screenEnd = &8000
 
-NUM = 8 ;; Number of objects, indexed consitently using X-register
+NUM = 10 ;; Number of objects, indexed consitently using X-register
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Copy
@@ -850,7 +850,7 @@ endmacro
     inc frameCounter
     jsr playSounds
     jsr readKeys
-    Position 34,31 : lda frameCounter : jsr printHexA : Space : lda renderN : jsr printHexA
+    ;;Position 34,31 : lda frameCounter : jsr printHexA : Space : lda renderN : jsr printHexA
     ;; Space : jsr printKeyState
     jsr updateGlobalState
     jsr updateObjects
@@ -894,7 +894,7 @@ endmacro
     ;;lda frameCounter : sec : sbc lastRenderedFrameObject0 : jsr printHexA : Space
     jsr printLag
     lda frameCounter : sta lastRenderedFrameObject0
-    ;;jsr printCounts
+    jsr printCounts
 .notZeroObject:
     Copy16xv renderF, dispatch+1
     .dispatch : jsr &7777
@@ -947,18 +947,23 @@ endmacro
 .createRockS:
     Copy16ix smallRockOutline, myOutline
     Copy16ix rockUpdate, updateF
-    jmp createRock
+    jsr createRock
+    ;;jsr spawnObject
+    rts
 
 .createRockM:
     Copy16ix mediumRockOutline, myOutline
     Copy16ix parentRockUpdate, updateF
-    jmp createRock
+    jsr createRock
+    ;;jsr spawnObject
+    rts
 
 .createRockL:
     Copy16ix largeRockOutline, myOutline
     Copy16ix parentRockUpdate, updateF
+    jsr createRock
     jsr spawnObject
-    jmp createRock
+    rts
 
 .createShip:
     Copy16ix shipOutline1, myOutline ;; TODO: multple outlines!
@@ -966,8 +971,8 @@ endmacro
     Copy16ix shipUnPlot, myUnPlot
     Copy16ix shipUpdate, updateF
     lda #KindShip : sta myKind, x
-    jsr spawnObject
-    jmp createObject
+    jsr createObject
+    jmp spawnObject
 
 .createBullet:
     Copy16ix bulletOutline, myOutline
@@ -975,8 +980,8 @@ endmacro
     Copy16ix bulletPlot, myUnPlot
     Copy16ix bulletUpdate, updateF
     lda #KindBullet : sta myKind, x
-    jsr spawnObject
-    jmp createObject
+    jsr createObject
+    jmp spawnObject
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Game init.
@@ -990,7 +995,8 @@ endmacro
     ldx #5 : jsr createRockS
     ldx #6 : jsr createRockS
     ldx #7 : jsr createRockS
-    ;;ldx #8 : jsr createBullet
+    ldx #8 : jsr createBullet
+    ldx #9 : jsr createBullet
     rts
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
