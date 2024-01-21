@@ -21,9 +21,10 @@
 ;;; - hit rock: deactivated; other objects activated
 ;;; - full rock destruction logic: large -> 2medium -> 4small
 ;;; - hit during unplot, dont replot to avoid incorrect secondary collission.
+;;; - bullet death on timer (state: frameCounter when spawned)
 
 ;;; TODO
-;;; - bullet firing (spawn) & bullet death on timer (state: frameCounter when spawned)
+;;; - bullet firing (spawn) of any available/inactive bullet
 ;;; - ship direction control and multiple outlines
 
 ;;; - child rock inherits position(+ random delta) from parent
@@ -59,7 +60,7 @@ oswrch = &ffee
 screenStart = &3000
 screenEnd = &8000
 
-NUM = 10 ;; Number of objects, indexed consitently using X-register
+NUM = 12 ;; Number of objects, indexed consitently using X-register
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Copy
@@ -474,6 +475,28 @@ SWi = SW or INVISIBLE
 .asWest equb W
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; outlines
+
+.smallRockOutline:
+    equb START,E,SE,NE,E,SE,S, SE,S,SW,S,SW, W,NW,SW,W, NW,NE,NW,NW,N,NE, 0
+
+.mediumRockOutline:
+    equb START, E,E,NE,NE,E,E,E,E,SE,SE,E,SE,SE, SW,SW,SW,SE,SE,SE,S,S,SW,SW,SW,W,W
+    equb NW,NW,SW,SW,W,W,W, NW,NW,NW,NE,NE,NW,NW,NW,N,N,NE,NE, 0
+
+.largeRockOutline:
+    equb START
+    equb E,E,E,E,E,E,E,E, SE,SE,SE,SE, E,E,E,E,E,E, SE,SE,SE,SE,SE, SW,SW,SW,SW,SW, SE,SE,SE, S,S
+    equb SW,SW,SW,SW,SW,SW,SW, W,W,W,W,W, NW,NW,NW,NW, SW,SW,SW, W,W,W, NW,NW,NW
+    equb N,N,N,N, NW,NW, N,N,N,N, NE,NE,NE,NE, NW,NW,NW, NE,NE,NE,NE, 0
+
+.shipOutline1: Center
+    equb Si,Si, S,W,W,W,SW,N,N, NE,N,N,NE,N,N,NE,N,N,NE, SE,S,S,SE,S,S,SE,S,S,SE,S,S, NW,W,W, 0
+
+.bulletOutline:
+    equb START, E, SW, NW, NE, 0
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; draw
 
 .outlineIndex skip 1
@@ -532,12 +555,14 @@ SWi = SW or INVISIBLE
 .isRendered skip NUM ; reflection of activeness when rendered
 .isHit skip NUM ; set during render phase; consulted during update
 
+.mySpawntime skip NUM
+
 ;;; object position, set during update
-.obX skip 2*NUM
+.obX skip 2*NUM ;; TODO: rename myX
 .obY skip 2*NUM
 
 ;;; object position when rendered, so we can correctly unplot
-.lastX skip 2*NUM
+.lastX skip 2*NUM ;; TODO: rename renderedX
 .lastY skip 2*NUM ; TODO: dont need/use HI-byte
 
 ;;; dev/debug...
@@ -643,7 +668,7 @@ KindBullet = 2
     rts
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; Objects... update logic (for DEV)
+;;; Objects... DEV movement logic
 
 .toggleArrowLockOnCtrl: {
     CheckPress keyCtrl : beq no
@@ -703,6 +728,7 @@ KindBullet = 2
     bne no ; already active
     lda #1 : sta isActive, x
     ldy myKind, x : lda countPerKind, y : clc : adc #1 : sta countPerKind, y
+    lda frameCounter : sta mySpawntime, x
 .no:
     rts
     }
@@ -738,6 +764,14 @@ KindBullet = 2
     rts
     }
 
+.dieAfterTwoSeconds: {
+    lda mySpawntime, x : clc : adc #100
+    cmp frameCounter : bpl no
+    jsr killObject
+.no:
+    rts
+    }
+
 .rockUpdate:
     jsr dieWhenHit
     jsr updateObject
@@ -755,6 +789,7 @@ KindBullet = 2
 
 .bulletUpdate:
     jsr dieWhenHit
+    jsr dieAfterTwoSeconds
     jsr updateObject
     rts
 
@@ -903,28 +938,6 @@ endmacro
     }
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; outlines
-
-.smallRockOutline:
-    equb START,E,SE,NE,E,SE,S, SE,S,SW,S,SW, W,NW,SW,W, NW,NE,NW,NW,N,NE, 0
-
-.mediumRockOutline:
-    equb START, E,E,NE,NE,E,E,E,E,SE,SE,E,SE,SE, SW,SW,SW,SE,SE,SE,S,S,SW,SW,SW,W,W
-    equb NW,NW,SW,SW,W,W,W, NW,NW,NW,NE,NE,NW,NW,NW,N,N,NE,NE, 0
-
-.largeRockOutline:
-    equb START
-    equb E,E,E,E,E,E,E,E, SE,SE,SE,SE, E,E,E,E,E,E, SE,SE,SE,SE,SE, SW,SW,SW,SW,SW, SE,SE,SE, S,S
-    equb SW,SW,SW,SW,SW,SW,SW, W,W,W,W,W, NW,NW,NW,NW, SW,SW,SW, W,W,W, NW,NW,NW
-    equb N,N,N,N, NW,NW, N,N,N,N, NE,NE,NE,NE, NW,NW,NW, NE,NE,NE,NE, 0
-
-.shipOutline1: Center
-    equb Si,Si, S,W,W,W,SW,N,N, NE,N,N,NE,N,N,NE,N,N,NE, SE,S,S,SE,S,S,SE,S,S,SE,S,S, NW,W,W, 0
-
-.bulletOutline:
-    equb START, E, SW, NW, NE, 0
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; create
 
 .createObject:
@@ -987,7 +1000,7 @@ endmacro
 ;;; Game init.
 
 .initObjects:
-    ldx #0 : jsr createShip : inc isArrowLocked, x : stx selectedN
+    ldx #0 : jsr createShip : inc isArrowLocked, x
     ldx #1 : jsr createRockL : lda #2 : sta childA, x : lda #3 : sta childB, x
     ldx #2 : jsr createRockM : lda #4 : sta childA, x : lda #5 : sta childB, x
     ldx #3 : jsr createRockM : lda #6 : sta childA, x : lda #7 : sta childB, x
@@ -995,8 +1008,10 @@ endmacro
     ldx #5 : jsr createRockS
     ldx #6 : jsr createRockS
     ldx #7 : jsr createRockS
-    ldx #8 : jsr createBullet
+    ldx #8 : jsr createBullet : stx selectedN
     ldx #9 : jsr createBullet
+    ldx #10: jsr createBullet
+    ldx #11: jsr createBullet
     rts
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
