@@ -18,12 +18,11 @@
 ;;; - collision detection on plot & unplot
 ;;; - hit logic: hit object becomes inactive
 ;;; - record per object kind; track per kind counts; incdec on spawn/kill
-
-;;; TODO
-
-;;; - hit during unplot, dont replot to avoid incorrect secondary collission.
 ;;; - hit rock: deactivated; other objects activated
 ;;; - full rock destruction logic: large -> 2medium -> 4small
+
+;;; TODO
+;;; - hit during unplot, dont replot to avoid incorrect secondary collission.
 ;;; - bullet firing (spawn) & bullet death on timer (state: frameCounter when spawned)
 
 ;;; - child rock inherits position(+ random delta) from parent
@@ -59,7 +58,7 @@ oswrch = &ffee
 screenStart = &3000
 screenEnd = &8000
 
-NUM = 8 ;; Number of objects, indexed consitently using X-register
+NUM = 16 ;; Number of objects, indexed consitently using X-register
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Copy
@@ -550,6 +549,9 @@ KindRock = 1
 KindBullet = 2
 .countPerKind skip 3
 
+.childA skip NUM
+.childB skip NUM
+
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; colour choice & collision detection (onPoint)
 
@@ -718,22 +720,42 @@ KindBullet = 2
     jsr updateObjectDEV
     rts
 
-.dieIfHit:
-    lda isHit, x : bne killObject
+.dieWhenHit: {
+    lda isHit, x : beq no
+    jsr killObject
+.no:
     rts
+    }
+
+.crackWhenHit: {
+    lda isHit, x : beq no
+    jsr killObject
+    stx restoreX+1
+    lda childB, x : pha
+    lda childA, x : tax : jsr spawnObject
+    pla : tax : jsr spawnObject
+    .restoreX : ldx #&77
+.no:
+    rts
+    }
 
 .rockUpdate:
-    jsr dieIfHit
+    jsr dieWhenHit
+    jsr updateObject
+    rts
+
+.parentRockUpdate:
+    jsr crackWhenHit
     jsr updateObject
     rts
 
 .shipUpdate:
-    ;;jsr dieIfHit ;; DEV
+    ;;jsr dieWhenHit ;; DEV
     jsr updateObject
     rts
 
 .bulletUpdate:
-    jsr dieIfHit
+    jsr dieWhenHit
     jsr updateObject
     rts
 
@@ -913,14 +935,24 @@ endmacro
 .createRock:
     Copy16ix rockPlot, myPlot
     Copy16ix rockPlot, myUnPlot
-    Copy16ix rockUpdate, updateF
     lda #KindRock : sta myKind, x
-    jsr spawnObject
     jmp createObject
 
-.createRockS: Copy16ix smallRockOutline, myOutline : jmp createRock
-.createRockM: Copy16ix mediumRockOutline, myOutline : jmp createRock
-.createRockL: Copy16ix largeRockOutline, myOutline : jmp createRock
+.createRockS:
+    Copy16ix smallRockOutline, myOutline
+    Copy16ix rockUpdate, updateF
+    jmp createRock
+
+.createRockM:
+    Copy16ix mediumRockOutline, myOutline
+    Copy16ix parentRockUpdate, updateF
+    jmp createRock
+
+.createRockL:
+    Copy16ix largeRockOutline, myOutline
+    Copy16ix parentRockUpdate, updateF
+    jsr spawnObject
+    jmp createRock
 
 .createShip:
     Copy16ix shipOutline1, myOutline ;; TODO: multple outlines!
@@ -944,14 +976,15 @@ endmacro
 ;;; Game init.
 
 .initObjects:
-    ldx #0 : jsr createRockS
-    ldx #1 : jsr createRockM
-    ldx #2 : jsr createRockL
-    ldx #3 : jsr createRockL
-    ldx #4 : jsr createBullet : stx selectedN
-    ldx #5 : jsr createShip : inc isArrowLocked, x
-    ldx #6 : jsr createBullet
-    ldx #7 : jsr createBullet
+    ldx #0 : jsr createRockS : stx selectedN
+    ldx #1 : jsr createRockS
+    ldx #2 : jsr createRockS
+    ldx #3 : jsr createRockS
+    ldx #5 : jsr createRockM : lda #0 : sta childA, x : lda #1 : sta childB, x
+    ldx #6 : jsr createRockM : lda #2 : sta childA, x : lda #3 : sta childB, x
+    ldx #9 : jsr createRockL : lda #5 : sta childA, x : lda #6 : sta childB, x
+    ldx #14 : jsr createShip : inc isArrowLocked, x
+    ;ldx #15 : jsr createBullet
     rts
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
