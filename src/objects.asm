@@ -4,16 +4,20 @@
 ;;; DONE
 ;;; - game logic: (space)start, lives, gameover
 ;;; - game logic: level cleared
+;;; - child rock inherits position(+ fixed delta) from parent
+
 
 ;;; TODO
+;;; - bullet inherits position from ship
+
 ;;; - more keys: z/x:alternative-turn
 ;;; - global state for direction, updated by z/x, caps/control
 ;;; - change ship outline when direction changes
-;;; - child rock inherits position(+ random delta) from parent
 
-;;; - bullet inherits position from ship & speed from direction
+;;; - bullet inherits speed from direction
 ;;; - support speed on all objects, and update position
 ;;; - random position when large rocks initially spawn
+;;; - child rock inherits position(+ random delta) from parent
 ;;; - child rock inherits speed(+ random delta) from parent
 ;;; - reinstate ship controls: thrust/decaying speed
 ;;; - sounds
@@ -69,6 +73,11 @@ endmacro
 macro Copy16xx A,B
     lda A, x     : sta B, x
     lda A+NUM, x : sta B+NUM, x
+endmacro
+
+macro Copy16xy A,B
+    lda A, x     : sta B, y
+    lda A+NUM, x : sta B+NUM, y
 endmacro
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -267,7 +276,7 @@ endmacro
     PollKey -2,   keyCtrl
     PollKey -1,   keyShift
     PollKey -74,  keyEnter
-    PollKey -97,  keyTab
+    ;;PollKey -97,  keyTab ;; TODO: fix
     PollKey -66,  keyA
     PollKey -58,  keyUp
     PollKey -42,  keyDown
@@ -772,11 +781,24 @@ MaxBullets = 4
     rts
     }
 
+
+.inheritPosition: ; Y inherits from X
+    Copy16xy myX, myX
+    Copy16xy myY, myY
+    rts
+
+.moveSmallDelta:
+    jsr moveRight : jsr moveDown
+    jsr moveRight : jsr moveDown
+    rts
+
 .spawnChildren:
+    lda childA, x : tay : jsr inheritPosition
+    lda childB, x : tay : jsr inheritPosition
     stx restoreX+1
     lda childB, x : pha
     lda childA, x : tax : jsr spawnObject
-    pla : tax : jsr spawnObject
+    pla : tax : jsr spawnObject : jsr moveSmallDelta
     .restoreX : ldx #&77
     rts
 
@@ -808,7 +830,7 @@ MaxBullets = 4
 .bulletUpdate: {
     jsr updateObjectDEV
     jsr spawnIfFiringAttempted
-    jsr dieAfterTwoSeconds ;; TODO: reinstate
+    ;; jsr dieAfterTwoSeconds ;; TODO: reinstate
     lda isHit, x : beq no
     jsr deactivate
 .no:
