@@ -5,21 +5,20 @@
 ;;; - game logic: (space)start, lives, gameover
 ;;; - game logic: level cleared
 ;;; - child rock inherits position(+ fixed delta) from parent
-
+;;; - global state for direction, caps/control
+;;; - change ship outline when direction changes
+;;; - render now works w.r.t a direction
+;;; - save rendered direction/outline for unplot
 
 ;;; TODO
 ;;; - bullet inherits position from ship
-
-;;; - more keys: z/x:alternative-turn
-;;; - global state for direction, updated by z/x, caps/control
-;;; - change ship outline when direction changes
-
 ;;; - bullet inherits speed from direction
 ;;; - support speed on all objects, and update position
 ;;; - random position when large rocks initially spawn
 ;;; - child rock inherits position(+ random delta) from parent
 ;;; - child rock inherits speed(+ random delta) from parent
 ;;; - reinstate ship controls: thrust/decaying speed
+;;; - more keys: z/x:alternative-turn
 ;;; - sounds
 
 
@@ -265,18 +264,21 @@ macro Edge Key
 endmacro
 
 .readKeys:
-	;; Caps/Ctrl/Shift are level sensitive keys
     Edge keySpace
     Edge keyEnter
     Edge keyTab ;; DEV: selected object
     Edge keyA ;; DEV: toggle active state
+
+    ;; Caps/Ctrl/Shift are level sensitive keys
+    ;;Edge keyCaps ;; DEV
+    ;;Edge keyCtrl ;; DEV
 
     PollKey -99,  keySpace
     PollKey -65,  keyCaps
     PollKey -2,   keyCtrl
     PollKey -1,   keyShift
     PollKey -74,  keyEnter
-    ;;PollKey -97,  keyTab ;; TODO: fix
+    ;;PollKey -97,  keyTab ;; TODO: fix/remove
     PollKey -66,  keyA
     PollKey -58,  keyUp
     PollKey -42,  keyDown
@@ -483,11 +485,28 @@ SWi = SW or INVISIBLE
     equb SW,SW,SW,SW,SW,SW,SW, W,W,W,W,W, NW,NW,NW,NW, SW,SW,SW, W,W,W, NW,NW,NW
     equb N,N,N,N, NW,NW, N,N,N,N, NE,NE,NE,NE, NW,NW,NW, NE,NE,NE,NE, 0
 
+.bulletOutline:
+    equb START, E, SW, NW, NE, 0
+
 .shipOutline1: Center
     equb Si,Si, S,W,W,W,SW,N,N, NE,N,N,NE,N,N,NE,N,N,NE, SE,S,S,SE,S,S,SE,S,S,SE,S,S, NW,W,W, 0
 
-.bulletOutline:
-    equb START, E, SW, NW, NE, 0
+.shipOutline2: Center
+    equb SWi, S,W,Wi,W,NE,N,NE,N,NE,N,NE,NE,N,NE,NE, S,S,S,S,S,S,S,S,S,S,S,S,S, NW,W,W, 0
+
+.shipOutline3: Center
+    equb Wi, SW,W,Wi,W, NE,NE,NE,NE,NE,NE,NE,NE,NE,NE, S,S,S,SW,S,S,S,S,SW,S,S,S,S,S, Ni,NW,W,NW,W, 0
+
+.shipOutline4: Center
+    equb Si, SW,W,NW,Wi,W, NE,NE,NE,NE,NE,E,NE,NE,NE,NE,E, S,SW,S,S,SW,S,S,SW,S,S,SW,S,S, Ni,NW,W, 0
+
+.shipOutline5: Center
+    equb SWi, SW,NW,NW,W, NE,E,NE,E,NE,NE,E,NE,E,NE,E, S,SW,S,SW,SW,S,SW,S,SW,S,SW, N,NW, 0
+
+.shipOutlines:
+    EQUW shipOutline1,shipOutline2,shipOutline3,shipOutline4
+    EQUW shipOutline5,shipOutline4,shipOutline3,shipOutline2
+
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; draw
@@ -543,6 +562,8 @@ KindBullet = 2
 
 .myKind skip NUM
 .myOutline skip 2*NUM
+.myDirection skip NUM
+
 .childA skip NUM
 .childB skip NUM
 
@@ -569,6 +590,10 @@ KindBullet = 2
 ;;; rendered object position, to enable unplot
 .renderedX skip 2*NUM
 .renderedY skip 2*NUM ; we dont need/use HI-byte
+.renderedDirection skip NUM
+.renderedOutline skip 2*NUM
+
+
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; colour choice & collision detection (onPoint)
@@ -623,6 +648,75 @@ endmacro
 .bulletUnPlot: BulletPixel : BulletHit : jmp nextPoint
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; ship direction
+
+;;.shipDirection skip 1
+;;.renderedShipDirection skip 1
+
+RotSpeedScaleIndex = 1 ; higher is a slower turn
+RotSpeedScale = 2^RotSpeedScaleIndex
+
+QuarterTurn = 8
+;HalfTurn = 2*QuarterTurn
+;ThreeQuarters = 3*QuarterTurn
+FullCircle = 4*QuarterTurn
+
+.turnLeftOnCaps: {
+    CheckPress keyCaps : beq no
+    dec myDirection, x
+.no
+    rts
+    }
+
+.turnRightOnCtrl: {
+    CheckPress keyCtrl : beq no
+    inc myDirection, x
+.no
+    rts
+    }
+
+.modulateDirection:
+    lda myDirection, x
+    and #(FullCircle * RotSpeedScale - 1)
+    sta myDirection, x
+    rts
+
+
+;; .setFixedOrientation:
+;;     lda #N : sta asNorth
+;;     lda #E : sta asEast
+;;     lda #S : sta asSouth
+;;     lda #W : sta asWest
+;;     rts
+
+
+.setOrientation:
+    ;; Set orientation...
+    ;;lda shipDirection
+    and #%00011100 ; determine "Octrant" (1/8-of-a-turn-sector)
+    tay ; 0,4,8,12,16,20,24,28
+    lda orientations,y : sta asNorth : iny
+    lda orientations,y : sta asEast : iny
+    lda orientations,y : sta asSouth : iny
+    lda orientations,y : sta asWest
+    rts
+
+;;; orientations table; each line is 4 bytes
+;;; and represents the transformation for each 1/8-of-a-turn
+.orientations:
+    equb N,E,S,W
+    equb E,N,W,S
+    equb W,N,E,S
+    equb S,E,N,W
+    equb S,W,N,E
+    equb W,S,E,N
+    equb E,S,W,N
+    equb N,W,S,E
+    ;equb N,E,S,W
+    ;equb E,N,W,S
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Global state
 
 .frameCounter: skip 1
@@ -663,9 +757,13 @@ MaxBullets = 4
     rts
     }
 
+;;;TwoSeconds = 100
+TwoSeconds = 25 ;; DEV
+
 .startWaitForNewLevel:
     lda #0 : sta levelIsRunning
-    lda #100 : sta timerToLevelStart
+    lda #TwoSeconds
+    sta timerToLevelStart
     rts
 
 .watchForLevelOver: {
@@ -812,7 +910,7 @@ MaxBullets = 4
     }
 
 .dieAfterTwoSeconds: {
-    lda mySpawnTime, x : clc : adc #100
+    lda mySpawnTime, x : clc : adc #TwoSeconds
     cmp frameCounter : bpl no
     jsr deactivate
 .no:
@@ -883,7 +981,7 @@ MaxBullets = 4
     lda gameIsRunning : beq no
     lda levelIsRunning : beq no
     lda isActive, x : bne no
-    lda myDeathTime, x : clc : adc #100
+    lda myDeathTime, x : clc : adc #TwoSeconds
     cmp frameCounter : bpl no
     jsr repositionShipInCenter
     jsr spawnObject
@@ -891,8 +989,29 @@ MaxBullets = 4
     rts
     }
 
+;;; TODO: ship is turing too fast!
+.setShipOutlineFromDirection:
+    lda myDirection, x
+    and #7 ; take 3 bits (8 outlines in sequence)
+    asl a ; index Y for outline table must be even
+    tay
+    lda shipOutlines, y  : sta myOutline, x
+    lda shipOutlines+1,y : sta myOutline+NUM, x
+    rts
+
+.updateDirectionIfActive: {
+    lda isActive, x : beq no ; not active
+    jsr turnLeftOnCaps
+    jsr turnRightOnCtrl
+    jsr modulateDirection
+    jsr setShipOutlineFromDirection
+.no:
+    rts
+    }
+
 .shipUpdate: {
     jsr updateObjectDEV
+    jsr updateDirectionIfActive
     jsr reactivateShipAfterTwoSeconds
     lda isHit, x : beq no
     lda isActive, x : beq no
@@ -922,33 +1041,41 @@ endmacro
 
 .renderObject: {
     ;;jsr debugObject
+
     lda #0 : sta isHit,x ; clear hit counter
-    Copy16xv myOutline, SMC_outline+1
 
     ;; if we are rendered, unplot...
     lda isRendered, x : beq afterUnplot
+    lda renderedDirection, x : jsr setOrientation
     Copy16xv myUnPlot, SMC_onPoint+1
+    Copy16xv renderedOutline, SMC_outline+1
     Copy16xv renderedX, theX
     Copy16xv renderedY, theY
     jsr drawOutline
     lda #0 : sta isRendered, x
 .afterUnplot:
 
-	;; if detect hit during unplot, DONT re-plot to avoid incorrect secondary collision
+    ;; if detect hit during unplot, DONT re-plot to avoid incorrect secondary collision
     lda isHit, x : bne afterPlot
     ;; if we are active, plot...
     lda isActive, x : beq afterPlot
+    lda myDirection, x : jsr setOrientation
     Copy16xv myPlot, SMC_onPoint+1
+    Copy16xv myOutline, SMC_outline+1
     Copy16xv myX, theX
     Copy16xv myY, theY
     jsr drawOutline
-    ;; remember position at which we rendered
+    ;; remember position/outline/direction at which we rendered
     Copy16xx myX, renderedX
     Copy16xx myY, renderedY
+    Copy16xx myOutline, renderedOutline
+    lda myDirection, x : sta renderedDirection, x
     lda #1 : sta isRendered, x
 .afterPlot:
+
     rts
     }
+
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; IRQ, VBlank syncing
@@ -1023,13 +1150,16 @@ endmacro
     Space : lda #'b' : jsr emit : lda countPerKind + KindBullet : jsr printHexA
     rts
 
+ShipObjectNum = 24
+
 .printGameInfo:
-    Position 12,30
-    lda #'.' : { ldy gameIsRunning: beq no : lda #'R' : .no } : jsr emit
+    Position 10,30
+    ;;lda #'.' : { ldy gameIsRunning: beq no : lda #'R' : .no } : jsr emit
     Space : lda #'L' : jsr emit : lda livesRemaining : jsr printHexA
     Space : lda #'W' : jsr emit : lda sheetNumber : jsr printHexA
     Space : lda #'S' : jsr emit : lda score : jsr printHexA
     ; Space : lda #'.' : { ldy fireAttempted: beq no : lda #'F' : .no } : jsr emit
+    Space : lda #'D' : jsr emit : lda myDirection+ShipObjectNum : jsr printHexA
     rts
 
 .printGlobalState:
@@ -1059,8 +1189,6 @@ endmacro
 ;;; create
 
 .createObject:
-    ;; set generic render behaviour
-    Copy16ix renderObject, renderF
     ;; DEV: setup initial HI-byte of position, based on obj#
     txa : and #7 : asl a : asl a : asl a : asl a
     sta myX+NUM, x
@@ -1069,9 +1197,10 @@ endmacro
     rts
 
 .createRock:
+    lda #KindRock : sta myKind, x
     Copy16ix rockPlot, myPlot
     Copy16ix rockUnPlot, myUnPlot
-    lda #KindRock : sta myKind, x
+    Copy16ix renderObject, renderF
     jmp createObject
 
 .createRockS:
@@ -1090,19 +1219,20 @@ endmacro
     jmp createRock
 
 .createShip:
-    Copy16ix shipOutline1, myOutline
+    lda #KindShip : sta myKind, x
     Copy16ix shipPlot, myPlot
     Copy16ix shipUnPlot, myUnPlot
     Copy16ix shipUpdate, updateF
-    lda #KindShip : sta myKind, x
+    Copy16ix renderObject, renderF
     jmp createObject
 
 .createBullet:
+    lda #KindBullet : sta myKind, x
     Copy16ix bulletOutline, myOutline
     Copy16ix bulletPlot, myPlot
     Copy16ix bulletUnPlot, myUnPlot
     Copy16ix bulletUpdate, updateF
-    lda #KindBullet : sta myKind, x
+    Copy16ix renderObject, renderF
     jmp createObject
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -1133,14 +1263,13 @@ endmacro
     ldx #22 : jsr createRockS
     ldx #23 : jsr createRockS
 
-    ldx #24 : jsr createShip : stx selectedN
+    ldx #ShipObjectNum : jsr createShip : stx selectedN
     ldx #25 : jsr createBullet
     ldx #26 : jsr createBullet
     ldx #27 : jsr createBullet
     ldx #28 : jsr createBullet
 
     rts
-
 
 .deactivateAll: {
     ldx #0 : sta updateN
