@@ -38,7 +38,7 @@ oswrch = &ffee
 screenStart = &3000
 screenEnd = &8000
 
-NUM = 12 ;; Number of objects, indexed consistently using X-register
+NUM = 32 ;; Number of objects, indexed consistently using X-register
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Copy
@@ -715,7 +715,7 @@ endmacro
     jmp updateObjectDEV
 
 .rockUpdate:
-    ;; jsr dieWhenHit ;; TODO reinstate
+    jsr dieWhenHit ;; TODO reinstate
     jmp updateObject
 
 .parentRockUpdate:
@@ -736,7 +736,7 @@ endmacro
 
 macro DebugPositionForObject
     lda #31 : jsr osasci
-    lda #31 : jsr osasci ; Xpos
+    lda #33 : jsr osasci ; Xpos
     txa : jsr osasci ; Ypos
 endmacro
 
@@ -750,7 +750,7 @@ endmacro
     rts
 
 .renderObject: {
-    jsr debugObject
+    ;;jsr debugObject
     lda #0 : sta isHit,x ; clear hit counter
     Copy16xv myOutline, SMC_outline+1
 
@@ -876,9 +876,9 @@ endmacro
     ;; set generic update/render behaviour
     Copy16ix renderObject, renderF
     ;; setup initial HI-byte of position, based on obj#
-    txa : and #3 : asl a : asl a : asl a : asl a
+    txa : and #7 : asl a : asl a : asl a : asl a
     sta myX+NUM, x
-    txa : and #%11111100 : asl a : asl a : asl a
+    txa : and #%11111100 : asl a : asl a
     sta myY+NUM, x
     rts
 
@@ -929,7 +929,7 @@ endmacro
 ;;; Game init.
 
 .initObjects:
-    ldx #0 : jsr createShip  : stx selectedN
+    ldx #0 : jsr createBullet
     ldx #1 : jsr createRockL : lda #2 : sta childA, x : lda #3 : sta childB, x
     ldx #2 : jsr createRockM : lda #4 : sta childA, x : lda #5 : sta childB, x
     ldx #3 : jsr createRockM : lda #6 : sta childA, x : lda #7 : sta childB, x
@@ -937,10 +937,27 @@ endmacro
     ldx #5 : jsr createRockS
     ldx #6 : jsr createRockS
     ldx #7 : jsr createRockS
+
     ldx #8 : jsr createBullet
-    ldx #9 : jsr createBullet
-    ldx #10: jsr createBullet
-    ldx #11: jsr createBullet
+    ldx #9 : jsr createRockL : lda #10 : sta childA, x : lda #11 : sta childB, x
+    ldx #10 : jsr createRockM : lda #12 : sta childA, x : lda #13 : sta childB, x
+    ldx #11 : jsr createRockM : lda #14 : sta childA, x : lda #15 : sta childB, x
+    ldx #12 : jsr createRockS
+    ldx #13 : jsr createRockS ; debug print for 13 is strangely/wrongly placed by MOS?
+    ldx #14 : jsr createRockS
+    ldx #15 : jsr createRockS
+
+    ldx #16 : jsr createBullet
+    ldx #17 : jsr createRockL : lda #18 : sta childA, x : lda #19 : sta childB, x
+    ldx #18 : jsr createRockM : lda #20 : sta childA, x : lda #21 : sta childB, x
+    ldx #19 : jsr createRockM : lda #22 : sta childA, x : lda #23 : sta childB, x
+    ldx #20 : jsr createRockS
+    ldx #21 : jsr createRockS
+    ldx #22 : jsr createRockS
+    ldx #23 : jsr createRockS
+
+    ldx #31 : jsr createShip
+
     rts
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
