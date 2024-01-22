@@ -2,8 +2,11 @@
 ;;; Objects, with render loop and synced update
 
 ;;; TODO
-;;; - more keys: z/x:alternative-turn, space:start
-;;; - game logic: start, lives, level cleared, gameover
+;;; - game logic: (space)start, lives, gameover
+
+;;; TODO
+;;; - game logic: level cleared
+;;; - more keys: z/x:alternative-turn
 ;;; - global state for direction, updated by z/x, caps/control
 ;;; - change ship outline when direction changes
 ;;; - child rock inherits position(+ random delta) from parent
@@ -86,6 +89,14 @@ endmacro
 
 macro Space
     Emit ' '
+endmacro
+
+macro Puts S
+    Copy16iv msg, msgPtr
+    jmp after
+.msg: EQUS S, 0
+.after:
+    jsr printString
 endmacro
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -217,6 +228,7 @@ org &1100
 
 .startKeys:
 
+.keySpace EQUB 0
 .keyCaps  EQUB 0
 .keyCtrl  EQUB 0
 .keyShift EQUB 0
@@ -245,10 +257,12 @@ endmacro
 
 .readKeys:
 	;; Caps/Ctrl/Shift are level sensitive keys
+    Edge keySpace
     Edge keyEnter
     Edge keyTab ;; DEV: selected object
     Edge keyA ;; DEV: toggle active state
 
+    PollKey -99,  keySpace
     PollKey -65,  keyCaps
     PollKey -2,   keyCtrl
     PollKey -1,   keyShift
@@ -266,12 +280,15 @@ macro CheckPress Key ; -> NZ
 endmacro
 
 .printKeyState:
-    lda #'.' : { ldy keyCaps : beq no : lda #'A' : .no } : jsr emit
+    lda #'.' : { ldy keySpace: beq no : lda #'B' : .no } : jsr emit
+    Space
+    lda #'.' : { ldy keyCaps : beq no : lda #'C' : .no } : jsr emit
     lda #'.' : { ldy keyCtrl : beq no : lda #'C' : .no } : jsr emit
     lda #'.' : { ldy keyShift: beq no : lda #'S' : .no } : jsr emit
     lda #'.' : { ldy keyEnter: beq no : lda #'E' : .no } : jsr emit
     Space
     lda #'.' : { ldy keyTab  : beq no : lda #'T' : .no } : jsr emit
+    lda #'.' : { ldy keyA    : beq no : lda #'A' : .no } : jsr emit
     Space
     lda #'.' : { ldy keyUp   : beq no : lda #'U' : .no } : jsr emit
     lda #'.' : { ldy keyDown : beq no : lda #'D' : .no } : jsr emit
@@ -533,7 +550,8 @@ KindBullet = 2
 .isRendered skip NUM ; reflection of activeness when rendered
 .isHit skip NUM ; set during render phase; consulted during update
 
-.mySpawntime skip NUM ; for timed-death of bullet
+.mySpawnTime skip NUM ; for timed-death of bullet
+.myDeathTime skip NUM ; for next-life ship reactivation
 
 ;;; logical object position; set during update
 .myX skip 2*NUM
@@ -602,7 +620,7 @@ endmacro
 .lastRenderedFrameObject0 skip 1 ; DEV
 .selectedN: skip 1 ; DEV
 
-.livesRemaining skip 1 ; TODO
+.livesRemaining skip 1
 .wavesCleared skip 1 ; TODO
 .score skip 1
 
@@ -629,10 +647,45 @@ MaxBullets = 4
     rts
     }
 
-.updateGlobalState:
+.watchForGameOver: {
+    lda livesRemaining : bne no
+    lda #0 : sta gameIsRunning
+.no:
+    rts
+    }
+
+.updateGlobalWhenRunning:
     jsr updateSelectedObjectOnTab
     jsr tryFireOnEnter
+    jsr watchForGameOver
     rts
+
+.offerGameStartMessage:
+    Position 10,0
+    Puts "Press Space to start"
+    rts
+
+.clearGameStartMessage:
+    Position 10,0
+    Puts "                    "
+    rts
+
+.updateGlobalWhenWaiting: {
+    CheckPress keySpace : beq no
+    jsr clearGameStartMessage
+    lda #1 : sta gameIsRunning
+    jsr activateObjectsForLevelStart
+    rts
+.no:
+    jsr offerGameStartMessage
+    rts
+    }
+
+.gameIsRunning skip 1
+
+.updateGlobal:
+    lda gameIsRunning : beq updateGlobalWhenWaiting
+    jmp updateGlobalWhenRunning
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Objects... DEV movement/control
@@ -664,7 +717,7 @@ MaxBullets = 4
 .toggleActiveness:
     lda isActive, x
     beq spawnObject
-    jmp killObject
+    jmp deactivate
 
 .toggleActivenessIfSelected: {
     CheckPress keyA : beq no
@@ -683,76 +736,40 @@ MaxBullets = 4
 ;;; Update logic for game behaviour
 
 .spawnObject: {
-    lda isActive, x : bne no ; already active
+    lda isActive, x : bne no ; no, already active
     lda #1 : sta isActive, x
     ldy myKind, x : lda countPerKind, y : clc : adc #1 : sta countPerKind, y
-    lda frameCounter : sta mySpawntime, x
+    lda frameCounter : sta mySpawnTime, x
 .no:
     rts
     }
 
-.increaseScore:
-    tya
-    sed : clc : adc score : cld ;; decimal mode!
-    sta score
-    rts
-
-.killObject: { ; increase score by Y
-    lda isActive, x
-    beq no ; already dead
-    jsr increaseScore
-    lda #0 : sta isActive, x
-    ldy myKind, x : lda countPerKind, y : sec : sbc #1 : sta countPerKind, y
-.no:
-    rts
-    }
-
-.dieWhenHit: {
-    lda isHit, x : beq no
-    jsr killObject
-.no:
-    rts
-    }
-
-.crackWhenHit: {
-    lda isHit, x : beq no
+.spawnChildren:
     stx restoreX+1
     lda childB, x : pha
     lda childA, x : tax : jsr spawnObject
     pla : tax : jsr spawnObject
     .restoreX : ldx #&77
+    rts
+
+.deactivate: {
+    lda isActive, x : beq no ; no, already dead
+    lda #0 : sta isActive, x
+    ldy myKind, x : lda countPerKind, y : sec : sbc #1 : sta countPerKind, y
+    lda frameCounter : sta myDeathTime, x
 .no:
     rts
     }
 
 .dieAfterTwoSeconds: {
-    lda mySpawntime, x : clc : adc #100
+    lda mySpawnTime, x : clc : adc #100
     cmp frameCounter : bpl no
-    ldy #0 : jsr killObject ; no score
+    jsr deactivate
 .no:
     rts
     }
 
-.updateObject:
-    jmp updateObjectDEV
-
-.largeRockUpdate:
-    jsr crackWhenHit
-    ldy #2 : jmp dieWhenHit
-
-.mediumRockUpdate:
-    jsr crackWhenHit
-    ldy #5 : jmp dieWhenHit
-
-.smallRockUpdate:
-    ldy #10 : jmp dieWhenHit
-
-.shipUpdate:
-    ;; ldy #0 : jsr dieWhenHit ;; TODO reinstate
-    jmp updateObject
-
-
-.activateIfFiringAttempted:
+.spawnIfFiringAttempted:
     lda fireAttempted : beq no ; not attempted
     lda isActive, x : bne no ; not if we are already active
     jsr spawnObject
@@ -760,11 +777,79 @@ MaxBullets = 4
 .no:
     rts
 
-.bulletUpdate:
-    ;; ldy #0 : jsr dieWhenHit ;; TODO reinstate
-    jsr dieAfterTwoSeconds ;; TODO reinstate
-    jsr activateIfFiringAttempted
-    jmp updateObject
+.bulletUpdate: {
+    jsr updateObjectDEV
+    jsr spawnIfFiringAttempted
+    jsr dieAfterTwoSeconds
+    lda isHit, x : beq no
+    jsr deactivate
+.no:
+    rts
+    }
+
+.increaseScore:
+    sed : clc : adc score : cld ;; decimal mode!
+    sta score
+    rts
+
+.largeRockUpdate: {
+    jsr updateObjectDEV
+    lda isHit, x : beq no
+    lda isActive, x : beq no
+    jsr deactivate
+    jsr spawnChildren
+    lda #2 : jsr increaseScore
+.no:
+    rts
+    }
+
+.mediumRockUpdate: {
+    jsr updateObjectDEV
+    lda isHit, x : beq no
+    lda isActive, x : beq no
+    jsr deactivate
+    jsr spawnChildren
+    lda #5 : jsr increaseScore
+.no:
+    rts
+    }
+
+.smallRockUpdate: {
+    jsr updateObjectDEV
+    lda isHit, x : beq no
+    lda isActive, x : beq no
+    jsr deactivate
+    lda #10 : jsr increaseScore
+.no:
+    rts
+    }
+
+.repositionShipInCenter:
+    lda #80 : sta myX+NUM, x
+    lda #128 : sta myY+NUM, x
+    rts
+
+.reactivateShipAfterTwoSeconds: {
+    lda gameIsRunning : beq no
+    lda isActive, x : bne no
+    lda myDeathTime, x : clc : adc #100
+    cmp frameCounter : bpl no
+    jsr repositionShipInCenter
+    jsr spawnObject
+.no:
+    rts
+    }
+
+.shipUpdate: {
+    jsr updateObjectDEV
+    jsr reactivateShipAfterTwoSeconds
+    lda isHit, x : beq no
+    lda isActive, x : beq no
+    jsr deactivate
+    dec livesRemaining
+.no:
+    rts
+    }
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Render object
@@ -799,7 +884,7 @@ endmacro
 .afterUnplot:
 
 	;; if detect hit during unplot, DONT re-plot to avoid incorrect secondary collision
-    ;; lda isHit, x : bne afterPlot ;; TODO reinstate
+    lda isHit, x : bne afterPlot
     ;; if we are active, plot...
     lda isActive, x : beq afterPlot
     Copy16xv myPlot, SMC_onPoint+1
@@ -854,8 +939,8 @@ endmacro
     jsr playSounds
     jsr readKeys
     ;;Position 34,31 : lda frameCounter : jsr printHexA : Space : lda renderN : jsr printHexA
-    ;; Space : jsr printKeyState
-    jsr updateGlobalState
+    ;;Position 1,28 : Space : jsr printKeyState
+    jsr updateGlobal
     jsr updateObjects
     rts
 
@@ -875,6 +960,8 @@ endmacro
     lda #'@' : jsr emit ; we rendered everything and the frame count has not advanced at all!
 .done:
     lda #' ' : jsr emit
+    lda #' ' : jsr emit
+    lda #' ' : jsr emit
     rts
     }
 
@@ -886,15 +973,16 @@ endmacro
     rts
 
 .printGameInfo:
-    Position 10,30
-    lda #'L' : jsr emit : lda livesRemaining : jsr printHexA
+    Position 12,30
+    lda #'.' : { ldy gameIsRunning: beq no : lda #'R' : .no } : jsr emit
+    Space : lda #'L' : jsr emit : lda livesRemaining : jsr printHexA
     Space : lda #'W' : jsr emit : lda wavesCleared : jsr printHexA
     Space : lda #'S' : jsr emit : lda score : jsr printHexA
-    ;;Space : lda #'.' : { ldy fireAttempted: beq no : lda #'F' : .no } : jsr emit
+    ; Space : lda #'.' : { ldy fireAttempted: beq no : lda #'F' : .no } : jsr emit
     rts
 
 .printGlobalState:
-    jsr printObjectCountsByKind
+    ;;jsr printObjectCountsByKind
     jsr printGameInfo
     rts
 
@@ -920,9 +1008,9 @@ endmacro
 ;;; create
 
 .createObject:
-    ;; set generic update/render behaviour
+    ;; set generic render behaviour
     Copy16ix renderObject, renderF
-    ;; setup initial HI-byte of position, based on obj#
+    ;; DEV: setup initial HI-byte of position, based on obj#
     txa : and #7 : asl a : asl a : asl a : asl a
     sta myX+NUM, x
     txa : and #%11111000 : asl a : asl a
@@ -938,21 +1026,17 @@ endmacro
 .createRockS:
     Copy16ix smallRockOutline, myOutline
     Copy16ix smallRockUpdate, updateF
-    jsr createRock
-    rts
+    jmp createRock
 
 .createRockM:
     Copy16ix mediumRockOutline, myOutline
     Copy16ix mediumRockUpdate, updateF
-    jsr createRock
-    rts
+    jmp createRock
 
 .createRockL:
     Copy16ix largeRockOutline, myOutline
     Copy16ix largeRockUpdate, updateF
-    jsr createRock
-    jsr spawnObject
-    rts
+    jmp createRock
 
 .createShip:
     Copy16ix shipOutline1, myOutline
@@ -960,8 +1044,7 @@ endmacro
     Copy16ix shipUnPlot, myUnPlot
     Copy16ix shipUpdate, updateF
     lda #KindShip : sta myKind, x
-    jsr createObject
-    jmp spawnObject
+    jmp createObject
 
 .createBullet:
     Copy16ix bulletOutline, myOutline
@@ -969,13 +1052,12 @@ endmacro
     Copy16ix bulletUnPlot, myUnPlot
     Copy16ix bulletUpdate, updateF
     lda #KindBullet : sta myKind, x
-    jsr createObject
-    jmp spawnObject
+    jmp createObject
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Game init.
 
-.initObjects:
+.createAllObjects:
     ldx #1 : jsr createRockL : lda #2 : sta childA, x : lda #3 : sta childB, x
     ldx #2 : jsr createRockM : lda #4 : sta childA, x : lda #5 : sta childB, x
     ldx #3 : jsr createRockM : lda #6 : sta childA, x : lda #7 : sta childB, x
@@ -1000,13 +1082,24 @@ endmacro
     ldx #22 : jsr createRockS
     ldx #23 : jsr createRockS
 
-    ldx #25 : jsr createBullet  : stx selectedN
+    ldx #24 : jsr createShip : stx selectedN
+    ldx #25 : jsr createBullet
     ldx #26 : jsr createBullet
     ldx #27 : jsr createBullet
     ldx #28 : jsr createBullet
 
-    ldx #31 : jsr createShip
+    rts
 
+.activateObjectsForLevelStart:
+    ;; 3 large rocks
+    ldx #1 : jsr spawnObject
+    ldx #9 : jsr spawnObject
+    ldx #17 : jsr spawnObject
+	;; and the ship
+    ldx #24
+    jsr repositionShipInCenter
+    jsr spawnObject
+    lda #3 : sta livesRemaining
     rts
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -1014,7 +1107,7 @@ endmacro
 
 .main:
     jsr init
-    jsr initObjects
+    jsr createAllObjects
     Copy16iv myIRQ, irq1v ; initialise sync
     jmp renderLoop
 
