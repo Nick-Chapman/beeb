@@ -2,9 +2,6 @@
 ;;; Objects, with render loop and synced update
 
 ;;; TODO
-;;; - collision: only bullets kill rocks (eor instead of and)
-;;; - collision: only bullets/rocks kill ship (not yellow)
-;;; - revert previous logical/physical colour mapping
 ;;; - more keys: z/x:alternative-turn, space:start
 ;;; - fire on Enter; spawn any available/inactive bullet
 ;;; - game logic: start, lives, level cleared, gameover, scoreing
@@ -175,23 +172,21 @@ org &1100
     jsr oswrch : jsr oswrch : jsr oswrch : jsr oswrch
     rts
 
-.replaceYellowWithCyan:
+.setLogicalThreeAsCyan:
     lda #19 : jsr oswrch
-    lda #2 : jsr oswrch ; logical yellow
+    lda #3 : jsr oswrch ; logical three
     lda #6 : jsr oswrch ; physical cyan
     lda #0 : jsr oswrch : jsr oswrch : jsr oswrch
     rts
 
-.replaceWhiteWithYellow:
-    lda #19 : jsr oswrch
-    lda #3 : jsr oswrch ; logical white
-    lda #3 : jsr oswrch ; physical yellow
-    lda #0 : jsr oswrch : jsr oswrch : jsr oswrch
+.selectLogicalTwo:
+    lda #17 : jsr oswrch
+    lda #2 : jsr oswrch
     rts
 
 .setupColours:
-    jsr replaceYellowWithCyan
-    jsr replaceWhiteWithYellow
+    jsr setLogicalThreeAsCyan
+    jsr selectLogicalTwo ; for debug info in yellow
     rts
 
 .setupZeroRts: {
@@ -552,65 +547,54 @@ KindBullet = 2
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; colour choice & collision detection (onPoint)
 
-.masks:     equb &88, &44, &22, &11
-.redMasks:  equb &08, &04, &02, &01
-.cyanMasks: equb &80, &40, &20, &10
+.masks:       equb &88, &44, &22, &11
+.redMasks:    equb &08, &04, &02, &01
+.yellowMasks: equb &80, &40, &20, &10
 
-.shipUnPlot: {
-    ;; plot
+macro RockPixel ; draw in cyan
     ldy theFX : lda masks,y
-    ldy #0
-    eor (theA),y
-    sta (theA),y
-    ;; hit (after unplotting)
-    ldy theFX : lda masks,y
-    ldy #0
-    and (theA),y
-    { beq noHit : inc isHit,x : .noHit }
-    jmp nextPoint
-    }
+    ldy #0 : eor (theA),y : sta (theA),y
+endmacro
 
-.shipPlot: {
-    ;; hit
-    ldy theFX : lda masks,y
-    ldy #0
-    and (theA),y
-    { beq noHit : inc isHit,x : .noHit }
-    ;; plot
-    ldy theFX : lda masks,y
-    ldy #0
-    eor (theA),y
-    sta (theA),y
-    jmp nextPoint
-    }
+macro ShipPixel ; draw in yellow
+    ldy theFX : lda yellowMasks,y
+    ldy #0 : eor (theA),y : sta (theA),y
+endmacro
 
-.bulletPlot: {
-    ;; hit
-    ldy theFX : lda cyanMasks,y
-    ldy #0
-    and (theA),y
-    { beq noHit : inc isHit,x : .noHit }
-	;; plot
+macro BulletPixel ; draw in red
     ldy theFX : lda redMasks,y
-    ldy #0
-    eor (theA),y
-    sta (theA),y
-    jmp nextPoint
-    }
+    ldy #0 : eor (theA),y : sta (theA),y
+endmacro
 
-.rockPlot: {
-    ;; hit
-    ldy theFX : lda redMasks,y
-    ldy #0
-    and (theA),y
+macro RockHit ; only red hits
+    ldy #0 : lda (theA),y
+    ldy theFX : and masks,y : eor redMasks,y ; and;eor!
+    { bne noHit : inc isHit,x : .noHit } ; bne!
+endmacro
+
+macro ShipHit ; red or cyan hits (not yellow, so debug info wont hit us)
+    ldy #0 : lda (theA),y
+    ldy theFX : and redMasks,y
     { beq noHit : inc isHit,x : .noHit }
-	;; plot
-    ldy theFX : lda cyanMasks,y
-    ldy #0
-    eor (theA),y
-    sta (theA),y
-    jmp nextPoint
-    }
+endmacro
+
+macro BulletHit ; yellow or cyan hits (not red, so bullets dont interfer)
+    ldy #0 : lda (theA),y
+    ldy theFX : and yellowMasks,y
+    { beq noHit : inc isHit,x : .noHit }
+endmacro
+
+;;; When plotting: we first check for collision; then flip the pixel.
+;;; When unplotting we do the reverse: we flip the pixel; then check for collision.
+
+.rockPlot:   RockHit : RockPixel : jmp nextPoint
+.rockUnPlot: RockPixel : RockHit : jmp nextPoint
+
+.shipPlot:   ShipHit : ShipPixel : jmp nextPoint
+.shipUnPlot: ShipPixel : ShipHit : jmp nextPoint
+
+.bulletPlot:   BulletHit : BulletPixel : jmp nextPoint
+.bulletUnPlot: BulletPixel : BulletHit : jmp nextPoint
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Global state
@@ -900,7 +884,7 @@ endmacro
 
 .createRock:
     Copy16ix rockPlot, myPlot
-    Copy16ix rockPlot, myUnPlot
+    Copy16ix rockUnPlot, myUnPlot
     lda #KindRock : sta myKind, x
     jmp createObject
 
@@ -935,7 +919,7 @@ endmacro
 .createBullet:
     Copy16ix bulletOutline, myOutline
     Copy16ix bulletPlot, myPlot
-    Copy16ix bulletPlot, myUnPlot
+    Copy16ix bulletUnPlot, myUnPlot
     Copy16ix bulletUpdate, updateF
     lda #KindBullet : sta myKind, x
     jsr createObject
