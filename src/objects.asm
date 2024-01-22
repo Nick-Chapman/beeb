@@ -5,8 +5,7 @@
 ;;; - collision: only bullets kill rocks (eor instead of and)
 ;;; - collision: only bullets/rocks kill ship (not yellow)
 ;;; - revert previous logical/physical colour mapping
-;;; - more keys: a:toggle-active(replacing shift), z/x:alternative-turn, space:start
-;;; - simplify dev control: remove is-arrow-locked complication (ctrl)
+;;; - more keys: z/x:alternative-turn, space:start
 ;;; - fire on Enter; spawn any available/inactive bullet
 ;;; - game logic: start, lives, level cleared, gameover, scoreing
 ;;; - global state for direction, updated by z/x, caps/control
@@ -234,6 +233,7 @@ org &1100
 .keyLeft  equb 0
 .keyRight equb 0
 .keyTab   equb 0
+.keyA     equb 0
 
 .endKeys:
 numberKeys = endKeys - startKeys
@@ -251,16 +251,16 @@ endmacro
 
 .readKeys:
 	;; Caps/Ctrl/Shift are level sensitive keys
-    Edge keyCtrl ;; For Debug/Dev - switch arrow lock
-    Edge keyShift ;; For Debug/Dev - switch active state
     Edge keyEnter
-    Edge keyTab
+    Edge keyTab ;; DEV: selected object
+    Edge keyA ;; DEV: toggle active state
 
     PollKey -65,  keyCaps
     PollKey -2,   keyCtrl
     PollKey -1,   keyShift
     PollKey -74,  keyEnter
     PollKey -97,  keyTab
+    PollKey -66,  keyA
     PollKey -58,  keyUp
     PollKey -42,  keyDown
     PollKey -26,  keyLeft
@@ -549,9 +549,6 @@ KindBullet = 2
 .renderedX skip 2*NUM
 .renderedY skip 2*NUM ; we dont need/use HI-byte
 
-;;; dev/debug...
-.isArrowLocked skip NUM ; move using arrows for dev/debug ; TODO: remove!
-
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; colour choice & collision detection (onPoint)
 
@@ -640,14 +637,6 @@ KindBullet = 2
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Objects... DEV movement/control
 
-.toggleArrowLockOnCtrl: {
-    CheckPress keyCtrl : beq no
-    cpx selectedN : bne no
-    lda isArrowLocked, x : eor #1 : and #1 : sta isArrowLocked, x
-.no:
-    rts
-    }
-
 .moveUp:   dec myY+NUM, x : rts
 .moveDown: inc myY+NUM, x : rts
 
@@ -661,8 +650,8 @@ KindBullet = 2
     lda myX+NUM, x :       adc   #0 : { cmp #160 : bne no : lda #0   : .no } : sta myX+NUM, x
     rts
 
-.updatePositionIfArrowLocked: {
-    lda isArrowLocked, x : beq no
+.updatePositionIfSelected: {
+    cpx selectedN : bne no
     CheckPress keyUp    : { beq no : jsr moveUp    : .no }
     CheckPress keyDown  : { beq no : jsr moveDown  : .no }
     CheckPress keyLeft  : { beq no : jsr moveLeft  : .no }
@@ -676,8 +665,8 @@ KindBullet = 2
     beq spawnObject
     jmp killObject
 
-.toggleActivenessOnShift: {
-    CheckPress keyShift : beq no
+.toggleActivenessIfSelected: {
+    CheckPress keyA : beq no
     cpx selectedN : bne no
     jsr toggleActiveness
 .no:
@@ -685,9 +674,9 @@ KindBullet = 2
     }
 
 .updateObjectDEV:
-    jsr toggleActivenessOnShift
-    jsr toggleArrowLockOnCtrl
-    jsr updatePositionIfArrowLocked
+    jsr toggleActivenessIfSelected
+    ;;jsr toggleArrowLockOnCtrl
+    jsr updatePositionIfSelected
     rts
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -711,10 +700,6 @@ KindBullet = 2
 .no:
     rts
     }
-
-.updateObject:
-    jsr updateObjectDEV
-    rts
 
 .dieWhenHit: {
     lda isHit, x : beq no
@@ -742,25 +727,25 @@ KindBullet = 2
     rts
     }
 
+.updateObject:
+    jmp updateObjectDEV
+
 .rockUpdate:
-    jsr dieWhenHit
-    jsr updateObject
-    rts
+    ;; jsr dieWhenHit ;; TODO reinstate
+    jmp updateObject
 
 .parentRockUpdate:
     jsr crackWhenHit
     jmp rockUpdate
 
 .shipUpdate:
-    ;; jsr dieWhenHit ;; TODO: remove
-    jsr updateObject
-    rts
+    ;; jsr dieWhenHit ;; TODO reinstate
+    jmp updateObject
 
 .bulletUpdate:
-    jsr dieWhenHit
-    jsr dieAfterTwoSeconds
-    jsr updateObject
-    rts
+    ;; jsr dieWhenHit ;; TODO reinstate
+    ;; jsr dieAfterTwoSeconds ;; TODO reinstate
+    jmp updateObject
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Render object
@@ -774,7 +759,6 @@ endmacro
 .debugObject:
     DebugPositionForObject
     Space : lda #'.' : { cpx selectedN : bne no : lda #'*' : .no } : jsr emit
-    Space : lda #'.' : { ldy isArrowLocked, x : beq no : lda #'M' : .no } : jsr emit
     Space
     lda #'.' : { ldy isActive, x : beq no : lda #'a' : .no } : jsr emit
     lda #'.' : { ldy isRendered, x : beq no : lda #'r' : .no } : jsr emit
@@ -796,7 +780,7 @@ endmacro
 .afterUnplot:
 
 	;; if detect hit during unplot, DONT re-plot to avoid incorrect secondary collision
-    lda isHit, x : bne afterPlot
+    ;; lda isHit, x : bne afterPlot ;; TODO reinstate
     ;; if we are active, plot...
     lda isActive, x : beq afterPlot
     Copy16xv myPlot, SMC_onPoint+1
@@ -961,7 +945,7 @@ endmacro
 ;;; Game init.
 
 .initObjects:
-    ldx #0 : jsr createShip : inc isArrowLocked, x
+    ldx #0 : jsr createShip  : stx selectedN
     ldx #1 : jsr createRockL : lda #2 : sta childA, x : lda #3 : sta childB, x
     ldx #2 : jsr createRockM : lda #4 : sta childA, x : lda #5 : sta childB, x
     ldx #3 : jsr createRockM : lda #6 : sta childA, x : lda #7 : sta childB, x
@@ -969,7 +953,7 @@ endmacro
     ldx #5 : jsr createRockS
     ldx #6 : jsr createRockS
     ldx #7 : jsr createRockS
-    ldx #8 : jsr createBullet : stx selectedN
+    ldx #8 : jsr createBullet
     ldx #9 : jsr createBullet
     ldx #10: jsr createBullet
     ldx #11: jsr createBullet
