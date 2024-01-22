@@ -1,11 +1,11 @@
 
 ;;; Objects, with render loop and synced update
 
-;;; TODO
+;;; DONE
 ;;; - game logic: (space)start, lives, gameover
+;;; - game logic: level cleared
 
 ;;; TODO
-;;; - game logic: level cleared
 ;;; - more keys: z/x:alternative-turn
 ;;; - global state for direction, updated by z/x, caps/control
 ;;; - change ship outline when direction changes
@@ -621,7 +621,7 @@ endmacro
 .selectedN: skip 1 ; DEV
 
 .livesRemaining skip 1
-.wavesCleared skip 1 ; TODO
+.sheetNumber skip 1 ; TODO
 .score skip 1
 
 .stepSelectedObject:
@@ -654,10 +654,24 @@ MaxBullets = 4
     rts
     }
 
+.startWaitForNewLevel:
+    lda #0 : sta levelIsRunning
+    lda #100 : sta timerToLevelStart
+    rts
+
+.watchForLevelOver: {
+    lda countPerKind ++ KindRock : bne no
+    inc sheetNumber
+    jsr startWaitForNewLevel
+.no:
+    rts
+    }
+
 .updateGlobalWhenRunning:
     jsr updateSelectedObjectOnTab
     jsr tryFireOnEnter
     jsr watchForGameOver
+    jsr watchForLevelOver
     rts
 
 .offerGameStartMessage:
@@ -670,21 +684,35 @@ MaxBullets = 4
     Puts "                    "
     rts
 
-.updateGlobalWhenWaiting: {
+.gameIsRunning skip 1
+.levelIsRunning skip 1
+.timerToLevelStart skip 1
+
+.updateGlobalWaitingToPlay: {
     CheckPress keySpace : beq no
     jsr clearGameStartMessage
     lda #1 : sta gameIsRunning
-    jsr activateObjectsForLevelStart
+    jsr deactivateAll
+    jsr startWaitForNewLevel
     rts
 .no:
     jsr offerGameStartMessage
     rts
     }
 
-.gameIsRunning skip 1
+.updateGlobalWaitingForLevel: {
+    lda timerToLevelStart : bne no
+    lda #1 : sta levelIsRunning
+    jsr activateObjectsForLevelStart
+    rts
+.no:
+    dec timerToLevelStart
+    rts
+    }
 
 .updateGlobal:
-    lda gameIsRunning : beq updateGlobalWhenWaiting
+    lda gameIsRunning : beq updateGlobalWaitingToPlay
+    lda levelIsRunning : beq updateGlobalWaitingForLevel
     jmp updateGlobalWhenRunning
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -780,7 +808,7 @@ MaxBullets = 4
 .bulletUpdate: {
     jsr updateObjectDEV
     jsr spawnIfFiringAttempted
-    jsr dieAfterTwoSeconds
+    jsr dieAfterTwoSeconds ;; TODO: reinstate
     lda isHit, x : beq no
     jsr deactivate
 .no:
@@ -831,6 +859,7 @@ MaxBullets = 4
 
 .reactivateShipAfterTwoSeconds: {
     lda gameIsRunning : beq no
+    lda levelIsRunning : beq no
     lda isActive, x : bne no
     lda myDeathTime, x : clc : adc #100
     cmp frameCounter : bpl no
@@ -976,13 +1005,13 @@ endmacro
     Position 12,30
     lda #'.' : { ldy gameIsRunning: beq no : lda #'R' : .no } : jsr emit
     Space : lda #'L' : jsr emit : lda livesRemaining : jsr printHexA
-    Space : lda #'W' : jsr emit : lda wavesCleared : jsr printHexA
+    Space : lda #'W' : jsr emit : lda sheetNumber : jsr printHexA
     Space : lda #'S' : jsr emit : lda score : jsr printHexA
     ; Space : lda #'.' : { ldy fireAttempted: beq no : lda #'F' : .no } : jsr emit
     rts
 
 .printGlobalState:
-    ;;jsr printObjectCountsByKind
+    jsr printObjectCountsByKind
     jsr printGameInfo
     rts
 
@@ -1058,13 +1087,13 @@ endmacro
 ;;; Game init.
 
 .createAllObjects:
-    ldx #1 : jsr createRockL : lda #2 : sta childA, x : lda #3 : sta childB, x
-    ldx #2 : jsr createRockM : lda #4 : sta childA, x : lda #5 : sta childB, x
-    ldx #3 : jsr createRockM : lda #6 : sta childA, x : lda #7 : sta childB, x
-    ldx #4 : jsr createRockS
-    ldx #5 : jsr createRockS
-    ldx #6 : jsr createRockS
-    ldx #7 : jsr createRockS
+    ;; ldx #1 : jsr createRockL : lda #2 : sta childA, x : lda #3 : sta childB, x
+    ;; ldx #2 : jsr createRockM : lda #4 : sta childA, x : lda #5 : sta childB, x
+    ;; ldx #3 : jsr createRockM : lda #6 : sta childA, x : lda #7 : sta childB, x
+    ;; ldx #4 : jsr createRockS
+    ;; ldx #5 : jsr createRockS
+    ;; ldx #6 : jsr createRockS
+    ;; ldx #7 : jsr createRockS
 
     ldx #9 : jsr createRockL : lda #10 : sta childA, x : lda #11 : sta childB, x
     ldx #10 : jsr createRockM : lda #12 : sta childA, x : lda #13 : sta childB, x
@@ -1090,16 +1119,28 @@ endmacro
 
     rts
 
+
+.deactivateAll: {
+    ldx #0 : sta updateN
+.loop:
+    jsr deactivate
+    inx : cpx #NUM : bne loop
+    rts
+    }
+
 .activateObjectsForLevelStart:
     ;; 3 large rocks
     ldx #1 : jsr spawnObject
     ldx #9 : jsr spawnObject
     ldx #17 : jsr spawnObject
-	;; and the ship
+
+    ;; and the ship
     ldx #24
     jsr repositionShipInCenter
     jsr spawnObject
     lda #3 : sta livesRemaining
+    lda #1 : sta sheetNumber
+    lda #0 : sta score
     rts
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
