@@ -1,42 +1,24 @@
 
 ;;; Objects, with render loop and synced update
 
-;;; DONE
-;;; - control rocks with arrows (tab/caps - select arrow-lock)
-;;; - tab/shift - toggle rock activeness/visibility (last/this bit)
-;;; - reinstate drawing: unplot/plot, consulting this/last active-bit
-;;; - position of selected object(s) controlled by arrows
-;;; - different outlines: medium, small rock
-;;; - debug: show frames-since-last-rendered per object
-;;; - object/outline for ship; render in yellow
-;;; - object/outline for bullets; render in red
-;;; - object hit bit: updated by collision detection in render phase
-;;; - collision logic: bullet hits ship/rock (& itself); rock hits ship
-;;; - large rock outline. woohoo!
-;;; - collision logic: rocks must not collide with each other (same for bullets)
-;;; - (rethink physical->logic colour mapping to red & cyan are on separate bit planes)
-;;; - collision detection on plot & unplot
-;;; - hit logic: hit object becomes inactive
-;;; - record per object kind; track per kind counts; incdec on spawn/kill
-;;; - hit rock: deactivated; other objects activated
-;;; - full rock destruction logic: large -> 2medium -> 4small
-;;; - hit during unplot, dont replot to avoid incorrect secondary collission.
-;;; - bullet death on timer (state: frameCounter when spawned)
-
 ;;; TODO
-;;; - bullet firing (spawn) of any available/inactive bullet
-;;; - ship direction control and multiple outlines
-
+;;; - collision: only bullets kill rocks (eor instead of and)
+;;; - collision: only bullets/rocks kill ship (not yellow)
+;;; - revert previous logical/physical colour mapping
+;;; - more keys: a:toggle-active(replacing shift), z/x:alternative-turn, space:start
+;;; - simplify dev control: remove is-arrow-locked complication (ctrl)
+;;; - fire on Enter; spawn any available/inactive bullet
+;;; - game logic: start, lives, level cleared, gameover, scoreing
+;;; - global state for direction, updated by z/x, caps/control
+;;; - change ship outline when direction changes
 ;;; - child rock inherits position(+ random delta) from parent
-;;; - random position when spawn (become active)
-;;; - rock movement controlled by speed
-;;; - random speed when spawned (become active)
-;;; - child rock inherits speed(+ random delta) from parent
-;;; - reinstate ship controls: thrust/direction
 
+;;; - bullet inherits position from ship & speed from direction
+;;; - support speed on all objects, and update position
+;;; - random position when large rocks initially spawn
+;;; - child rock inherits speed(+ random delta) from parent
+;;; - reinstate ship controls: thrust/decaying speed
 ;;; - sounds
-;;; - scoring
-;;; - game logic: start, level cleared, gameover
 
 
 ;;; MOS vectors & zero page use
@@ -60,7 +42,7 @@ oswrch = &ffee
 screenStart = &3000
 screenEnd = &8000
 
-NUM = 12 ;; Number of objects, indexed consitently using X-register
+NUM = 12 ;; Number of objects, indexed consistently using X-register
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Copy
@@ -77,7 +59,7 @@ endmacro
 
 ;;; Per-object tables of two-byte values are stored with with split LO and HI bytes
 macro Copy16ix I,V
-    lda #LO(I) : sta V,               x
+    lda #LO(I) : sta V, x
     lda #HI(I) : sta V+NUM, x
 endmacro
 
@@ -134,7 +116,7 @@ org &70
 .theCY SKIP 1 ; coarse-Y : 0..31
 .theFX SKIP 1 ; fine-X   : 0..3
 .theFY SKIP 1 ; fine-Y   : 0..7
-.theA SKIP 2  ; screen address of the 8x8 char
+.theA SKIP 2  ; screen address
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Start
@@ -144,9 +126,6 @@ org &1100
 
 .start:
     jmp main
-
-;;; increase the image size, so the switch-on beep has time to finish while loading
-;;; skip 1000
 
 .spin: jmp spin
 
@@ -238,7 +217,6 @@ org &1100
 ;;; Sounds
 
 .playSounds:
-    ;; TODO!
     rts
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -277,11 +255,6 @@ endmacro
     Edge keyShift ;; For Debug/Dev - switch active state
     Edge keyEnter
     Edge keyTab
-    ;; We may or may not want (debugging) arrow keys to be edge sensitive
-    ;;Edge keyUp
-    ;;Edge keyDown
-    ;;Edge keyLeft
-    ;;Edge keyRight
 
     PollKey -65,  keyCaps
     PollKey -2,   keyCtrl
@@ -313,7 +286,7 @@ endmacro
     rts
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; Calculate screen address from X/Y (ORIG, and faster!)
+;;; Calculate screen address from X/Y
 
 .calcA: ; theX/theY --> the{A,FX,CX,FY,CY}
     {
@@ -352,7 +325,7 @@ endmacro
     }
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; incremental movement -- copied from game3
+;;; incremental movement
 
 .left1: {
     lda theFX : bne no
@@ -445,7 +418,7 @@ endmacro
     rts }
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; Outline movement control
+;;; Outline descriptions
 
 N = 1
 S = 2
@@ -540,43 +513,44 @@ SWi = SW or INVISIBLE
     }
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; Objects... per-object state tables
+;;; Object state tables
 
-;;; per-object functions to call in the update/render phase
-.updateF skip 2*NUM
-.renderF skip 2*NUM
-
-;;; per-object specializations
-.myOutline skip 2*NUM
-.myPlot skip 2*NUM
-.myUnPlot skip 2*NUM
-
-.isActive skip NUM ; state that is desired for the object; set in update
-.isRendered skip NUM ; reflection of activeness when rendered
-.isHit skip NUM ; set during render phase; consulted during update
-
-.mySpawntime skip NUM
-
-;;; object position, set during update
-.obX skip 2*NUM ;; TODO: rename myX
-.obY skip 2*NUM
-
-;;; object position when rendered, so we can correctly unplot
-.lastX skip 2*NUM ;; TODO: rename renderedX
-.lastY skip 2*NUM ; TODO: dont need/use HI-byte
-
-;;; dev/debug...
-.isArrowLocked skip NUM ; move using arrows for dev/debuf
-
-.myKind skip NUM
-
+;;; object kinds & counts by kind
 KindShip = 0
 KindRock = 1
 KindBullet = 2
 .countPerKind skip 3
 
+.myKind skip NUM
+.myOutline skip 2*NUM
 .childA skip NUM
 .childB skip NUM
+
+;;; per-object update/render functions
+.updateF skip 2*NUM
+.renderF skip 2*NUM
+
+;;; per-object plot/unplot routines for draw/onPoint
+.myPlot skip 2*NUM
+.myUnPlot skip 2*NUM
+
+;;; per-object bits
+.isActive skip NUM ; state that is desired for the object; set in update
+.isRendered skip NUM ; reflection of activeness when rendered
+.isHit skip NUM ; set during render phase; consulted during update
+
+.mySpawntime skip NUM ; for timed-death of bullet
+
+;;; logical object position; set during update
+.myX skip 2*NUM
+.myY skip 2*NUM
+
+;;; rendered object position, to enable unplot
+.renderedX skip 2*NUM
+.renderedY skip 2*NUM ; we dont need/use HI-byte
+
+;;; dev/debug...
+.isArrowLocked skip NUM ; move using arrows for dev/debug ; TODO: remove!
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; colour choice & collision detection (onPoint)
@@ -647,11 +621,7 @@ KindBullet = 2
 .frameCounter: skip 1
 .lastRenderedFrameObject0 skip 1
 
-.activeRockCount skip 1
-.activeBulletCount skip 1
-.shipAlive skip 1
-
-.selectedN: skip 1
+.selectedN: skip 1 ; DEV
 
 .stepSelectedObject:
     inc selectedN
@@ -668,7 +638,7 @@ KindBullet = 2
     rts
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; Objects... DEV movement logic
+;;; Objects... DEV movement/control
 
 .toggleArrowLockOnCtrl: {
     CheckPress keyCtrl : beq no
@@ -678,17 +648,17 @@ KindBullet = 2
     rts
     }
 
-.moveUp:   dec obY+NUM, x : rts
-.moveDown: inc obY+NUM, x : rts
+.moveUp:   dec myY+NUM, x : rts
+.moveDown: inc myY+NUM, x : rts
 
 .moveLeft:
-    lda obX, x     : sec : sbc #&80                                          : sta obX, x
-    lda obX+NUM, x :       sbc   #0 : { cmp #&ff : bne no : lda #159 : .no } : sta obX+NUM, x
+    lda myX, x     : sec : sbc #&80                                          : sta myX, x
+    lda myX+NUM, x :       sbc   #0 : { cmp #&ff : bne no : lda #159 : .no } : sta myX+NUM, x
     rts
 
 .moveRight:
-    lda obX,     x : clc : adc #&80                                          : sta obX, x
-    lda obX+NUM, x :       adc   #0 : { cmp #160 : bne no : lda #0   : .no } : sta obX+NUM, x
+    lda myX,     x : clc : adc #&80                                          : sta myX, x
+    lda myX+NUM, x :       adc   #0 : { cmp #160 : bne no : lda #0   : .no } : sta myX+NUM, x
     rts
 
 .updatePositionIfArrowLocked: {
@@ -721,7 +691,7 @@ KindBullet = 2
     rts
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; Objects... update (for Game)
+;;; Update logic for game behaviour
 
 .spawnObject: {
     lda isActive, x
@@ -775,7 +745,6 @@ KindBullet = 2
 .rockUpdate:
     jsr dieWhenHit
     jsr updateObject
-    ;;jsr updatePositionIfArrowLocked ;; make rocks faster
     rts
 
 .parentRockUpdate:
@@ -783,7 +752,7 @@ KindBullet = 2
     jmp rockUpdate
 
 .shipUpdate:
-    ;;jsr dieWhenHit ;; DEV
+    ;; jsr dieWhenHit ;; TODO: remove
     jsr updateObject
     rts
 
@@ -806,7 +775,6 @@ endmacro
     DebugPositionForObject
     Space : lda #'.' : { cpx selectedN : bne no : lda #'*' : .no } : jsr emit
     Space : lda #'.' : { ldy isArrowLocked, x : beq no : lda #'M' : .no } : jsr emit
-
     Space
     lda #'.' : { ldy isActive, x : beq no : lda #'a' : .no } : jsr emit
     lda #'.' : { ldy isRendered, x : beq no : lda #'r' : .no } : jsr emit
@@ -821,8 +789,8 @@ endmacro
     ;; if we are rendered, unplot...
     lda isRendered, x : beq afterUnplot
     Copy16xv myUnPlot, SMC_onPoint+1
-    Copy16xv lastX, theX
-    Copy16xv lastY, theY
+    Copy16xv renderedX, theX
+    Copy16xv renderedY, theY
     jsr drawOutline
     lda #0 : sta isRendered, x
 .afterUnplot:
@@ -832,17 +800,14 @@ endmacro
     ;; if we are active, plot...
     lda isActive, x : beq afterPlot
     Copy16xv myPlot, SMC_onPoint+1
-    Copy16xv obX, theX
-    Copy16xv obY, theY
+    Copy16xv myX, theX
+    Copy16xv myY, theY
     jsr drawOutline
     ;; remember position at which we rendered
-    Copy16xx obX, lastX
-    Copy16xx obY, lastY
+    Copy16xx myX, renderedX
+    Copy16xx myY, renderedY
     lda #1 : sta isRendered, x
 .afterPlot:
-
-    ;; remember our activeness state
-    ;;lda isActive, x : sta isRendered, x
     rts
     }
 
@@ -918,7 +883,6 @@ endmacro
     rts
     }
 
-
 .renderN: skip 1
 .renderLoop: {
 .loop:
@@ -945,10 +909,9 @@ endmacro
     Copy16ix renderObject, renderF
     ;; setup initial HI-byte of position, based on obj#
     txa : and #3 : asl a : asl a : asl a : asl a
-    sta obX+NUM, x
+    sta myX+NUM, x
     txa : and #%11111100 : asl a : asl a : asl a
-    sta obY+NUM, x
-    ;;inc isArrowLocked, x ; moving everything!
+    sta myY+NUM, x
     rts
 
 .createRock:
@@ -961,14 +924,12 @@ endmacro
     Copy16ix smallRockOutline, myOutline
     Copy16ix rockUpdate, updateF
     jsr createRock
-    ;;jsr spawnObject
     rts
 
 .createRockM:
     Copy16ix mediumRockOutline, myOutline
     Copy16ix parentRockUpdate, updateF
     jsr createRock
-    ;;jsr spawnObject
     rts
 
 .createRockL:
@@ -979,7 +940,7 @@ endmacro
     rts
 
 .createShip:
-    Copy16ix shipOutline1, myOutline ;; TODO: multple outlines!
+    Copy16ix shipOutline1, myOutline
     Copy16ix shipPlot, myPlot
     Copy16ix shipUnPlot, myUnPlot
     Copy16ix shipUpdate, updateF

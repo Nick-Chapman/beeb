@@ -72,11 +72,29 @@ Goal: Re-Implementation of Acorsoft Meteors.
 - trig for ship rotation
 - sprite(s) for ship: 5 sprites in 32 orientations (mirror: 4,8,8,8,4)
 
-## NEXT
-- ship: collision detection
-- find some easy wins for speedup
-- large meteor sprite
-- prepare/plot objects every other frame to allow double number of objects
+## own-emit
+- printing chars to screen without using osasci
 
-## one day
-- saucer: sprite, collision, game logic
+## explode
+- figure out simultaneous control of sound chip and keyboard polling
+- sounds for drone, fire, and rock explosion
+
+## render
+- Rework plot and render code to use multiple buffers.
+- still too slow!
+- finally realize I must give up the goal of perfect rendering.
+- and allow screen writing at any time (not just during vertical blanking)
+
+## objects
+- Objects, with render loop and synced update
+- per-object info tables for update/render function, outline, position,...
+- unplot/plot controlled by per-object active/rendered-bits
+- debug: show frame lag
+- large rock outline. woohoo!
+- (rethink physical->logic colour mapping, so red & cyan are on separate bit planes)
+- unplot/plot with collision detection (active/rendered/hit bits)
+- record per-object kind; track per-kind counts; inc/dec on spawn/kill
+- hit rock: child rocks activated
+- full rock destruction logic: large -> 2medium -> 4small
+- hit during unplot, dont replot to avoid incorrect secondary collission.
+- bullet death on timer (state: frameCounter when spawned)
