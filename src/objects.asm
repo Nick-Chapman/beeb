@@ -10,17 +10,29 @@
 ;;; - render now works w.r.t a direction
 ;;; - save rendered direction/outline for unplot
 
-;;; TODO
-;;; - bullet inherits position from ship
-;;; - bullet inherits speed from direction
+
+;;; DONE
+;;; - (temp disabled game logic)
 ;;; - support speed on all objects, and update position
-;;; - random position when large rocks initially spawn
-;;; - child rock inherits position(+ random delta) from parent
-;;; - child rock inherits speed(+ random delta) from parent
+;;; - child rock inherits position/speed from parent
+;;; - bullet inherits speed/position from ship
 ;;; - reinstate ship controls: thrust/decaying speed
+
+
+;;; TODO
+;;; - child rock inherits speed/position (+ random delta) from parent
+;;; - random position when large rocks initially spawn
 ;;; - more keys: z/x:alternative-turn
 ;;; - sounds
 
+NUM = 12 ;; Number of objects, indexed consistently using X-register
+
+ShipObjectNum = 0
+
+MaxBullets = 4
+
+MomentumIndex = 6  ; Higher is more momentum (and increased max speed)
+ImpulseIndex = 3 ; Higher is lower thrust (and decreased max speed)
 
 ;;; MOS vectors & zero page use
 interruptSaveA = &fc
@@ -43,25 +55,19 @@ oswrch = &ffee
 screenStart = &3000
 screenEnd = &8000
 
-NUM = 32 ;; Number of objects, indexed consistently using X-register
-
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; Copy
+;;; Copy, B=A
 
-macro Copy16iv I,V
-    lda #LO(I) : sta V
-    lda #HI(I) : sta V+1
-endmacro
-
-macro Copy16v A,B
-    lda A   : sta B
-    lda A+1 : sta B+1
+macro Copy16iv A,B
+    lda #LO(A) : sta B
+    lda #HI(A) : sta B+1
 endmacro
 
 ;;; Per-object tables of two-byte values are stored with with split LO and HI bytes
-macro Copy16ix I,V
-    lda #LO(I) : sta V, x
-    lda #HI(I) : sta V+NUM, x
+;;; indexed using reg-X, from 0..NUM-1
+macro Copy16ix A,B
+    lda #LO(A) : sta B, x
+    lda #HI(A) : sta B+NUM, x
 endmacro
 
 macro Copy16xv A,B
@@ -74,9 +80,66 @@ macro Copy16xx A,B
     lda A+NUM, x : sta B+NUM, x
 endmacro
 
+;; for when one object inherits from another
 macro Copy16xy A,B
     lda A, x     : sta B, y
     lda A+NUM, x : sta B+NUM, y
+endmacro
+
+macro Add16vv A, B ; A = A+B
+    clc
+    lda A
+    adc B
+    sta A
+    lda A+1
+    adc B+1
+    sta A+1
+endmacro
+
+macro Add16xv A, B ; A = A+B
+    clc
+    lda A, x
+    adc B
+    sta A, x
+    lda A+NUM, x
+    adc B+1
+    sta A+NUM, x
+endmacro
+
+macro Add16xx A, B ; A = A+B
+    clc
+    lda A, x
+    adc B, x
+    sta A, x
+    lda A+NUM, x
+    adc B+NUM, x
+    sta A+NUM, x
+endmacro
+
+macro Sub16vx A, B ; A = A-B
+    sec
+    lda A
+    sbc B, x
+    sta A
+    lda A+1
+    sbc B+NUM, x
+    sta A+1
+endmacro
+
+;;; spelt with "k" to avoid clash with "inc" op
+macro Inkrement16v A ; A = A+1
+    clc
+    lda A
+    adc #1
+    sta A
+    lda A+1
+    adc #0
+    sta A+1
+endmacro
+
+macro Halve V
+    lda V+1 : cmp #&80 : ror a : sta V+1
+    lda V              : ror a : sta V
 endmacro
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -204,7 +267,7 @@ org &1100
 
 .setupColours:
     jsr setLogicalThreeAsCyan
-    jsr selectLogicalTwo ; for debug info in yellow
+    jsr selectLogicalTwo ; for debug info in yellow. default is cyan
     rts
 
 .setupZeroRts: {
@@ -269,16 +332,20 @@ endmacro
     Edge keyTab ;; DEV: selected object
     Edge keyA ;; DEV: toggle active state
 
-    ;; Caps/Ctrl/Shift are level sensitive keys
-    ;;Edge keyCaps ;; DEV
-    ;;Edge keyCtrl ;; DEV
+    Edge keyUp
+    Edge keyDown
+    Edge keyLeft
+    Edge keyRight
+
+    ;Edge keyCaps
+    ;Edge keyCtrl
 
     PollKey -99,  keySpace
     PollKey -65,  keyCaps
     PollKey -2,   keyCtrl
     PollKey -1,   keyShift
     PollKey -74,  keyEnter
-    ;;PollKey -97,  keyTab ;; TODO: fix/remove
+    PollKey -97,  keyTab
     PollKey -66,  keyA
     PollKey -58,  keyUp
     PollKey -42,  keyDown
@@ -552,48 +619,67 @@ SWi = SW or INVISIBLE
     }
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; Global state
+
+.frameCounter: skip 1
+.selectedN: skip 1 ; DEV
+.lastRenderedFrameObject0 skip 1 ; DEV printLag
+
+.score skip 2
+
+;;; only needed for Ship
+.theThrustX skip 2
+.theThrustY skip 2
+.theAccX skip 2
+.theAccY skip 2
+
+.fireAttempted skip 1
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; Object kinds
+
+KindNull = 0
+KindShip = 1
+KindRock = 2
+KindBullet = 3
+NUMK = 4
+
+.kindCount skip NUMK
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Object state tables
 
-;;; object kinds & counts by kind
-KindShip = 0
-KindRock = 1
-KindBullet = 2
-.countPerKind skip 3
-
+;;; set during creation
 .myKind skip NUM
-.myOutline skip 2*NUM
-.myDirection skip NUM
-
-.childA skip NUM
-.childB skip NUM
-
-;;; per-object update/render functions
-.updateF skip 2*NUM
-.renderF skip 2*NUM
-
-;;; per-object plot/unplot routines for draw/onPoint
+.myOutline skip 2*NUM ; for ship, also changed duuring update
 .myPlot skip 2*NUM
 .myUnPlot skip 2*NUM
 
-;;; per-object bits
+.myUpdateF skip 2*NUM
+.myActivateF skip 2*NUM
+.myDeactivateF skip 2*NUM
+
+;;; set during update
+.myPosX skip 2*NUM
+.myPosY skip 2*NUM
+.myDirection skip NUM ;; TODO: make global. only ship has changig direction!
+.mySpeedX skip 2*NUM
+.mySpeedY skip 2*NUM
 .isActive skip NUM ; state that is desired for the object; set in update
-.isRendered skip NUM ; reflection of activeness when rendered
+
+.myTimer skip NUM ; for timed-death of bullet, and...
+
+;;; only for large/medium rocks
+.childA skip NUM
+.childB skip NUM
+
+;;; set during rendering
 .isHit skip NUM ; set during render phase; consulted during update
-
-.mySpawnTime skip NUM ; for timed-death of bullet
-.myDeathTime skip NUM ; for next-life ship reactivation
-
-;;; logical object position; set during update
-.myX skip 2*NUM
-.myY skip 2*NUM
-
-;;; rendered object position, to enable unplot
+.isRendered skip NUM ; reflection of activeness when rendered
 .renderedX skip 2*NUM
 .renderedY skip 2*NUM ; we dont need/use HI-byte
 .renderedDirection skip NUM
 .renderedOutline skip 2*NUM
-
-
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; colour choice & collision detection (onPoint)
@@ -650,49 +736,11 @@ endmacro
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; ship direction
 
-;;.shipDirection skip 1
-;;.renderedShipDirection skip 1
-
-RotSpeedScaleIndex = 1 ; higher is a slower turn
-RotSpeedScale = 2^RotSpeedScaleIndex
-
 QuarterTurn = 8
-;HalfTurn = 2*QuarterTurn
-;ThreeQuarters = 3*QuarterTurn
+HalfTurn = 2*QuarterTurn
 FullCircle = 4*QuarterTurn
 
-.turnLeftOnCaps: {
-    CheckPress keyCaps : beq no
-    dec myDirection, x
-.no
-    rts
-    }
-
-.turnRightOnCtrl: {
-    CheckPress keyCtrl : beq no
-    inc myDirection, x
-.no
-    rts
-    }
-
-.modulateDirection:
-    lda myDirection, x
-    and #(FullCircle * RotSpeedScale - 1)
-    sta myDirection, x
-    rts
-
-
-;; .setFixedOrientation:
-;;     lda #N : sta asNorth
-;;     lda #E : sta asEast
-;;     lda #S : sta asSouth
-;;     lda #W : sta asWest
-;;     rts
-
-
 .setOrientation:
-    ;; Set orientation...
-    ;;lda shipDirection
     and #%00011100 ; determine "Octrant" (1/8-of-a-turn-sector)
     tay ; 0,4,8,12,16,20,24,28
     lda orientations,y : sta asNorth : iny
@@ -712,314 +760,6 @@ FullCircle = 4*QuarterTurn
     equb W,S,E,N
     equb E,S,W,N
     equb N,W,S,E
-    ;equb N,E,S,W
-    ;equb E,N,W,S
-
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; Global state
-
-.frameCounter: skip 1
-.lastRenderedFrameObject0 skip 1 ; DEV
-.selectedN: skip 1 ; DEV
-
-.livesRemaining skip 1
-.sheetNumber skip 1 ; TODO
-.score skip 1
-
-.stepSelectedObject:
-    inc selectedN
-    lda selectedN : cmp #NUM : { bne no : lda #0 : sta selectedN : .no }
-    rts
-
-.updateSelectedObjectOnTab:
-    CheckPress keyTab
-    { beq no : jsr stepSelectedObject : .no }
-    rts
-
-.fireAttempted skip 1
-
-MaxBullets = 4
-
-.tryFireOnEnter: {
-    CheckPress keyEnter : beq no
-    lda countPerKind + KindBullet
-    cmp #MaxBullets : bpl no
-    lda #1 : sta fireAttempted ; will be cleared by first available bullet
-.no:
-    rts
-    }
-
-.watchForGameOver: {
-    lda livesRemaining : bne no
-    lda #0 : sta gameIsRunning
-.no:
-    rts
-    }
-
-;;;TwoSeconds = 100
-TwoSeconds = 25 ;; DEV
-
-.startWaitForNewLevel:
-    lda #0 : sta levelIsRunning
-    lda #TwoSeconds
-    sta timerToLevelStart
-    rts
-
-.watchForLevelOver: {
-    lda countPerKind ++ KindRock : bne no
-    inc sheetNumber
-    jsr startWaitForNewLevel
-.no:
-    rts
-    }
-
-.updateGlobalWhenRunning:
-    jsr updateSelectedObjectOnTab
-    jsr tryFireOnEnter
-    jsr watchForGameOver
-    jsr watchForLevelOver
-    rts
-
-.offerGameStartMessage:
-    Position 10,0
-    Puts "Press Space to start"
-    rts
-
-.clearGameStartMessage:
-    Position 10,0
-    Puts "                    "
-    rts
-
-.gameIsRunning skip 1
-.levelIsRunning skip 1
-.timerToLevelStart skip 1
-
-.updateGlobalWaitingToPlay: {
-    CheckPress keySpace : beq no
-    jsr clearGameStartMessage
-    lda #1 : sta gameIsRunning
-    jsr deactivateAll
-    jsr startWaitForNewLevel
-    rts
-.no:
-    jsr offerGameStartMessage
-    rts
-    }
-
-.updateGlobalWaitingForLevel: {
-    lda timerToLevelStart : bne no
-    lda #1 : sta levelIsRunning
-    jsr activateObjectsForLevelStart
-    rts
-.no:
-    dec timerToLevelStart
-    rts
-    }
-
-.updateGlobal:
-    lda gameIsRunning : beq updateGlobalWaitingToPlay
-    lda levelIsRunning : beq updateGlobalWaitingForLevel
-    jmp updateGlobalWhenRunning
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; Objects... DEV movement/control
-
-.moveUp:   dec myY+NUM, x : rts
-.moveDown: inc myY+NUM, x : rts
-
-.moveLeft:
-    lda myX, x     : sec : sbc #&80                                          : sta myX, x
-    lda myX+NUM, x :       sbc   #0 : { cmp #&ff : bne no : lda #159 : .no } : sta myX+NUM, x
-    rts
-
-.moveRight:
-    lda myX,     x : clc : adc #&80                                          : sta myX, x
-    lda myX+NUM, x :       adc   #0 : { cmp #160 : bne no : lda #0   : .no } : sta myX+NUM, x
-    rts
-
-.updatePositionIfSelectedAndActive: {
-    cpx selectedN : bne no ; not selected
-    lda isActive, x : beq no ; not active
-    CheckPress keyUp    : { beq no : jsr moveUp    : .no }
-    CheckPress keyDown  : { beq no : jsr moveDown  : .no }
-    CheckPress keyLeft  : { beq no : jsr moveLeft  : .no }
-    CheckPress keyRight : { beq no : jsr moveRight : .no }
-.no:
-    rts
-    }
-
-.toggleActiveness:
-    lda isActive, x
-    beq spawnObject
-    jmp deactivate
-
-.toggleActivenessIfSelected: {
-    CheckPress keyA : beq no
-    cpx selectedN : bne no
-    jsr toggleActiveness
-.no:
-    rts
-    }
-
-.updateObjectDEV:
-    jsr toggleActivenessIfSelected
-    jsr updatePositionIfSelectedAndActive
-    rts
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; Update logic for game behaviour
-
-.spawnObject: {
-    lda isActive, x : bne no ; no, already active
-    lda #1 : sta isActive, x
-    ldy myKind, x : lda countPerKind, y : clc : adc #1 : sta countPerKind, y
-    lda frameCounter : sta mySpawnTime, x
-.no:
-    rts
-    }
-
-
-.inheritPosition: ; Y inherits from X
-    Copy16xy myX, myX
-    Copy16xy myY, myY
-    rts
-
-.moveSmallDelta:
-    jsr moveRight : jsr moveDown
-    jsr moveRight : jsr moveDown
-    rts
-
-.spawnChildren:
-    lda childA, x : tay : jsr inheritPosition
-    lda childB, x : tay : jsr inheritPosition
-    stx restoreX+1
-    lda childB, x : pha
-    lda childA, x : tax : jsr spawnObject
-    pla : tax : jsr spawnObject : jsr moveSmallDelta
-    .restoreX : ldx #&77
-    rts
-
-.deactivate: {
-    lda isActive, x : beq no ; no, already dead
-    lda #0 : sta isActive, x
-    ldy myKind, x : lda countPerKind, y : sec : sbc #1 : sta countPerKind, y
-    lda frameCounter : sta myDeathTime, x
-.no:
-    rts
-    }
-
-.dieAfterTwoSeconds: {
-    lda mySpawnTime, x : clc : adc #TwoSeconds
-    cmp frameCounter : bpl no
-    jsr deactivate
-.no:
-    rts
-    }
-
-.spawnIfFiringAttempted:
-    lda fireAttempted : beq no ; not attempted
-    lda isActive, x : bne no ; not if we are already active
-    jsr spawnObject
-    lda #0 : sta fireAttempted ; just one bullet!
-.no:
-    rts
-
-.bulletUpdate: {
-    jsr updateObjectDEV
-    jsr spawnIfFiringAttempted
-    ;; jsr dieAfterTwoSeconds ;; TODO: reinstate
-    lda isHit, x : beq no
-    jsr deactivate
-.no:
-    rts
-    }
-
-.increaseScore:
-    sed : clc : adc score : cld ;; decimal mode!
-    sta score
-    rts
-
-.largeRockUpdate: {
-    jsr updateObjectDEV
-    lda isHit, x : beq no
-    lda isActive, x : beq no
-    jsr deactivate
-    jsr spawnChildren
-    lda #2 : jsr increaseScore
-.no:
-    rts
-    }
-
-.mediumRockUpdate: {
-    jsr updateObjectDEV
-    lda isHit, x : beq no
-    lda isActive, x : beq no
-    jsr deactivate
-    jsr spawnChildren
-    lda #5 : jsr increaseScore
-.no:
-    rts
-    }
-
-.smallRockUpdate: {
-    jsr updateObjectDEV
-    lda isHit, x : beq no
-    lda isActive, x : beq no
-    jsr deactivate
-    lda #10 : jsr increaseScore
-.no:
-    rts
-    }
-
-.repositionShipInCenter:
-    lda #80 : sta myX+NUM, x
-    lda #128 : sta myY+NUM, x
-    rts
-
-.reactivateShipAfterTwoSeconds: {
-    lda gameIsRunning : beq no
-    lda levelIsRunning : beq no
-    lda isActive, x : bne no
-    lda myDeathTime, x : clc : adc #TwoSeconds
-    cmp frameCounter : bpl no
-    jsr repositionShipInCenter
-    jsr spawnObject
-.no:
-    rts
-    }
-
-;;; TODO: ship is turing too fast!
-.setShipOutlineFromDirection:
-    lda myDirection, x
-    and #7 ; take 3 bits (8 outlines in sequence)
-    asl a ; index Y for outline table must be even
-    tay
-    lda shipOutlines, y  : sta myOutline, x
-    lda shipOutlines+1,y : sta myOutline+NUM, x
-    rts
-
-.updateDirectionIfActive: {
-    lda isActive, x : beq no ; not active
-    jsr turnLeftOnCaps
-    jsr turnRightOnCtrl
-    jsr modulateDirection
-    jsr setShipOutlineFromDirection
-.no:
-    rts
-    }
-
-.shipUpdate: {
-    jsr updateObjectDEV
-    jsr updateDirectionIfActive
-    jsr reactivateShipAfterTwoSeconds
-    lda isHit, x : beq no
-    lda isActive, x : beq no
-    jsr deactivate
-    dec livesRemaining
-.no:
-    rts
-    }
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Render object
@@ -1046,11 +786,12 @@ endmacro
 
     ;; if we are rendered, unplot...
     lda isRendered, x : beq afterUnplot
+
     lda renderedDirection, x : jsr setOrientation
-    Copy16xv myUnPlot, SMC_onPoint+1
     Copy16xv renderedOutline, SMC_outline+1
     Copy16xv renderedX, theX
     Copy16xv renderedY, theY
+    Copy16xv myUnPlot, SMC_onPoint+1
     jsr drawOutline
     lda #0 : sta isRendered, x
 .afterUnplot:
@@ -1059,15 +800,16 @@ endmacro
     lda isHit, x : bne afterPlot
     ;; if we are active, plot...
     lda isActive, x : beq afterPlot
+
     lda myDirection, x : jsr setOrientation
-    Copy16xv myPlot, SMC_onPoint+1
     Copy16xv myOutline, SMC_outline+1
-    Copy16xv myX, theX
-    Copy16xv myY, theY
+    Copy16xv myPosX, theX
+    Copy16xv myPosY, theY
+    Copy16xv myPlot, SMC_onPoint+1
     jsr drawOutline
     ;; remember position/outline/direction at which we rendered
-    Copy16xx myX, renderedX
-    Copy16xx myY, renderedY
+    Copy16xx myPosX, renderedX
+    Copy16xx myPosY, renderedY
     Copy16xx myOutline, renderedOutline
     lda myDirection, x : sta renderedDirection, x
     lda #1 : sta isRendered, x
@@ -1075,7 +817,6 @@ endmacro
 
     rts
     }
-
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; IRQ, VBlank syncing
@@ -1090,7 +831,7 @@ endmacro
     rti
 .vblank:
     sta system_VIA_interruptFlags ; ack
-    lda vsyncNotify : bne crash
+    lda vsyncNotify : bne crash ;; TODO reinstate
     inc vsyncNotify
     lda interruptSaveA
     rti
@@ -1106,7 +847,7 @@ endmacro
     lda #0 : sta updateN
 .loop:
     ldx updateN : cpx #NUM : { bne no : rts : .no }
-    Copy16xv updateF, dispatch+1
+    Copy16xv myUpdateF, dispatch+1
     .dispatch : jsr &7777
     inc updateN
     jmp loop
@@ -1145,26 +886,37 @@ endmacro
 
 .printObjectCountsByKind:
     Position 28,30
-    lda #'s' : jsr emit : lda countPerKind + KindShip : jsr printHexA
-    Space : lda #'r' : jsr emit : lda countPerKind + KindRock : jsr printHexA
-    Space : lda #'b' : jsr emit : lda countPerKind + KindBullet : jsr printHexA
+    lda #'s' : jsr emit : lda kindCount + KindShip : jsr printHexA
+    Space : lda #'r' : jsr emit : lda kindCount + KindRock : jsr printHexA
+    Space : lda #'b' : jsr emit : lda kindCount + KindBullet : jsr printHexA
     rts
-
-ShipObjectNum = 24
 
 .printGameInfo:
     Position 10,30
     ;;lda #'.' : { ldy gameIsRunning: beq no : lda #'R' : .no } : jsr emit
-    Space : lda #'L' : jsr emit : lda livesRemaining : jsr printHexA
-    Space : lda #'W' : jsr emit : lda sheetNumber : jsr printHexA
-    Space : lda #'S' : jsr emit : lda score : jsr printHexA
-    ; Space : lda #'.' : { ldy fireAttempted: beq no : lda #'F' : .no } : jsr emit
+    ;;Space : lda #'L' : jsr emit : lda livesRemaining : jsr printHexA
+    ;;Space : lda #'W' : jsr emit : lda sheetNumber : jsr printHexA
+    Space : lda #'S' : jsr emit : lda score+1 : jsr printHexA : lda score,x : jsr printHexA : Emit '0'
+    Space : lda #'.' : { ldy fireAttempted: beq no : lda #'F' : .no } : jsr emit
     Space : lda #'D' : jsr emit : lda myDirection+ShipObjectNum : jsr printHexA
     rts
 
+ShipSpeedX = mySpeedX + ShipObjectNum
+ShipSpeedY = mySpeedY + ShipObjectNum
+
+.printThrustInfo:
+    Position 0, 27 : Emit 'A' : Space
+    Space : lda theAccX+1 : jsr printHexA : lda theAccX : jsr printHexA
+    Space : lda theAccY+1 : jsr printHexA : lda theAccY : jsr printHexA
+    Position 0, 28  : Emit 'V' : Space
+    Space : lda ShipSpeedX+NUM : jsr printHexA : lda ShipSpeedX : jsr printHexA
+    Space : lda ShipSpeedY+NUM : jsr printHexA : lda ShipSpeedY : jsr printHexA
+    rts
+
 .printGlobalState:
-    jsr printObjectCountsByKind
-    jsr printGameInfo
+    ;;jsr printObjectCountsByKind
+    ;;jsr printGameInfo
+    ;jsr printThrustInfo
     rts
 
 .renderN: skip 1
@@ -1174,124 +926,486 @@ ShipObjectNum = 24
     ldx renderN : cpx #NUM : bne notZeroObject
     ldx #0 : stx renderN
     Position 1,30
-    ;;lda frameCounter : sec : sbc lastRenderedFrameObject0 : jsr printHexA : Space
-    jsr printLag
-    lda frameCounter : sta lastRenderedFrameObject0
+    ;;jsr printLag : lda frameCounter : sta lastRenderedFrameObject0
     jsr printGlobalState
 .notZeroObject:
-    Copy16xv renderF, dispatch+1
-    .dispatch : jsr &7777
+    jsr renderObject
     inc renderN
     jmp loop
     }
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; create
+;;; control
 
-.createObject:
-    ;; DEV: setup initial HI-byte of position, based on obj#
-    txa : and #7 : asl a : asl a : asl a : asl a
-    sta myX+NUM, x
-    txa : and #%11111000 : asl a : asl a
-    sta myY+NUM, x
+.turnLeftOnCaps: {
+    lda frameCounter : and #1 : beq no ; on even frames
+    CheckPress keyCaps : beq no
+    dec myDirection, x
+.no
     rts
+    }
+
+.turnRightOnCtrl: {
+    lda frameCounter : and #1 : beq no ; on even frames
+    CheckPress keyCtrl : beq no
+    inc myDirection, x
+.no
+    rts
+    }
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; update (DEV)
+
+Acc = 25
+
+.accelerateUp:
+    lda mySpeedY,     x : sec : sbc #Acc : sta mySpeedY, x
+    lda mySpeedY+NUM, x :       sbc #0   : sta mySpeedY+NUM, x
+    rts
+
+.accelerateDown:
+    lda mySpeedY,     x : clc : adc #Acc : sta mySpeedY, x
+    lda mySpeedY+NUM, x :       adc #0   : sta mySpeedY+NUM, x
+    rts
+
+.accelerateLeft:
+    lda mySpeedX,     x : sec : sbc #Acc : sta mySpeedX, x
+    lda mySpeedX+NUM, x :       sbc #0   : sta mySpeedX+NUM, x
+    rts
+
+.accelerateRight:
+    lda mySpeedX,     x : clc : adc #Acc : sta mySpeedX, x
+    lda mySpeedX+NUM, x :       adc #0   : sta mySpeedX+NUM, x
+    rts
+
+.updateSpeedIfSelected: {
+    cpx selectedN : bne no ; not selected
+    CheckPress keyUp    : { beq no : jsr accelerateUp    : .no }
+    CheckPress keyDown  : { beq no : jsr accelerateDown  : .no }
+    CheckPress keyLeft  : { beq no : jsr accelerateLeft  : .no }
+    CheckPress keyRight : { beq no : jsr accelerateRight : .no }
+.no:
+    rts
+    }
+
+.stepSelectedObject:
+    inc selectedN
+    lda selectedN : cmp #NUM : { bne no : lda #0 : sta selectedN : .no }
+    rts
+
+.updateSelectedObjectOnTab:
+    CheckPress keyTab
+    { beq no : jsr stepSelectedObject : .no }
+    rts
+
+.toggleActiveness:
+    lda isActive, x
+    beq activate
+    jmp deactivate
+
+.toggleActivenessIfSelected: {
+    CheckPress keyA : beq no
+    cpx selectedN : bne no
+    jsr toggleActiveness
+.no:
+    rts
+    }
+
+.setPositionFromId: ; DEV - used for large rock
+    txa
+    and #3
+    clc : adc #1 ; one column over
+    asl a : asl a : asl a : asl a
+    sta myPosX+NUM, x
+    txa : and #%11111100
+    clc : adc #8 ; two rows down
+    asl a : asl a : asl a
+    sta myPosY+NUM, x
+    rts
+
+.setInitialSlowSpeed: ; DEV - used for large rock.
+    lda #10 : sta mySpeedX, x
+    lda #50 : sta mySpeedY, x
+    lda #0 : sta mySpeedX+NUM, x
+    lda #0 : sta mySpeedY+NUM, x
+    rts
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; global behaviour
+
+.tryFireOnEnter: {
+    CheckPress keyEnter : beq no
+    lda kindCount + KindBullet
+    cmp #MaxBullets : bpl no
+    lda #1 : sta fireAttempted ; will be cleared by first available bullet
+.no:
+    rts
+    }
+
+.updateGlobal:
+    ;; jsr updateSelectedObjectOnTab
+    jsr tryFireOnEnter
+    rts
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; general object behaviour
+
+.activate: {
+    lda isActive, x : bne no
+    lda #1 : sta isActive, x
+    ldy myKind, x : lda kindCount, y : clc : adc #1 : sta kindCount, y
+    Copy16xv myActivateF, dispatch+1
+    .dispatch : jsr &7777
+.no:
+    rts
+    }
+
+.deactivate: {
+    lda isActive, x : beq no
+    lda #0 : sta isActive, x
+    ldy myKind, x : lda kindCount, y : sec : sbc #1 : sta kindCount, y
+    Copy16xv myDeactivateF, dispatch+1
+    .dispatch : jsr &7777
+.no:
+    rts
+    }
+
+.deactivateIfHit: {
+    lda isActive, x : beq no
+    lda isHit, x : beq no
+    jsr deactivate
+.no:
+    rts
+    }
+
+.updatePositionFromSpeed:
+    Add16xx myPosX, mySpeedX
+    Add16xx myPosY, mySpeedY
+    lda myPosX+NUM, x
+    jsr mod160
+    sta myPosX+NUM, x
+    rts
+
+.mod160: { ;; THIS IS IMPORTANT
+    m = 160
+    x = 9
+    clc : adc #x
+    { cmp #(m+x) : bcc no : sbc #m : .no } ; wrap
+    { cmp #x : bcs no : adc #m : .no } ; unwrap
+    sec : sbc #x
+.done:
+    rts
+    }
+
+.updateGenericObject:
+    jsr toggleActivenessIfSelected
+    jsr updateSpeedIfSelected
+    jsr deactivateIfHit
+    jsr updatePositionFromSpeed
+    rts
+
+.setCentralPosition:
+    lda #80 : sta myPosX+NUM, x
+    lda #128 : sta myPosY+NUM, x
+    rts
+
+.inheritPosition: ; obX --> obY
+    Copy16xy myPosX, myPosX
+    Copy16xy myPosY, myPosY
+    rts
+
+.inheritSpeed: ; obX --> obY
+    Copy16xy mySpeedX, mySpeedX
+    Copy16xy mySpeedY, mySpeedY
+    rts
+
+.startTimer:
+    lda frameCounter : sta myTimer, x
+    rts
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; rock behaviour
+
+.accelerateRightY: {stx restoreX+1 : tya : tax : jsr accelerateRight : .restoreX : ldx #&77 : rts }
+.accelerateDownY: {stx restoreX+1 : tya : tax : jsr accelerateDown : .restoreX : ldx #&77 : rts }
+
+.inheritSpeedAndPositionA:
+    jsr inheritPosition
+    jsr inheritSpeed
+    jsr accelerateRightY ;; TODO: change by random component
+    rts
+
+.inheritSpeedAndPositionB:
+    jsr inheritPosition
+    jsr inheritSpeed
+    jsr accelerateDownY ;; TODO: then can treat A/B the same
+    rts
+
+.activateY: {stx restoreX+1 : tya : tax : jsr activate : .restoreX : ldx #&77 : rts }
+
+.spawnChildren:
+    lda childA, x : tay : jsr inheritSpeedAndPositionA : jsr activateY
+    lda childB, x : tay : jsr inheritSpeedAndPositionB : jsr activateY
+    rts
+
+.activateRockL:
+    jsr setPositionFromId ; DEV
+    jsr setInitialSlowSpeed
+    rts
+
+.increaseScore:
+    sed ;; decimal mode
+    clc : adc score : sta score
+    lda #0 : adc score+1 : sta score+1
+    cld ;; back to binary mode
+    rts
+
+.deactivateRockL:
+    jsr spawnChildren
+    lda #2 : jsr increaseScore
+    rts
+
+.deactivateRockM:
+    jsr spawnChildren
+    lda #5 : jsr increaseScore
+    rts
+
+.deactivateRockS:
+    lda #&10 : jsr increaseScore
+    rts
+
+.updateRock:
+    jmp updateGenericObject
 
 .createRock:
     lda #KindRock : sta myKind, x
     Copy16ix rockPlot, myPlot
     Copy16ix rockUnPlot, myUnPlot
-    Copy16ix renderObject, renderF
-    jmp createObject
+    Copy16ix updateRock, myUpdateF
+    rts
 
-.createRockS:
-    Copy16ix smallRockOutline, myOutline
-    Copy16ix smallRockUpdate, updateF
+.createRockL:
+    Copy16ix largeRockOutline, myOutline
+    Copy16ix activateRockL, myActivateF
+    Copy16ix deactivateRockL, myDeactivateF
     jmp createRock
 
 .createRockM:
     Copy16ix mediumRockOutline, myOutline
-    Copy16ix mediumRockUpdate, updateF
+    Copy16ix deactivateRockM, myDeactivateF
     jmp createRock
 
-.createRockL:
-    Copy16ix largeRockOutline, myOutline
-    Copy16ix largeRockUpdate, updateF
+.createRockS:
+    Copy16ix smallRockOutline, myOutline
+    Copy16ix deactivateRockS, myDeactivateF
     jmp createRock
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; trig...
+
+macro mm B
+    equb B
+    ;print ~B
+endmacro
+
+.cosTabLow:
+    FOR i, -QuarterTurn, FullCircle - 1
+    mm LO(SIN((i*PI)/2/QuarterTurn) * 256)
+    NEXT
+.cosTabHigh:
+    FOR i, -QuarterTurn, FullCircle - 1
+    mm HI(SIN((i*PI)/2/QuarterTurn) * 256)
+    NEXT
+
+sinTabLow = cosTabLow + QuarterTurn
+sinTabHigh = cosTabHigh + QuarterTurn
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; ship behaviour
+
+.setShipOutlineFromDirection:
+    lda myDirection, x
+    and #7 ; take 3 bits (8 outlines in sequence)
+    asl a ; index Y for outline table must be even
+    tay
+    lda shipOutlines, y  : sta myOutline, x
+    lda shipOutlines+1,y : sta myOutline+NUM, x
+    rts
+
+.modulateDirection:
+    lda myDirection, x
+    and #(FullCircle - 1)
+    sta myDirection, x
+    rts
+
+.updateDirection:
+    jsr turnLeftOnCaps
+    jsr turnRightOnCtrl
+    jsr modulateDirection
+    jsr setShipOutlineFromDirection
+    rts
+
+.setThrust: {
+    CheckPress keyShift : beq no
+    ldy myDirection, x
+    lda sinTabHigh, y : sta theThrustX+1
+    lda sinTabLow, y : sta theThrustX
+    lda cosTabHigh, y : sta theThrustY+1
+    lda cosTabLow, y : sta theThrustY
+    rts
+.no:
+    Copy16iv 0, theThrustX
+    Copy16iv 0, theThrustY
+    rts
+    }
+
+.halveThrust:
+    Halve theThrustY
+.halveThrustX:
+    Halve theThrustX
+    rts
+
+macro InkrementIfNegative V
+    lda V+1 : bmi no
+    Inkrement16v V
+.no:
+endmacro
+
+.decayDrag:
+    InkrementIfNegative theAccX
+    InkrementIfNegative theAccY
+    Halve theAccX
+    Halve theAccY
+    rts
+
+.computeAcceleration:
+    jsr setThrust
+    IF ImpulseIndex > 0 : FOR i, 1, ImpulseIndex : jsr halveThrust : NEXT
+    ENDIF
+    jsr halveThrustX ; Y-axis is at twice precision of X
+    Copy16iv 0, theAccX
+    Copy16iv 0, theAccY
+    Sub16vx theAccX, mySpeedX
+    Sub16vx theAccY, mySpeedY
+    IF MomentumIndex > 0 : FOR i, 1, MomentumIndex : jsr decayDrag : NEXT
+    ENDIF
+    Add16vv theAccX, theThrustX
+    Add16vv theAccY, theThrustY
+    rts
+
+.updateSpeedFromAcceleration:
+    Add16xv mySpeedX, theAccX
+    Add16xv mySpeedY, theAccY
+    rts
+
+.updateShip:
+    jsr updateDirection
+    jsr computeAcceleration
+    jsr updateSpeedFromAcceleration
+    jmp updateGenericObject
+
+.activateShip:
+    jsr setCentralPosition
+    rts
 
 .createShip:
     lda #KindShip : sta myKind, x
     Copy16ix shipPlot, myPlot
     Copy16ix shipUnPlot, myUnPlot
-    Copy16ix shipUpdate, updateF
-    Copy16ix renderObject, renderF
-    jmp createObject
+    Copy16ix updateShip, myUpdateF
+    Copy16ix activateShip, myActivateF
+    rts
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; bullet behaviour
+
+.inheritPositionFromShip:
+    txa : tay
+    ldx #ShipObjectNum
+    jsr inheritPosition
+    tya : tax
+    rts
+
+.setBulletSpeed: ;; TODO macro trig lookup
+    ldy myDirection+ShipObjectNum
+    lda sinTabLow, y : sta mySpeedX, x
+    lda sinTabHigh, y : sta mySpeedX+NUM, x
+    ;; Y-axis is at twice precision of X, so we must double
+    lda cosTabLow, y : asl a : sta mySpeedY, x
+    lda cosTabHigh, y : rol a : sta mySpeedY+NUM, x
+    rts
+
+.doubleSpeed:
+    lda mySpeedX, x : asl a : sta mySpeedX, x
+    lda mySpeedX+NUM, x : rol a : sta mySpeedX+NUM, x
+    lda mySpeedY, x : asl a : sta mySpeedY, x
+    lda mySpeedY+NUM, x : rol a : sta mySpeedY+NUM, x
+    rts
+
+.activateBullet:
+    jsr inheritPositionFromShip
+    jsr setBulletSpeed ;; from ship direction
+    jsr doubleSpeed
+    jsr updatePositionFromSpeed
+    jsr updatePositionFromSpeed
+    jsr updatePositionFromSpeed
+    jsr startTimer
+    rts
+
+.spawnIfFiringAttempted:
+    lda fireAttempted : beq no ; not attempted
+    lda isActive, x : bne no ; not if we are already active
+    jsr activate
+    lda #0 : sta fireAttempted ; just one bullet!
+.no:
+    rts
+
+.dieWhenTimerExpires: {
+    lda myTimer, x : clc : adc #55 ; not so long that we can shoot ourselve!
+    cmp frameCounter : bpl no
+    jsr deactivate
+.no:
+    rts
+    }
+
+.updateBullet:
+    jsr spawnIfFiringAttempted
+    jsr dieWhenTimerExpires
+    jmp updateGenericObject
 
 .createBullet:
     lda #KindBullet : sta myKind, x
     Copy16ix bulletOutline, myOutline
     Copy16ix bulletPlot, myPlot
     Copy16ix bulletUnPlot, myUnPlot
-    Copy16ix bulletUpdate, updateF
-    Copy16ix renderObject, renderF
-    jmp createObject
+    Copy16ix updateBullet, myUpdateF
+    Copy16ix activateBullet, myActivateF
+    rts
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; Game init.
+;;; create
 
 .createAllObjects:
-    ;; ldx #1 : jsr createRockL : lda #2 : sta childA, x : lda #3 : sta childB, x
-    ;; ldx #2 : jsr createRockM : lda #4 : sta childA, x : lda #5 : sta childB, x
-    ;; ldx #3 : jsr createRockM : lda #6 : sta childA, x : lda #7 : sta childB, x
-    ;; ldx #4 : jsr createRockS
-    ;; ldx #5 : jsr createRockS
-    ;; ldx #6 : jsr createRockS
-    ;; ldx #7 : jsr createRockS
-
-    ldx #9 : jsr createRockL : lda #10 : sta childA, x : lda #11 : sta childB, x
-    ldx #10 : jsr createRockM : lda #12 : sta childA, x : lda #13 : sta childB, x
-    ldx #11 : jsr createRockM : lda #14 : sta childA, x : lda #15 : sta childB, x
-    ldx #12 : jsr createRockS
-    ldx #13 : jsr createRockS ; debug print for 13 is strangely/wrongly placed by MOS?
-    ldx #14 : jsr createRockS
-    ldx #15 : jsr createRockS
-
-    ldx #17 : jsr createRockL : lda #18 : sta childA, x : lda #19 : sta childB, x
-    ldx #18 : jsr createRockM : lda #20 : sta childA, x : lda #21 : sta childB, x
-    ldx #19 : jsr createRockM : lda #22 : sta childA, x : lda #23 : sta childB, x
-    ldx #20 : jsr createRockS
-    ldx #21 : jsr createRockS
-    ldx #22 : jsr createRockS
-    ldx #23 : jsr createRockS
-
-    ldx #ShipObjectNum : jsr createShip : stx selectedN
-    ldx #25 : jsr createBullet
-    ldx #26 : jsr createBullet
-    ldx #27 : jsr createBullet
-    ldx #28 : jsr createBullet
-
+    ldx #0 : jsr createShip
+    ldx #1 : jsr createBullet
+    ldx #2 : jsr createBullet
+    ldx #3 : jsr createBullet
+    ldx #4 : jsr createBullet
+    ldx #5 : jsr createRockL : lda #6 : sta childA, x : : lda #7 : sta childB, x
+    ldx #6 : jsr createRockM : lda #8 : sta childA, x : : lda #9 : sta childB, x
+    ldx #7 : jsr createRockM : lda #10: sta childA, x : : lda #11: sta childB, x
+    ldx #8 : jsr createRockS
+    ldx #9 : jsr createRockS
+    ldx #10: jsr createRockS
+    ldx #11: jsr createRockS
     rts
 
-.deactivateAll: {
-    ldx #0 : sta updateN
-.loop:
-    jsr deactivate
-    inx : cpx #NUM : bne loop
-    rts
-    }
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; game logic
 
-.activateObjectsForLevelStart:
-    ;; 3 large rocks
-    ldx #1 : jsr spawnObject
-    ldx #9 : jsr spawnObject
-    ldx #17 : jsr spawnObject
-
-    ;; and the ship
-    ldx #24
-    jsr repositionShipInCenter
-    jsr spawnObject
-    lda #3 : sta livesRemaining
-    lda #1 : sta sheetNumber
-    lda #0 : sta score
+.startLevel:
+    ldx #0 : jsr activate ;; the ship
+    ldx #5 : jsr activate : stx selectedN ;; the single large rock
     rts
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -1301,6 +1415,7 @@ ShipObjectNum = 24
     jsr init
     jsr createAllObjects
     Copy16iv myIRQ, irq1v ; initialise sync
+    jsr startLevel ;; TODO: much work on game states
     jmp renderLoop
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
