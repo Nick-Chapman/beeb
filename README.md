@@ -8,6 +8,7 @@ Goal: Re-Implementation of Acorsoft Meteors.
 - [2023: Game3 (final state of 2023 work)](https://bbc.godbolt.org/?&disc1=https://nick-chapman.github.io/beeb/game3.ssd&autoboot)
 - [2024: New year; new fun: Ship with thrust](https://bbc.godbolt.org/?&disc1=https://nick-chapman.github.io/beeb/jan.ssd&autoboot)
 - [WIP Sound: drone,fire,explode](https://bbc.godbolt.org/?&disc1=https://nick-chapman.github.io/beeb/explode.ssd&autoboot)
+- [objects: ship, rocks, bullets, firing](https://bbc.godbolt.org/?&disc1=https://nick-chapman.github.io/beeb/objects.ssd&autoboot)
 
 ## Resources
 
