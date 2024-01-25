@@ -2,7 +2,6 @@
 ;;; Objects, with render loop and synced update
 
 ;;; TODO
-;;; - debug keys: k/w/n - control kill all rocks / start wave / new life
 ;;; - randomness: large rock spawn position / speed delta on crack
 ;;; - track when object has moved; avoid unplot/plot when unmoved
 ;;; - switch to own emit (faster; fix code 13 issue)
@@ -307,6 +306,10 @@ org &1100
 .keyTab   equb 0
 .keyA     equb 0
 
+.keyK     equb 0
+.keyW     equb 0
+.keyN     equb 0
+
 .endKeys:
 numberKeys = endKeys - startKeys
 skip numberKeys ;; space to store LAST state
@@ -327,6 +330,10 @@ endmacro
     Edge keyTab ;; DEV: selected object
     Edge keyA ;; DEV: toggle active state
 
+    Edge keyK
+    Edge keyW
+    Edge keyN
+
     Edge keyUp
     Edge keyDown
     Edge keyLeft
@@ -342,6 +349,11 @@ endmacro
     PollKey -74,  keyEnter
     PollKey -97,  keyTab
     PollKey -66,  keyA
+
+    PollKey -71,  keyK
+    PollKey -34,  keyW
+    PollKey -86,  keyN
+
     PollKey -58,  keyUp
     PollKey -42,  keyDown
     PollKey -26,  keyLeft
@@ -896,65 +908,6 @@ ShipSpeedY = mySpeedY + ShipObjectNum
     rts
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; onSync (update-all)
-
-.updateN: skip 1
-.updateObjects: {
-    lda #0 : sta updateN
-.loop:
-    ldx updateN : cpx #NUM : { bne no : rts : .no }
-    Copy16xv myUpdateF, dispatch+1
-    .dispatch : jsr &7777
-    inc updateN
-    jmp loop
-    }
-
-.onSync:
-    inc frameCounter
-    jsr playSounds
-    jsr readKeys
-    ;;Position 34,31 : lda frameCounter : jsr printHexA : Space : lda renderN : jsr printHexA
-    ;;Position 1,28 : Space : jsr printKeyState
-    jsr updateGlobal
-    jsr updateObjects
-    rts
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; Render loop.
-
-.renderN: skip 1
-.renderLoop: {
-.loop:
-    lda vsyncNotify : { beq no : dec vsyncNotify : jsr onSync : .no }
-    ldx renderN : cpx #NUM : bne notZeroObject
-    ldx #0 : stx renderN
-    jsr printGlobalState
-.notZeroObject:
-    jsr renderObject
-    inc renderN
-    jmp loop
-    }
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; control
-
-.turnLeftOnCaps: {
-    lda frameCounter : and #1 : beq no ; on even frames
-    CheckPress keyCaps : beq no
-    dec myDirection, x
-.no
-    rts
-    }
-
-.turnRightOnCtrl: {
-    lda frameCounter : and #1 : beq no ; on even frames
-    CheckPress keyCtrl : beq no
-    inc myDirection, x
-.no
-    rts
-    }
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; update (DEV)
 
 Acc = 25
@@ -994,15 +947,16 @@ Acc = 25
     lda selectedN : cmp #NUM : { bne no : lda #0 : sta selectedN : .no }
     rts
 
-.updateSelectedObjectOnTab:
+.updateSelectedObjectOnTab: ;; TODO remove
     CheckPress keyTab
     { beq no : jsr stepSelectedObject : .no }
     rts
 
-.toggleActiveness:
-    lda isActive, x
-    beq activate
+.toggleActiveness: {
+    lda isActive, x : beq A
     jmp deactivate
+    .A : jmp activate
+    }
 
 .toggleActivenessIfSelected: {
     CheckPress keyA : beq no
@@ -1031,21 +985,12 @@ Acc = 25
     lda #0 : sta mySpeedY+NUM, x
     rts
 
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; global behaviour
-
-.tryFireOnEnter: {
-    CheckPress keyEnter : beq no
-    lda kindCount + KindBullet
-    cmp #MaxBullets : bpl no
-    lda #1 : sta fireAttempted ; will be cleared by first available bullet
-.no:
-    rts
-    }
-
-.updateGlobal:
-    ;; jsr updateSelectedObjectOnTab
-    jsr tryFireOnEnter
+.setZeroSpeed:
+    lda #0
+    sta mySpeedX, x
+    sta mySpeedY, x
+    sta mySpeedX+NUM, x
+    sta mySpeedY+NUM, x
     rts
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -1113,8 +1058,8 @@ Acc = 25
     }
 
 .updateGenericObject:
-    jsr toggleActivenessIfSelected
-    jsr updateSpeedIfSelected
+    ;;jsr toggleActivenessIfSelected
+    ;;jsr updateSpeedIfSelected
     jsr deactivateIfHit
     jsr updatePositionFromSpeed
     rts
@@ -1319,16 +1264,11 @@ endmacro
     jsr updateSpeedFromAcceleration
     jmp updateGenericObject
 
-.activateShip:
-    jsr setCentralPosition
-    rts
-
 .createShip:
     lda #KindShip : sta myKind, x
     Copy16ix shipPlot, myPlot
     Copy16ix shipUnPlot, myUnPlot
     Copy16ix updateShip, myUpdateF
-    Copy16ix activateShip, myActivateF
     rts
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -1426,13 +1366,134 @@ endmacro
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; game logic
 
-.startLevel:
-    ldx #ShipObjectNum : jsr activate ;; the ship
+.startNewWave:
+    ;; TODO: be more principled in discovering large rock numbers
     ldx #2 : jsr activate ;; first large rock
     ldx #11: jsr activate ;; second large rock
     rts
 
-;;; TODO: DEV: kill level / reset level / new life
+.killAllRocks: {
+    ldx #0
+.loop:
+    cpx #NUM : beq done
+    lda myKind, x
+    cmp #KindRock : bne next
+    jsr deactivate
+.next:
+    inx
+    jmp loop
+.done:
+    rts
+    }
+
+.activateShip:
+    ldx #ShipObjectNum
+    jsr setCentralPosition
+    lda #0 : sta myDirection, x
+    jsr setZeroSpeed
+    jsr activate
+    rts
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; control
+
+.turnLeftOnCaps: {
+    lda frameCounter : and #1 : beq no ; on even frames
+    CheckPress keyCaps : beq no
+    dec myDirection, x
+.no:
+    rts
+    }
+
+.turnRightOnCtrl: {
+    lda frameCounter : and #1 : beq no ; on even frames
+    CheckPress keyCtrl : beq no
+    inc myDirection, x
+.no:
+    rts
+    }
+
+.killAllRocksOnK: {
+    CheckPress keyK : beq no
+    jsr killAllRocks
+.no:
+    rts
+    }
+
+.startNewWaveOnW: {
+    CheckPress keyW : beq no
+    jsr startNewWave
+.no:
+    rts
+    }
+
+.newLifeOnN: {
+    CheckPress keyN : beq no
+    jsr activateShip
+.no:
+    rts
+    }
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; global behaviour
+
+.tryFireOnEnter: {
+    CheckPress keyEnter : beq no
+    lda kindCount + KindBullet
+    cmp #MaxBullets : bpl no
+    ;; TODO: cant fire when ship is not active
+    lda #1 : sta fireAttempted ; will be cleared by first available bullet
+.no:
+    rts
+    }
+
+.updateGlobal:
+    ;; jsr updateSelectedObjectOnTab
+    jsr tryFireOnEnter
+    jsr killAllRocksOnK
+    jsr startNewWaveOnW
+    jsr newLifeOnN
+    rts
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; onSync (update-all)
+
+.updateN: skip 1
+.updateObjects: {
+    lda #0 : sta updateN
+.loop:
+    ldx updateN : cpx #NUM : { bne no : rts : .no }
+    Copy16xv myUpdateF, dispatch+1
+    .dispatch : jsr &7777
+    inc updateN
+    jmp loop
+    }
+
+.onSync:
+    inc frameCounter
+    jsr playSounds
+    jsr readKeys
+    ;;Position 34,31 : lda frameCounter : jsr printHexA : Space : lda renderN : jsr printHexA
+    ;;Position 1,28 : Space : jsr printKeyState
+    jsr updateGlobal
+    jsr updateObjects
+    rts
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; Render loop.
+
+.renderN: skip 1
+.renderLoop: {
+.loop:
+    lda vsyncNotify : { beq no : dec vsyncNotify : jsr onSync : .no }
+    ldx renderN : cpx #NUM : bne notZeroObject
+    ldx #0 : stx renderN
+    jsr printGlobalState
+.notZeroObject:
+    jsr renderObject
+    inc renderN
+    jmp loop
+    }
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; main
@@ -1441,7 +1502,8 @@ endmacro
     jsr init
     jsr createAllObjects
     Copy16iv myIRQ, irq1v ; initialise sync
-    jsr startLevel
+    jsr startNewWave
+    jsr activateShip
     jmp renderLoop
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
