@@ -293,18 +293,11 @@ org &1100
 
 .startKeys:
 
-.keySpace EQUB 0
+.keySpace EQUB 0 ; TODO: game start logic
 .keyCaps  EQUB 0
 .keyCtrl  EQUB 0
 .keyShift EQUB 0
 .keyEnter EQUB 0
-
-.keyUp    equb 0
-.keyDown  equb 0
-.keyLeft  equb 0
-.keyRight equb 0
-.keyTab   equb 0
-.keyA     equb 0
 
 .keyK     equb 0
 .keyW     equb 0
@@ -327,37 +320,21 @@ endmacro
 .readKeys:
     Edge keySpace
     Edge keyEnter
-    Edge keyTab ;; DEV: selected object
-    Edge keyA ;; DEV: toggle active state
 
     Edge keyK
     Edge keyW
     Edge keyN
-
-    Edge keyUp
-    Edge keyDown
-    Edge keyLeft
-    Edge keyRight
-
-    ;Edge keyCaps
-    ;Edge keyCtrl
 
     PollKey -99,  keySpace
     PollKey -65,  keyCaps
     PollKey -2,   keyCtrl
     PollKey -1,   keyShift
     PollKey -74,  keyEnter
-    PollKey -97,  keyTab
-    PollKey -66,  keyA
 
     PollKey -71,  keyK
     PollKey -34,  keyW
     PollKey -86,  keyN
 
-    PollKey -58,  keyUp
-    PollKey -42,  keyDown
-    PollKey -26,  keyLeft
-    PollKey -122, keyRight
     rts
 
 macro CheckPress Key ; -> NZ
@@ -365,20 +342,12 @@ macro CheckPress Key ; -> NZ
 endmacro
 
 .printKeyState:
-    lda #'.' : { ldy keySpace: beq no : lda #'B' : .no } : jsr emit
-    Space
-    lda #'.' : { ldy keyCaps : beq no : lda #'C' : .no } : jsr emit
+    Position 15,0
+    lda #'.' : { ldy keyCaps : beq no : lda #'L' : .no } : jsr emit
     lda #'.' : { ldy keyCtrl : beq no : lda #'C' : .no } : jsr emit
+    lda #'.' : { ldy keySpace: beq no : lda #'B' : .no } : jsr emit
     lda #'.' : { ldy keyShift: beq no : lda #'S' : .no } : jsr emit
     lda #'.' : { ldy keyEnter: beq no : lda #'E' : .no } : jsr emit
-    Space
-    lda #'.' : { ldy keyTab  : beq no : lda #'T' : .no } : jsr emit
-    lda #'.' : { ldy keyA    : beq no : lda #'A' : .no } : jsr emit
-    Space
-    lda #'.' : { ldy keyUp   : beq no : lda #'U' : .no } : jsr emit
-    lda #'.' : { ldy keyDown : beq no : lda #'D' : .no } : jsr emit
-    lda #'.' : { ldy keyLeft : beq no : lda #'L' : .no } : jsr emit
-    lda #'.' : { ldy keyRight: beq no : lda #'R' : .no } : jsr emit
     rts
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -629,7 +598,6 @@ SWi = SW or INVISIBLE
 ;;; Global state
 
 .frameCounter: skip 1
-.selectedN: skip 1 ; TODO: remove
 
 .score skip 2
 
@@ -772,7 +740,7 @@ FullCircle = 4*QuarterTurn
 
 macro DebugPositionForObject
     lda #31 : jsr osasci
-    lda #33 : jsr osasci ; Xpos
+    lda #36 : jsr osasci ; Xpos
     txa : clc : adc #3 : jsr osasci ; Ypos
 endmacro
 
@@ -780,8 +748,6 @@ endmacro
     cpx #10 : beq done; dont debug object 10 because line 13 position is weird
     lda myKind, x : beq done ; kind not set, so not a real object
     DebugPositionForObject
-    Space : lda #'.' : { cpx selectedN : bne no : lda #'*' : .no } : jsr emit
-    Space
     lda #'.' : { ldy isActive, x : beq no : lda #'a' : .no } : jsr emit
     lda #'.' : { ldy isRendered, x : beq no : lda #'r' : .no } : jsr emit
     lda #'.' : { ldy isHit, x : beq no : lda #'H' : .no } : jsr emit
@@ -790,7 +756,7 @@ endmacro
     }
 
 .renderObject: {
-    IF Debug : jsr debugObject : ENDIF
+    ;;IF Debug : jsr debugObject : ENDIF
     lda #0 : sta isHit,x ; clear hit counter
     ;; if we are rendered, unplot...
     lda isRendered, x : beq afterUnplot
@@ -902,68 +868,15 @@ ShipSpeedY = mySpeedY + ShipObjectNum
 
 .printGlobalState:
     jsr printScore
-    Position 8,0 : jsr printLag ;; alway print lag for now
-    ;;IF Debug : Position 15,0 : jsr printObjectCountsByKind : ENDIF
+    Position 1,1 : jsr printLag ;; alway print lag for now
+    ;;IF Debug : Position 15,1 : jsr printObjectCountsByKind : ENDIF ;; not that useful
     IF Debug : jsr printThrustInfo : ENDIF
-    rts
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; update (DEV)
-
-Acc = 25
-
-.accelerateUp:
-    lda mySpeedY,     x : sec : sbc #Acc : sta mySpeedY, x
-    lda mySpeedY+NUM, x :       sbc #0   : sta mySpeedY+NUM, x
-    rts
-
-.accelerateDown:
-    lda mySpeedY,     x : clc : adc #Acc : sta mySpeedY, x
-    lda mySpeedY+NUM, x :       adc #0   : sta mySpeedY+NUM, x
-    rts
-
-.accelerateLeft:
-    lda mySpeedX,     x : sec : sbc #Acc : sta mySpeedX, x
-    lda mySpeedX+NUM, x :       sbc #0   : sta mySpeedX+NUM, x
-    rts
-
-.accelerateRight:
-    lda mySpeedX,     x : clc : adc #Acc : sta mySpeedX, x
-    lda mySpeedX+NUM, x :       adc #0   : sta mySpeedX+NUM, x
-    rts
-
-.updateSpeedIfSelected: {
-    cpx selectedN : bne no ; not selected
-    CheckPress keyUp    : { beq no : jsr accelerateUp    : .no }
-    CheckPress keyDown  : { beq no : jsr accelerateDown  : .no }
-    CheckPress keyLeft  : { beq no : jsr accelerateLeft  : .no }
-    CheckPress keyRight : { beq no : jsr accelerateRight : .no }
-.no:
-    rts
-    }
-
-.stepSelectedObject:
-    inc selectedN
-    lda selectedN : cmp #NUM : { bne no : lda #0 : sta selectedN : .no }
-    rts
-
-.updateSelectedObjectOnTab: ;; TODO remove
-    CheckPress keyTab
-    { beq no : jsr stepSelectedObject : .no }
     rts
 
 .toggleActiveness: {
     lda isActive, x : beq A
     jmp deactivate
     .A : jmp activate
-    }
-
-.toggleActivenessIfSelected: {
-    CheckPress keyA : beq no
-    cpx selectedN : bne no
-    jsr toggleActiveness
-.no:
-    rts
     }
 
 .setPositionFromId: ; DEV - used for large rock
@@ -1058,8 +971,6 @@ Acc = 25
     }
 
 .updateGenericObject:
-    ;;jsr toggleActivenessIfSelected
-    ;;jsr updateSpeedIfSelected
     jsr deactivateIfHit
     jsr updatePositionFromSpeed
     rts
@@ -1085,6 +996,18 @@ Acc = 25
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; rock behaviour
+
+Acc = 25
+
+.accelerateDown:
+    lda mySpeedY,     x : clc : adc #Acc : sta mySpeedY, x
+    lda mySpeedY+NUM, x :       adc #0   : sta mySpeedY+NUM, x
+    rts
+
+.accelerateRight:
+    lda mySpeedX,     x : clc : adc #Acc : sta mySpeedX, x
+    lda mySpeedX+NUM, x :       adc #0   : sta mySpeedX+NUM, x
+    rts
 
 .accelerateRightY: {stx restoreX+1 : tya : tax : jsr accelerateRight : .restoreX : ldx #&77 : rts }
 .accelerateDownY: {stx restoreX+1 : tya : tax : jsr accelerateDown : .restoreX : ldx #&77 : rts }
@@ -1473,8 +1396,7 @@ endmacro
     inc frameCounter
     jsr playSounds
     jsr readKeys
-    ;;Position 34,31 : lda frameCounter : jsr printHexA : Space : lda renderN : jsr printHexA
-    ;;Position 1,28 : Space : jsr printKeyState
+    ;; if Debug : jsr printKeyState : endif ;; not that useful
     jsr updateGlobal
     jsr updateObjects
     rts
