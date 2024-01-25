@@ -25,7 +25,7 @@
 ;;; - more keys: z/x:alternative-turn
 ;;; - sounds
 
-NUM = 12 ;; Number of objects, indexed consistently using X-register
+NUM = 20 ;; Number of objects, indexed consistently using X-register
 
 ShipObjectNum = 0
 
@@ -51,9 +51,17 @@ system_VIA_portA            = &fe4f
 osasci = &ffe3
 oswrch = &ffee
 
+TopLinesNotUsed = 2 ; must be even; used for high score etc
+
+MaxCoarseX = 80
+MaxCoarseY = 32 - TopLinesNotUsed
+
+BytesPerLine = MaxCoarseX * 8 ; 640
+
 ;;; Mode-1
 screenStart = &3000
-screenEnd = &8000
+lineTwoStart = screenStart + (TopLinesNotUsed * BytesPerLine)
+screenSize = MaxCoarseY * BytesPerLine
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Copy, B=A
@@ -392,7 +400,7 @@ endmacro
     adc theCY
     .smc_hbOnRow : adc #&ee
     lsr a
-    clc : adc #HI(screenStart)
+    clc : adc #HI(lineTwoStart)
     sta theA+1
 
     lda theCY : and #1              ; oddRow
@@ -451,13 +459,13 @@ endmacro
     rts
 
 .upA8: ; A
-    lda theA : sec : sbc #&80 : sta theA
-    lda theA+1     : sbc #2   : sta theA+1
+    lda theA : sec : sbc #LO(BytesPerLine) : sta theA
+    lda theA+1     : sbc #HI(BytesPerLine) : sta theA+1
     rts
 
 .downA8: ; A
-    lda theA : clc : adc #&80 : sta theA
-    lda theA+1     : adc #2   : sta theA+1
+    lda theA : clc : adc #LO(BytesPerLine) : sta theA
+    lda theA+1     : adc #HI(BytesPerLine) : sta theA+1
     rts
 
 .up1: { ; FY,CY,A
@@ -478,8 +486,8 @@ endmacro
 .unwrapScreen: { ; CY,A
     lda theCY
     bne no
-    lda #32 : sta theCY
-    lda theA+1 : clc : adc #HI(screenEnd-screenStart) : sta theA+1
+    lda #MaxCoarseY : sta theCY
+    lda theA+1 : clc : adc #HI(screenSize) : sta theA+1
 .no:
     rts }
 
@@ -500,9 +508,9 @@ endmacro
 
 .wrapScreen: { ; CY,A
     lda theCY
-    cmp #32 : bne no
+    cmp #MaxCoarseY : bne no
     lda #0 : sta theCY
-    lda theA+1 : sec : sbc #HI(screenEnd-screenStart) : sta theA+1
+    lda theA+1 : sec : sbc #HI(screenSize) : sta theA+1
 .no:
     rts }
 
@@ -831,7 +839,7 @@ endmacro
     rti
 .vblank:
     sta system_VIA_interruptFlags ; ack
-    lda vsyncNotify : bne crash ;; TODO reinstate
+    ;;lda vsyncNotify : bne crash ;; TODO reinstate
     inc vsyncNotify
     lda interruptSaveA
     rti
@@ -885,20 +893,21 @@ endmacro
     }
 
 .printObjectCountsByKind:
-    Position 28,30
+    Position 28,0
     lda #'s' : jsr emit : lda kindCount + KindShip : jsr printHexA
     Space : lda #'r' : jsr emit : lda kindCount + KindRock : jsr printHexA
     Space : lda #'b' : jsr emit : lda kindCount + KindBullet : jsr printHexA
     rts
 
 .printGameInfo:
-    Position 10,30
+    Position 1,0
     ;;lda #'.' : { ldy gameIsRunning: beq no : lda #'R' : .no } : jsr emit
     ;;Space : lda #'L' : jsr emit : lda livesRemaining : jsr printHexA
     ;;Space : lda #'W' : jsr emit : lda sheetNumber : jsr printHexA
-    Space : lda #'S' : jsr emit : lda score+1 : jsr printHexA : lda score,x : jsr printHexA : Emit '0'
-    Space : lda #'.' : { ldy fireAttempted: beq no : lda #'F' : .no } : jsr emit
-    Space : lda #'D' : jsr emit : lda myDirection+ShipObjectNum : jsr printHexA
+    ;;Space : lda #'S' : jsr emit
+    lda score+1 : jsr printHexA : lda score,x : jsr printHexA : Emit '0'
+    ;;Space : lda #'.' : { ldy fireAttempted: beq no : lda #'F' : .no } : jsr emit
+    ;;Space : lda #'D' : jsr emit : lda myDirection+ShipObjectNum : jsr printHexA
     rts
 
 ShipSpeedX = mySpeedX + ShipObjectNum
@@ -914,9 +923,9 @@ ShipSpeedY = mySpeedY + ShipObjectNum
     rts
 
 .printGlobalState:
-    ;;jsr printObjectCountsByKind
-    ;;jsr printGameInfo
-    ;jsr printThrustInfo
+    jsr printObjectCountsByKind
+    jsr printGameInfo
+    ;;jsr printThrustInfo
     rts
 
 .renderN: skip 1
@@ -925,8 +934,7 @@ ShipSpeedY = mySpeedY + ShipObjectNum
     lda vsyncNotify : { beq no : dec vsyncNotify : jsr onSync : .no }
     ldx renderN : cpx #NUM : bne notZeroObject
     ldx #0 : stx renderN
-    Position 1,30
-    ;;jsr printLag : lda frameCounter : sta lastRenderedFrameObject0
+    Position 8,0 : jsr printLag : lda frameCounter : sta lastRenderedFrameObject0
     jsr printGlobalState
 .notZeroObject:
     jsr renderObject
@@ -1025,7 +1033,7 @@ Acc = 25
 
 .setInitialSlowSpeed: ; DEV - used for large rock.
     lda #10 : sta mySpeedX, x
-    lda #50 : sta mySpeedY, x
+    lda #100 : sta mySpeedY, x
     lda #0 : sta mySpeedX+NUM, x
     lda #0 : sta mySpeedY+NUM, x
     rts
@@ -1082,13 +1090,27 @@ Acc = 25
     Add16xx myPosX, mySpeedX
     Add16xx myPosY, mySpeedY
     lda myPosX+NUM, x
-    jsr mod160
+    jsr modMaximumX
     sta myPosX+NUM, x
+    lda myPosY+NUM, x
+    jsr modMaximumY
+    sta myPosY+NUM, x
     rts
 
-.mod160: { ;; THIS IS IMPORTANT
+.modMaximumX: {
     m = 160
     x = 9
+    clc : adc #x
+    { cmp #(m+x) : bcc no : sbc #m : .no } ; wrap
+    { cmp #x : bcs no : adc #m : .no } ; unwrap
+    sec : sbc #x
+.done:
+    rts
+    }
+
+.modMaximumY: {
+    m = 8 * MaxCoarseY
+    x = 7
     clc : adc #x
     { cmp #(m+x) : bcc no : sbc #m : .no } ; wrap
     { cmp #x : bcs no : adc #m : .no } ; unwrap
@@ -1361,7 +1383,7 @@ endmacro
     rts
 
 .dieWhenTimerExpires: {
-    lda myTimer, x : clc : adc #55 ; not so long that we can shoot ourselve!
+    lda myTimer, x : clc : adc #50 ; not so long that we can shoot ourselve!
     cmp frameCounter : bpl no
     jsr deactivate
 .no:
@@ -1398,6 +1420,15 @@ endmacro
     ldx #9 : jsr createRockS
     ldx #10: jsr createRockS
     ldx #11: jsr createRockS
+
+    ldx #12: jsr createRockL : lda #13 : sta childA, x : : lda #14 : sta childB, x
+    ldx #13: jsr createRockM : lda #15 : sta childA, x : : lda #16 : sta childB, x
+    ldx #14: jsr createRockM : lda #17 : sta childA, x : : lda #18 : sta childB, x
+    ldx #15: jsr createRockS
+    ldx #16: jsr createRockS
+    ldx #17: jsr createRockS
+    ldx #18: jsr createRockS
+
     rts
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -1405,7 +1436,9 @@ endmacro
 
 .startLevel:
     ldx #0 : jsr activate ;; the ship
-    ldx #5 : jsr activate : stx selectedN ;; the single large rock
+    ldx #5 : jsr activate
+    ldx #12: jsr activate
+    lda #0: stx selectedN
     rts
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
