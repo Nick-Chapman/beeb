@@ -1,8 +1,11 @@
 
 ;;; Objects, with render loop and synced update
 
+;;; DONE
+;;; - randomness: large rock spawn position and speed
+
 ;;; TODO
-;;; - randomness: large rock spawn position / speed delta on crack
+;;; - randomness: speed delta on crack
 ;;; - track when object has moved; avoid unplot/plot when unmoved
 ;;; - switch to own emit (faster; fix code 13 issue)
 ;;; - other performance improvement?
@@ -11,8 +14,9 @@
 ;;; - keys: z/x: alternative-turn
 
 Debug = FALSE
+DebugObjects = FALSE
 
-NUM = 28 ;; Number of objects, indexed consistently using X-register
+NUM = 32 ;; Number of objects, indexed consistently using X-register
 
 ShipObjectNum = 0
 MaxBullets = 4
@@ -135,6 +139,17 @@ macro Halve V
     lda V+1 : cmp #&80 : ror a : sta V+1
     lda V              : ror a : sta V
 endmacro
+
+macro Invert16x A ; A = -A
+    sec
+    lda #0
+    sbc A, x
+    sta A, x
+    lda #0
+    sbc A+NUM, x
+    sta A+NUM, x
+endmacro
+
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Position, Emit, Space
@@ -293,7 +308,7 @@ org &1100
 
 .startKeys:
 
-.keySpace EQUB 0 ; TODO: game start logic
+.keySpace EQUB 0 ; TODO: start game
 .keyCaps  EQUB 0
 .keyCtrl  EQUB 0
 .keyShift EQUB 0
@@ -756,7 +771,7 @@ endmacro
     }
 
 .renderObject: {
-    ;;IF Debug : jsr debugObject : ENDIF
+    IF DebugObjects : jsr debugObject : ENDIF
     lda #0 : sta isHit,x ; clear hit counter
     ;; if we are rendered, unplot...
     lda isRendered, x : beq afterUnplot
@@ -873,38 +888,43 @@ ShipSpeedY = mySpeedY + ShipObjectNum
     IF Debug : jsr printThrustInfo : ENDIF
     rts
 
-.toggleActiveness: {
-    lda isActive, x : beq A
-    jmp deactivate
-    .A : jmp activate
-    }
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; Randomness
 
-.setPositionFromId: ; DEV - used for large rock
-    txa
-    and #3
-    clc : adc #1 ; one column over
-    asl a : asl a : asl a : asl a
-    sta myPosX+NUM, x
-    txa : and #%11111100
-    clc : adc #8 ; two rows down
-    asl a : asl a : asl a
-    sta myPosY+NUM, x
+.randomBytes:
+equb &22,&52,&6a,&51,&a7,&35,&26,&bc,&ce,&54,&e8,&56,&60,&af,&45,&04
+equb &ce,&65,&54,&70,&df,&d4,&36,&b1,&7c,&0f,&0d,&dd,&1f,&66,&bd,&98
+equb &7e,&a0,&8e,&36,&27,&5a,&9b,&31,&7e,&70,&48,&65,&6f,&39,&45,&60
+equb &db,&4f,&fb,&ba,&e4,&7a,&a7,&a7,&96,&f0,&b0,&e6,&a8,&e9,&99,&bb
+equb &10,&6f,&28,&02,&dc,&79,&bc,&b3,&18,&18,&81,&cc,&bb,&b3,&e0,&ff
+equb &8b,&4f,&11,&e0,&f2,&1b,&ff,&7a,&ee,&37,&c5,&ca,&9d,&57,&ba,&c4
+equb &cd,&65,&b5,&43,&f7,&5c,&82,&10,&d2,&8c,&5e,&b0,&c5,&aa,&c6,&1a
+equb &bd,&a4,&3a,&f7,&37,&0f,&5c,&5f,&63,&61,&93,&0a,&05,&54,&21,&7a
+equb &b2,&c3,&fe,&3f,&74,&a6,&5c,&3e,&ca,&1b,&5c,&26,&57,&ef,&01,&32
+equb &f9,&ff,&82,&b4,&ee,&df,&7c,&d6,&2f,&f2,&e5,&20,&84,&3b,&a6,&d0
+equb &ac,&2a,&88,&c3,&9b,&01,&81,&9f,&a5,&3a,&c4,&fa,&fc,&6d,&d4,&46
+equb &e2,&f6,&7d,&39,&63,&0a,&97,&6d,&b9,&9a,&97,&71,&f8,&ea,&ff,&7f
+equb &85,&bc,&88,&06,&3b,&30,&c5,&3f,&33,&3a,&67,&d7,&a7,&f7,&f7,&83
+equb &8f,&f6,&ae,&f1,&1f,&07,&3b,&a6,&0b,&3b,&b3,&9b,&f9,&f4,&67,&fe
+equb &1a,&c0,&ce,&41,&cc,&26,&13,&b8,&64,&c0,&77,&42,&00,&9f,&63,&e2
+equb &70,&3b,&a5,&0d,&f2,&13,&e8,&72,&9b,&e0,&ad,&7e,&aa,&8e,&d0,&f5
+assert *-randomBytes = 256
+
+.randomOffset SKIP 1
+
+.getRandomByte: ; -->A
+    inc randomOffset
+    ldy randomOffset
+    lda randomBytes,y
     rts
 
-.setInitialSlowSpeed: ; DEV - used for large rock.
-    lda #10 : sta mySpeedX, x
-    lda #100 : sta mySpeedY, x
-    lda #0 : sta mySpeedX+NUM, x
-    lda #0 : sta mySpeedY+NUM, x
-    rts
+macro RandomByte
+    jsr getRandomByte
+endmacro
 
-.setZeroSpeed:
-    lda #0
-    sta mySpeedX, x
-    sta mySpeedY, x
-    sta mySpeedX+NUM, x
-    sta mySpeedY+NUM, x
-    rts
+macro RandomBit
+	RandomByte : and #1
+endmacro
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; general object behaviour
@@ -997,6 +1017,32 @@ ShipSpeedY = mySpeedY + ShipObjectNum
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; rock behaviour
 
+.setRandomPosForLargeRock:
+    lda #0 : sta myPosY, x
+    RandomByte : sta myPosY+NUM, x
+    lda #0 : sta myPosX, x
+    RandomByte : lsr a : sta myPosX+NUM, x : ror myPosX, x
+    ;; 0..127 --> 0..59 / 92..159 (make channel for ship in stanting position)
+    lda myPosX+NUM, x
+    { cmp #60 : bmi no : clc : adc #32 : .no } ; 60 chosen by visual inspection
+    sta myPosX+NUM, x
+    rts
+
+.setRandomSpeedForLargeRock:
+    lda #0
+    sta mySpeedX+NUM, x
+    sta mySpeedY+NUM, x
+    RandomByte : lsr a : sta mySpeedX, x
+    RandomByte : sta mySpeedY, x
+    RandomBit : { beq no : Invert16x mySpeedX : .no }
+    RandomBit : { beq no : Invert16x mySpeedY : .no }
+    rts
+
+.activateRockL:
+    jsr setRandomPosForLargeRock
+    jsr setRandomSpeedForLargeRock
+    rts
+
 Acc = 25
 
 .accelerateDown:
@@ -1029,11 +1075,6 @@ Acc = 25
 .spawnChildren:
     lda childA, x : tay : jsr inheritSpeedAndPositionA : jsr activateY
     lda childB, x : tay : jsr inheritSpeedAndPositionB : jsr activateY
-    rts
-
-.activateRockL: ;; TODO: set (random values) in level restart
-    jsr setPositionFromId
-    jsr setInitialSlowSpeed
     rts
 
 .increaseScore:
@@ -1275,13 +1316,14 @@ endmacro
 
 .createAllObjects: {
     ldx #ShipObjectNum : jsr createShip ; 0
-    ldx #2 : jsr createRockFamily ; 2--8
-    ldx #11 : jsr createRockFamily ; 11-17
-    ldx #19
+    ldx #1 : jsr createRockFamily ; 1--7
+    ldx #8 : jsr createRockFamily ; 8--14
+    ldx #15 : jsr createRockFamily ; 15--21
+    txa : clc : adc #MaxBullets : sta smc_cond+1
 .loopB:
-    jsr createBullet ; 19,20,21,22
+    jsr createBullet ; 22--25
     inx
-    cpx #(MaxBullets+19)
+    .smc_cond : cpx #&77
     bne loopB
     rts
     }
@@ -1291,8 +1333,9 @@ endmacro
 
 .startNewWave:
     ;; TODO: be more principled in discovering large rock numbers
-    ldx #2 : jsr activate ;; first large rock
-    ldx #11: jsr activate ;; second large rock
+    ldx #1 : jsr activate
+    ldx #8: jsr activate
+    ldx #15: jsr activate
     rts
 
 .killAllRocks: {
@@ -1313,7 +1356,8 @@ endmacro
     ldx #ShipObjectNum
     jsr setCentralPosition
     lda #0 : sta myDirection, x
-    jsr setZeroSpeed
+    Copy16ix 0, mySpeedX
+    Copy16ix 0, mySpeedY
     jsr activate
     rts
 
@@ -1371,7 +1415,6 @@ endmacro
     }
 
 .updateGlobal:
-    ;; jsr updateSelectedObjectOnTab
     jsr tryFireOnEnter
     jsr killAllRocksOnK
     jsr startNewWaveOnW
@@ -1412,6 +1455,7 @@ endmacro
     ldx #0 : stx renderN
     jsr printGlobalState
 .notZeroObject:
+    inc randomOffset ;; better randomness; necessary?
     jsr renderObject
     inc renderN
     jmp loop
