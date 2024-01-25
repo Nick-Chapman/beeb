@@ -3,9 +3,9 @@
 
 ;;; DONE
 ;;; - randomness: large rock spawn position and speed
+;;; - randomness: speed delta on crack
 
 ;;; TODO
-;;; - randomness: speed delta on crack
 ;;; - track when object has moved; avoid unplot/plot when unmoved
 ;;; - switch to own emit (faster; fix code 13 issue)
 ;;; - other performance improvement?
@@ -21,8 +21,8 @@ NUM = 32 ;; Number of objects, indexed consistently using X-register
 ShipObjectNum = 0
 MaxBullets = 4
 
-MomentumIndex = 6  ; Higher is more momentum (and increased max speed)
-ImpulseIndex = 3 ; Higher is lower thrust (and decreased max speed)
+MomentumIndex = 7  ; Higher is more momentum (and increased max speed)
+ImpulseIndex = 4 ; Higher is lower thrust (and decreased max speed)
 
 ;;; MOS vectors & zero page use
 interruptSaveA = &fc
@@ -112,6 +112,16 @@ macro Add16xx A, B ; A = A+B
     lda A+NUM, x
     adc B+NUM, x
     sta A+NUM, x
+endmacro
+
+macro Add16yx A, B ; A = A+B
+    clc
+    lda A, y
+    adc B, x
+    sta A, y
+    lda A+NUM, y
+    adc B+NUM, x
+    sta A+NUM, y
 endmacro
 
 macro Sub16vx A, B ; A = A-B
@@ -912,11 +922,14 @@ assert *-randomBytes = 256
 
 .randomOffset SKIP 1
 
-.getRandomByte: ; -->A
+.getRandomByte: { ; -->A
     inc randomOffset
+    sty restoreY+1
     ldy randomOffset
     lda randomBytes,y
+    .restoreY : ldy #&77
     rts
+    }
 
 macro RandomByte
     jsr getRandomByte
@@ -1005,13 +1018,22 @@ endmacro
     Copy16xy myPosY, myPosY
     rts
 
-.inheritSpeed: ; obX --> obY
-    Copy16xy mySpeedX, mySpeedX
-    Copy16xy mySpeedY, mySpeedY
-    rts
-
 .startTimer:
     lda frameCounter : sta myTimer, x
+    rts
+
+;;; TODO: dont be slower on higher levels
+macro Slower : lsr a : endmacro
+;macro Slower : endmacro
+
+.setRandomSpeed:
+    lda #0
+    sta mySpeedX+NUM, x
+    sta mySpeedY+NUM, x
+    RandomByte : Slower : lsr a : sta mySpeedX, x
+    RandomByte : Slower         : sta mySpeedY, x
+    RandomBit : { beq no : Invert16x mySpeedX : .no }
+    RandomBit : { beq no : Invert16x mySpeedY : .no }
     rts
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -1028,53 +1050,30 @@ endmacro
     sta myPosX+NUM, x
     rts
 
-.setRandomSpeedForLargeRock:
-    lda #0
-    sta mySpeedX+NUM, x
-    sta mySpeedY+NUM, x
-    RandomByte : lsr a : sta mySpeedX, x
-    RandomByte : sta mySpeedY, x
-    RandomBit : { beq no : Invert16x mySpeedX : .no }
-    RandomBit : { beq no : Invert16x mySpeedY : .no }
-    rts
-
 .activateRockL:
     jsr setRandomPosForLargeRock
-    jsr setRandomSpeedForLargeRock
+    jsr setRandomSpeed
     rts
 
-Acc = 25
 
-.accelerateDown:
-    lda mySpeedY,     x : clc : adc #Acc : sta mySpeedY, x
-    lda mySpeedY+NUM, x :       adc #0   : sta mySpeedY+NUM, x
+.setRandomSpeedY: {stx restoreX+1 : tya : tax : jsr setRandomSpeed : .restoreX : ldx #&77 : rts }
+
+.inheritSpeedWithRandomDelta: ; obX --> obY
+    jsr setRandomSpeedY
+    Add16yx mySpeedX, mySpeedX
+    Add16yx mySpeedY, mySpeedY
     rts
 
-.accelerateRight:
-    lda mySpeedX,     x : clc : adc #Acc : sta mySpeedX, x
-    lda mySpeedX+NUM, x :       adc #0   : sta mySpeedX+NUM, x
-    rts
-
-.accelerateRightY: {stx restoreX+1 : tya : tax : jsr accelerateRight : .restoreX : ldx #&77 : rts }
-.accelerateDownY: {stx restoreX+1 : tya : tax : jsr accelerateDown : .restoreX : ldx #&77 : rts }
-
-.inheritSpeedAndPositionA:
+.inheritSpeedAndPosition:
     jsr inheritPosition
-    jsr inheritSpeed
-    jsr accelerateRightY ;; TODO: change by random component
-    rts
-
-.inheritSpeedAndPositionB:
-    jsr inheritPosition
-    jsr inheritSpeed
-    jsr accelerateDownY ;; TODO: then can treat A/B the same
+    jsr inheritSpeedWithRandomDelta
     rts
 
 .activateY: {stx restoreX+1 : tya : tax : jsr activate : .restoreX : ldx #&77 : rts }
 
 .spawnChildren:
-    lda childA, x : tay : jsr inheritSpeedAndPositionA : jsr activateY
-    lda childB, x : tay : jsr inheritSpeedAndPositionB : jsr activateY
+    lda childA, x : tay : jsr inheritSpeedAndPosition : jsr activateY
+    lda childB, x : tay : jsr inheritSpeedAndPosition : jsr activateY
     rts
 
 .increaseScore:
@@ -1303,8 +1302,8 @@ endmacro
 
 .createRockFamily:
     jsr createRockL : txa : clc : adc #1 : sta childA, x : adc #1 : sta childB, x : inx
-    jsr createRockM : txa : clc : adc #1 : sta childA, x : adc #1 : sta childB, x : inx
-    jsr createRockM : txa : clc : adc #1 : sta childA, x : adc #1 : sta childB, x : inx
+    jsr createRockM : txa : clc : adc #2 : sta childA, x : adc #1 : sta childB, x : inx
+    jsr createRockM : txa : clc : adc #2 : sta childA, x : adc #1 : sta childB, x : inx
     jsr createRockS : inx
     jsr createRockS : inx
     jsr createRockS : inx
