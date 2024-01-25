@@ -99,3 +99,12 @@ Goal: Re-Implementation of Acorsoft Meteors.
 - full rock destruction logic: large -> 2medium -> 4small
 - hit during unplot, dont replot to avoid incorrect secondary collission.
 - bullet death on timer (state: frameCounter when spawned)
+- support speed on all objects, and update position
+- child rock inherits position/speed from parent
+- bullet inherits speed/position from ship
+- reinstate ship controls: thrust/decaying speed
+- child rock inherits position(+ fixed delta) from parent
+- global state for direction, caps/control
+- change ship outline when direction changes
+- render now works w.r.t a direction
+- save rendered direction/outline for unplot

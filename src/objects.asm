@@ -1,34 +1,21 @@
 
 ;;; Objects, with render loop and synced update
 
-;;; DONE
-;;; - game logic: (space)start, lives, gameover
-;;; - game logic: level cleared
-;;; - child rock inherits position(+ fixed delta) from parent
-;;; - global state for direction, caps/control
-;;; - change ship outline when direction changes
-;;; - render now works w.r.t a direction
-;;; - save rendered direction/outline for unplot
-
-
-;;; DONE
-;;; - (temp disabled game logic)
-;;; - support speed on all objects, and update position
-;;; - child rock inherits position/speed from parent
-;;; - bullet inherits speed/position from ship
-;;; - reinstate ship controls: thrust/decaying speed
-
-
 ;;; TODO
-;;; - child rock inherits speed/position (+ random delta) from parent
-;;; - random position when large rocks initially spawn
-;;; - more keys: z/x:alternative-turn
-;;; - sounds
+;;; - debug keys: k/w/n - control kill all rocks / start wave / new life
+;;; - randomness: large rock spawn position / speed delta on crack
+;;; - track when object has moved; avoid unplot/plot when unmoved
+;;; - switch to own emit (faster; fix code 13 issue)
+;;; - other performance improvement?
+;;; - sound!
+;;; - game logic: (space)start, lives, gameover, level cleared, startup banner
+;;; - keys: z/x: alternative-turn
 
-NUM = 20 ;; Number of objects, indexed consistently using X-register
+Debug = FALSE
+
+NUM = 28 ;; Number of objects, indexed consistently using X-register
 
 ShipObjectNum = 0
-
 MaxBullets = 4
 
 MomentumIndex = 6  ; Higher is more momentum (and increased max speed)
@@ -630,8 +617,7 @@ SWi = SW or INVISIBLE
 ;;; Global state
 
 .frameCounter: skip 1
-.selectedN: skip 1 ; DEV
-.lastRenderedFrameObject0 skip 1 ; DEV printLag
+.selectedN: skip 1 ; TODO: remove
 
 .score skip 2
 
@@ -659,7 +645,7 @@ NUMK = 4
 
 ;;; set during creation
 .myKind skip NUM
-.myOutline skip 2*NUM ; for ship, also changed duuring update
+.myOutline skip 2*NUM ; for ship: changed during update
 .myPlot skip 2*NUM
 .myUnPlot skip 2*NUM
 
@@ -670,12 +656,12 @@ NUMK = 4
 ;;; set during update
 .myPosX skip 2*NUM
 .myPosY skip 2*NUM
-.myDirection skip NUM ;; TODO: make global. only ship has changig direction!
+.myDirection skip NUM
 .mySpeedX skip 2*NUM
 .mySpeedY skip 2*NUM
-.isActive skip NUM ; state that is desired for the object; set in update
+.isActive skip NUM
 
-.myTimer skip NUM ; for timed-death of bullet, and...
+.myTimer skip NUM ; for timed-death of bullet
 
 ;;; only for large/medium rocks
 .childA skip NUM
@@ -775,26 +761,27 @@ FullCircle = 4*QuarterTurn
 macro DebugPositionForObject
     lda #31 : jsr osasci
     lda #33 : jsr osasci ; Xpos
-    txa : jsr osasci ; Ypos
+    txa : clc : adc #3 : jsr osasci ; Ypos
 endmacro
 
-.debugObject:
+.debugObject: {
+    cpx #10 : beq done; dont debug object 10 because line 13 position is weird
+    lda myKind, x : beq done ; kind not set, so not a real object
     DebugPositionForObject
     Space : lda #'.' : { cpx selectedN : bne no : lda #'*' : .no } : jsr emit
     Space
     lda #'.' : { ldy isActive, x : beq no : lda #'a' : .no } : jsr emit
     lda #'.' : { ldy isRendered, x : beq no : lda #'r' : .no } : jsr emit
     lda #'.' : { ldy isHit, x : beq no : lda #'H' : .no } : jsr emit
+.done:
     rts
+    }
 
 .renderObject: {
-    ;;jsr debugObject
-
+    IF Debug : jsr debugObject : ENDIF
     lda #0 : sta isHit,x ; clear hit counter
-
     ;; if we are rendered, unplot...
     lda isRendered, x : beq afterUnplot
-
     lda renderedDirection, x : jsr setOrientation
     Copy16xv renderedOutline, SMC_outline+1
     Copy16xv renderedX, theX
@@ -803,12 +790,10 @@ endmacro
     jsr drawOutline
     lda #0 : sta isRendered, x
 .afterUnplot:
-
     ;; if detect hit during unplot, DONT re-plot to avoid incorrect secondary collision
     lda isHit, x : bne afterPlot
     ;; if we are active, plot...
     lda isActive, x : beq afterPlot
-
     lda myDirection, x : jsr setOrientation
     Copy16xv myOutline, SMC_outline+1
     Copy16xv myPosX, theX
@@ -822,7 +807,6 @@ endmacro
     lda myDirection, x : sta renderedDirection, x
     lda #1 : sta isRendered, x
 .afterPlot:
-
     rts
     }
 
@@ -839,13 +823,77 @@ endmacro
     rti
 .vblank:
     sta system_VIA_interruptFlags ; ack
-    ;;lda vsyncNotify : bne crash ;; TODO reinstate
+    IF NOT(Debug) : lda vsyncNotify : bne crash : ENDIF
     inc vsyncNotify
     lda interruptSaveA
     rti
 .crash:
     Crash " SYNC"
     }
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; printLag
+
+;;; show a nice representation of how many frames lag we have
+;;; if frameCounter-lastRenderedFrame is 1 (or less) then we have no lag
+;;; if 2 then we have a lag of 1, etc. show each unit off lag with a "+"
+
+.lastRenderedFrameObject0 skip 1
+
+.printLag: {
+    lda frameCounter : sec : sbc lastRenderedFrameObject0
+    tay : beq zero
+    lda #'+'
+.loop:
+    dey : beq done : jsr emit : jmp loop
+.zero:
+    lda #'@' : jsr emit ; we rendered everything and the frame count has not advanced at all!
+.done:
+    lda #' ' : jsr emit
+    lda #' ' : jsr emit
+    lda #' ' : jsr emit
+    lda frameCounter : sta lastRenderedFrameObject0
+    rts
+    }
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; print game and DEV info
+
+.printScore:
+    Position 1,0
+    ;;lda #'.' : { ldy gameIsRunning: beq no : lda #'R' : .no } : jsr emit
+    ;;Space : lda #'L' : jsr emit : lda livesRemaining : jsr printHexA
+    ;;Space : lda #'W' : jsr emit : lda sheetNumber : jsr printHexA
+    ;;Space : lda #'S' : jsr emit
+    lda score+1 : jsr printHexA : lda score,x : jsr printHexA : Emit '0'
+    ;;Space : lda #'.' : { ldy fireAttempted: beq no : lda #'F' : .no } : jsr emit
+    ;;Space : lda #'D' : jsr emit : lda myDirection+ShipObjectNum : jsr printHexA
+    rts
+
+ShipSpeedX = mySpeedX + ShipObjectNum
+ShipSpeedY = mySpeedY + ShipObjectNum
+
+.printObjectCountsByKind:
+    lda #'s' : jsr emit : lda kindCount + KindShip : jsr printHexA
+    Space : lda #'r' : jsr emit : lda kindCount + KindRock : jsr printHexA
+    Space : lda #'b' : jsr emit : lda kindCount + KindBullet : jsr printHexA
+    rts
+
+.printThrustInfo:
+    Position 28, 0 : Emit 'a'
+    Space : lda theAccX+1 : jsr printHexA : lda theAccX : jsr printHexA
+    Space : lda theAccY+1 : jsr printHexA : lda theAccY : jsr printHexA
+    Position 28, 1  : Emit 'v'
+    Space : lda ShipSpeedX+NUM : jsr printHexA : lda ShipSpeedX : jsr printHexA
+    Space : lda ShipSpeedY+NUM : jsr printHexA : lda ShipSpeedY : jsr printHexA
+    rts
+
+.printGlobalState:
+    jsr printScore
+    Position 8,0 : jsr printLag ;; alway print lag for now
+    ;;IF Debug : Position 15,0 : jsr printObjectCountsByKind : ENDIF
+    IF Debug : jsr printThrustInfo : ENDIF
+    rts
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; onSync (update-all)
@@ -874,67 +922,12 @@ endmacro
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Render loop.
 
-;;; show a nice representation of how many frames lag we have
-;;; if frameCounter-lastRenderedFrame is 1 (or less) then we have no lag
-;;; if 2 then we have a lag of 1, etc. show each unit off lag with a "+"
-.printLag: {
-    lda frameCounter : sec : sbc lastRenderedFrameObject0
-    tay : beq zero
-    lda #'+'
-.loop:
-    dey : beq done : jsr emit : jmp loop
-.zero:
-    lda #'@' : jsr emit ; we rendered everything and the frame count has not advanced at all!
-.done:
-    lda #' ' : jsr emit
-    lda #' ' : jsr emit
-    lda #' ' : jsr emit
-    rts
-    }
-
-.printObjectCountsByKind:
-    Position 28,0
-    lda #'s' : jsr emit : lda kindCount + KindShip : jsr printHexA
-    Space : lda #'r' : jsr emit : lda kindCount + KindRock : jsr printHexA
-    Space : lda #'b' : jsr emit : lda kindCount + KindBullet : jsr printHexA
-    rts
-
-.printGameInfo:
-    Position 1,0
-    ;;lda #'.' : { ldy gameIsRunning: beq no : lda #'R' : .no } : jsr emit
-    ;;Space : lda #'L' : jsr emit : lda livesRemaining : jsr printHexA
-    ;;Space : lda #'W' : jsr emit : lda sheetNumber : jsr printHexA
-    ;;Space : lda #'S' : jsr emit
-    lda score+1 : jsr printHexA : lda score,x : jsr printHexA : Emit '0'
-    ;;Space : lda #'.' : { ldy fireAttempted: beq no : lda #'F' : .no } : jsr emit
-    ;;Space : lda #'D' : jsr emit : lda myDirection+ShipObjectNum : jsr printHexA
-    rts
-
-ShipSpeedX = mySpeedX + ShipObjectNum
-ShipSpeedY = mySpeedY + ShipObjectNum
-
-.printThrustInfo:
-    Position 0, 27 : Emit 'A' : Space
-    Space : lda theAccX+1 : jsr printHexA : lda theAccX : jsr printHexA
-    Space : lda theAccY+1 : jsr printHexA : lda theAccY : jsr printHexA
-    Position 0, 28  : Emit 'V' : Space
-    Space : lda ShipSpeedX+NUM : jsr printHexA : lda ShipSpeedX : jsr printHexA
-    Space : lda ShipSpeedY+NUM : jsr printHexA : lda ShipSpeedY : jsr printHexA
-    rts
-
-.printGlobalState:
-    jsr printObjectCountsByKind
-    jsr printGameInfo
-    ;;jsr printThrustInfo
-    rts
-
 .renderN: skip 1
 .renderLoop: {
 .loop:
     lda vsyncNotify : { beq no : dec vsyncNotify : jsr onSync : .no }
     ldx renderN : cpx #NUM : bne notZeroObject
     ldx #0 : stx renderN
-    Position 8,0 : jsr printLag : lda frameCounter : sta lastRenderedFrameObject0
     jsr printGlobalState
 .notZeroObject:
     jsr renderObject
@@ -1170,8 +1163,8 @@ Acc = 25
     lda childB, x : tay : jsr inheritSpeedAndPositionB : jsr activateY
     rts
 
-.activateRockL:
-    jsr setPositionFromId ; DEV
+.activateRockL: ;; TODO: set (random values) in level restart
+    jsr setPositionFromId
     jsr setInitialSlowSpeed
     rts
 
@@ -1366,7 +1359,7 @@ endmacro
 
 .activateBullet:
     jsr inheritPositionFromShip
-    jsr setBulletSpeed ;; from ship direction
+    jsr setBulletSpeed
     jsr doubleSpeed
     jsr updatePositionFromSpeed
     jsr updatePositionFromSpeed
@@ -1404,42 +1397,42 @@ endmacro
     Copy16ix activateBullet, myActivateF
     rts
 
+.createRockFamily:
+    jsr createRockL : txa : clc : adc #1 : sta childA, x : adc #1 : sta childB, x : inx
+    jsr createRockM : txa : clc : adc #1 : sta childA, x : adc #1 : sta childB, x : inx
+    jsr createRockM : txa : clc : adc #1 : sta childA, x : adc #1 : sta childB, x : inx
+    jsr createRockS : inx
+    jsr createRockS : inx
+    jsr createRockS : inx
+    jsr createRockS : inx
+    rts
+
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; create
 
-.createAllObjects:
-    ldx #0 : jsr createShip
-    ldx #1 : jsr createBullet
-    ldx #2 : jsr createBullet
-    ldx #3 : jsr createBullet
-    ldx #4 : jsr createBullet
-    ldx #5 : jsr createRockL : lda #6 : sta childA, x : : lda #7 : sta childB, x
-    ldx #6 : jsr createRockM : lda #8 : sta childA, x : : lda #9 : sta childB, x
-    ldx #7 : jsr createRockM : lda #10: sta childA, x : : lda #11: sta childB, x
-    ldx #8 : jsr createRockS
-    ldx #9 : jsr createRockS
-    ldx #10: jsr createRockS
-    ldx #11: jsr createRockS
-
-    ldx #12: jsr createRockL : lda #13 : sta childA, x : : lda #14 : sta childB, x
-    ldx #13: jsr createRockM : lda #15 : sta childA, x : : lda #16 : sta childB, x
-    ldx #14: jsr createRockM : lda #17 : sta childA, x : : lda #18 : sta childB, x
-    ldx #15: jsr createRockS
-    ldx #16: jsr createRockS
-    ldx #17: jsr createRockS
-    ldx #18: jsr createRockS
-
+.createAllObjects: {
+    ldx #ShipObjectNum : jsr createShip ; 0
+    ldx #2 : jsr createRockFamily ; 2--8
+    ldx #11 : jsr createRockFamily ; 11-17
+    ldx #19
+.loopB:
+    jsr createBullet ; 19,20,21,22
+    inx
+    cpx #(MaxBullets+19)
+    bne loopB
     rts
+    }
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; game logic
 
 .startLevel:
-    ldx #0 : jsr activate ;; the ship
-    ldx #5 : jsr activate
-    ldx #12: jsr activate
-    lda #0: stx selectedN
+    ldx #ShipObjectNum : jsr activate ;; the ship
+    ldx #2 : jsr activate ;; first large rock
+    ldx #11: jsr activate ;; second large rock
     rts
+
+;;; TODO: DEV: kill level / reset level / new life
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; main
@@ -1448,7 +1441,7 @@ endmacro
     jsr init
     jsr createAllObjects
     Copy16iv myIRQ, irq1v ; initialise sync
-    jsr startLevel ;; TODO: much work on game states
+    jsr startLevel
     jmp renderLoop
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
