@@ -1,9 +1,9 @@
 
-top: _build/objects.ssd
+top: _build/meteors.ssd
 
 all: build-all
 
-run: run-objects
+run: run-meteors
 
 game2view: src/game2.asm
 	beebasm -v -i $< -do /dev/null -boot Code

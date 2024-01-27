@@ -9,6 +9,7 @@ Goal: Re-Implementation of Acorsoft Meteors.
 - [2024: New year; new fun: Ship with thrust](https://bbc.godbolt.org/?&disc1=https://nick-chapman.github.io/beeb/jan.ssd&autoboot)
 - [WIP Sound: drone,fire,explode](https://bbc.godbolt.org/?&disc1=https://nick-chapman.github.io/beeb/explode.ssd&autoboot)
 - [objects: ship, rocks, bullets, firing](https://bbc.godbolt.org/?&disc1=https://nick-chapman.github.io/beeb/objects.ssd&autoboot)
+- [Combine sound into game](https://bbc.godbolt.org/?&disc1=https://nick-chapman.github.io/beeb/meteors.ssd&autoboot)
 
 ## Resources
 
@@ -108,3 +109,9 @@ Goal: Re-Implementation of Acorsoft Meteors.
 - change ship outline when direction changes
 - render now works w.r.t a direction
 - save rendered direction/outline for unplot
+- randomness: large rock spawn position and speed
+- randomness: speed delta on crack
+- track when object has moved; avoid unplot/plot when unmoved
+
+## meteors
+- Combine objects and sounds
