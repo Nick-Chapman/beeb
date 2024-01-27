@@ -4,9 +4,9 @@
 ;;; DONE
 ;;; - randomness: large rock spawn position and speed
 ;;; - randomness: speed delta on crack
+;;; - track when object has moved; avoid unplot/plot when unmoved
 
 ;;; TODO
-;;; - track when object has moved; avoid unplot/plot when unmoved
 ;;; - switch to own emit (faster; fix code 13 issue)
 ;;; - other performance improvement?
 ;;; - sound!
@@ -582,7 +582,7 @@ SWi = SW or INVISIBLE
 .outlineIndex skip 1
 .outlineMotion skip 1
 
-.drawOutline: {
+.drawOutline: { ;; TODO: rename traverse
     jsr calcA
     ldy #0
 .loop:
@@ -653,6 +653,7 @@ NUMK = 4
 .myOutline skip 2*NUM ; for ship: changed during update
 .myPlot skip 2*NUM
 .myUnPlot skip 2*NUM
+.myHitCheck skip 2*NUM
 
 .myUpdateF skip 2*NUM
 .myActivateF skip 2*NUM
@@ -680,6 +681,11 @@ NUMK = 4
 .renderedDirection skip NUM
 .renderedOutline skip 2*NUM
 
+;;; set during update when any of posXY/outline/direction are different from rendered version
+;;; cleared when a re-plot takes place
+;;; if unset during rendering, we may avoid unplot/plot, only checking for collision
+.hasMoved skip NUM
+
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; colour choice & collision detection (onPoint)
 
@@ -702,35 +708,45 @@ macro BulletPixel ; draw in red
     ldy #0 : eor (theA),y : sta (theA),y
 endmacro
 
-macro RockHit ; only red hits (sadly can be caused by debug yellow turning red on eor)
+macro RockHit ; I am cyan; only red hits
     ldy #0 : lda (theA),y
-    ldy theFX : and masks,y : eor redMasks,y ; and;eor!
+    ;; cyan^red is YELLOW
+    ldy theFX : and masks,y : eor yellowMasks,y ; and;eor!
     { bne noHit : inc isHit,x : .noHit } ; bne!
 endmacro
 
-macro ShipHit ; red or cyan hits (not yellow, so debug info wont hit us)
+;;; I am yellow; only cyan hits (avoids being hit by own bullet)
+;;; If we ever get a saucer, we will have to allow being hit by red.
+macro ShipHit
     ldy #0 : lda (theA),y
-    ldy theFX : and redMasks,y
-    { beq noHit : inc isHit,x : .noHit }
+    ;; yellow^cyan is RED
+    ldy theFX : and masks,y : eor redMasks,y
+    { bne noHit : inc isHit,x : .noHit }
 endmacro
 
-macro BulletHit ; yellow or cyan hits (not red, so bullets dont interfer)
+;;; I am red; only cyan hits (avoid overrun of ship on fire!)
+macro BulletHit ;
     ldy #0 : lda (theA),y
-    ldy theFX : and yellowMasks,y
-    { beq noHit : inc isHit,x : .noHit }
+    ;; red^cyan is YELLOW
+    ldy theFX : and masks,y : eor yellowMasks,y
+    { bne noHit : inc isHit,x : .noHit }
 endmacro
 
-;;; When plotting: we first check for collision; then flip the pixel.
-;;; When unplotting we do the reverse: we flip the pixel; then check for collision.
+;;; When plotting: we flip the pixel; then check for collision
+;;; When unplotting we do the reverse: we check for collision; then flip the pixel
 
-.rockPlot:   RockHit : RockPixel : jmp nextPoint
-.rockUnPlot: RockPixel : RockHit : jmp nextPoint
+.rockUnPlot: RockHit : RockPixel : jmp nextPoint
+.rockPlot:   RockPixel : RockHit : jmp nextPoint
 
-.shipPlot:   ShipHit : ShipPixel : jmp nextPoint
-.shipUnPlot: ShipPixel : ShipHit : jmp nextPoint
+.shipUnPlot: ShipHit : ShipPixel : jmp nextPoint
+.shipPlot:   ShipPixel : ShipHit : jmp nextPoint
 
-.bulletPlot:   BulletHit : BulletPixel : jmp nextPoint
-.bulletUnPlot: BulletPixel : BulletHit : jmp nextPoint
+.bulletUnPlot: BulletHit : BulletPixel : jmp nextPoint
+.bulletPlot:   BulletPixel : BulletHit : jmp nextPoint
+
+.rockHitCheck: RockHit : jmp nextPoint
+.shipHitCheck: ShipHit : jmp nextPoint
+.bulletHitCheck: BulletHit : jmp nextPoint
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; ship direction
@@ -761,30 +777,55 @@ FullCircle = 4*QuarterTurn
     equb N,W,S,E
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; Render object
+;;; Debug object
 
 macro DebugPositionForObject
     lda #31 : jsr osasci
-    lda #36 : jsr osasci ; Xpos
+    lda #37 : jsr osasci ; Xpos
     txa : clc : adc #3 : jsr osasci ; Ypos
 endmacro
+
+.strobe skip NUM
 
 .debugObject: {
     cpx #10 : beq done; dont debug object 10 because line 13 position is weird
     lda myKind, x : beq done ; kind not set, so not a real object
     DebugPositionForObject
-    lda #'.' : { ldy isActive, x : beq no : lda #'a' : .no } : jsr emit
-    lda #'.' : { ldy isRendered, x : beq no : lda #'r' : .no } : jsr emit
-    lda #'.' : { ldy isHit, x : beq no : lda #'H' : .no } : jsr emit
+    ;lda #'.' : { ldy isActive, x : beq no : lda #'a' : .no } : jsr emit
+    ;lda #'.' : { ldy isRendered, x : beq no : lda #'r' : .no } : jsr emit
+    lda #' ' : { ldy hasMoved, x : beq no : lda #'M' : .no } : jsr emit
+    lda #' ' : { ldy isHit, x : beq no : lda #'H' : .no } : jsr emit
+    ;lda #'.' : { ldy strobe, x : beq no : lda #'*' : .no } : jsr emit
+    ;lda strobe, x : eor #1 : sta strobe, x
 .done:
     rts
     }
 
-.renderObject: {
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; Render object
+
+.renderObjectAndHitCheck:
     IF DebugObjects : jsr debugObject : ENDIF
-    lda #0 : sta isHit,x ; clear hit counter
+    lda #0 : sta isHit,x ; clear
+
+    lda isActive, x : beq renderMovedObject
+    lda isRendered, x : beq renderMovedObject
+    lda hasMoved, x : bne renderMovedObject
+
+    ;; Special case for objects which haven't moved, were previously
+    ;; rendered, and are still active: only ned to do the hit-check.
+    lda renderedDirection, x : jsr setOrientation
+    Copy16xv renderedOutline, SMC_outline+1
+    Copy16xv renderedX, theX
+    Copy16xv renderedY, theY
+    Copy16xv myHitCheck, SMC_onPoint+1
+    jsr drawOutline
+    rts
+
+.renderMovedObject: {
     ;; if we are rendered, unplot...
     lda isRendered, x : beq afterUnplot
+    ;; we were previously rendered, so unplot...
     lda renderedDirection, x : jsr setOrientation
     Copy16xv renderedOutline, SMC_outline+1
     Copy16xv renderedX, theX
@@ -794,7 +835,7 @@ endmacro
     lda #0 : sta isRendered, x
 .afterUnplot:
     ;; if detect hit during unplot, DONT re-plot to avoid incorrect secondary collision
-    lda isHit, x : bne afterPlot
+    lda isHit, x : bne afterPlot ;; DEV - easier to see behav without this
     ;; if we are active, plot...
     lda isActive, x : beq afterPlot
     lda myDirection, x : jsr setOrientation
@@ -810,6 +851,7 @@ endmacro
     lda myDirection, x : sta renderedDirection, x
     lda #1 : sta isRendered, x
 .afterPlot:
+    lda #0 : sta hasMoved, x
     rts
     }
 
@@ -850,6 +892,7 @@ endmacro
 .loop:
     dey : beq done : jsr emit : jmp loop
 .zero:
+    ;; seeing a '@' is a GODD thing; means we are very fast
     lda #'@' : jsr emit ; we rendered everything and the frame count has not advanced at all!
 .done:
     lda #' ' : jsr emit
@@ -860,10 +903,10 @@ endmacro
     }
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; print game and DEV info
+;;; print game and debug info
 
 .printScore:
-    Position 1,0
+    Position 4,0
     ;;lda #'.' : { ldy gameIsRunning: beq no : lda #'R' : .no } : jsr emit
     ;;Space : lda #'L' : jsr emit : lda livesRemaining : jsr printHexA
     ;;Space : lda #'W' : jsr emit : lda sheetNumber : jsr printHexA
@@ -892,7 +935,7 @@ ShipSpeedY = mySpeedY + ShipObjectNum
     rts
 
 .printGlobalState:
-    jsr printScore
+    ;;jsr printScore ;; TODO: faster emit; only print when changed
     Position 1,1 : jsr printLag ;; alway print lag for now
     ;;IF Debug : Position 15,1 : jsr printObjectCountsByKind : ENDIF ;; not that useful
     IF Debug : jsr printThrustInfo : ENDIF
@@ -936,7 +979,7 @@ macro RandomByte
 endmacro
 
 macro RandomBit
-	RandomByte : and #1
+    RandomByte : and #1
 endmacro
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -970,17 +1013,6 @@ endmacro
     rts
     }
 
-.updatePositionFromSpeed:
-    Add16xx myPosX, mySpeedX
-    Add16xx myPosY, mySpeedY
-    lda myPosX+NUM, x
-    jsr modMaximumX
-    sta myPosX+NUM, x
-    lda myPosY+NUM, x
-    jsr modMaximumY
-    sta myPosY+NUM, x
-    rts
-
 .modMaximumX: {
     m = 160
     x = 9
@@ -1003,10 +1035,37 @@ endmacro
     rts
     }
 
-.updateGenericObject:
-    jsr deactivateIfHit
-    jsr updatePositionFromSpeed
+.updatePositionFromSpeed:
+    Add16xx myPosX, mySpeedX
+    Add16xx myPosY, mySpeedY
+    lda myPosX+NUM, x
+    jsr modMaximumX
+    sta myPosX+NUM, x
+    lda myPosY+NUM, x
+    jsr modMaximumY
+    sta myPosY+NUM, x
     rts
+
+.updateGenericObject: {
+    lda isActive,x : beq done
+    jsr updatePositionFromSpeed
+    jsr haveWeMoved
+.done:
+    rts
+    }
+
+.haveWeMoved: {
+    lda myDirection, x : cmp renderedDirection, x : bne yes
+    lda myPosX+NUM, x : cmp renderedX+NUM, x : bne yes
+    lda myPosY+NUM, x : cmp renderedY+NUM, x : bne yes
+    lda myPosX, x : eor renderedX, x : and #&80 : bne yes ; LO-byte, HI-bit
+    ;; need to check outline or does checking direction suffice? - think so!
+    ;; no..
+    rts
+.yes:
+    lda #1 : sta hasMoved, x
+    rts
+    }
 
 .setCentralPosition:
     lda #80 : sta myPosX+NUM, x
@@ -1022,9 +1081,7 @@ endmacro
     lda frameCounter : sta myTimer, x
     rts
 
-;;; TODO: dont be slower on higher levels
 macro Slower : lsr a : endmacro
-;macro Slower : endmacro
 
 .setRandomSpeed:
     lda #0
@@ -1048,13 +1105,13 @@ macro Slower : lsr a : endmacro
     lda myPosX+NUM, x
     { cmp #60 : bmi no : clc : adc #32 : .no } ; 60 chosen by visual inspection
     sta myPosX+NUM, x
+    ;;sta myPosX, x ;; DEV : noise in LO bit to stagger slow objects movement
     rts
 
 .activateRockL:
     jsr setRandomPosForLargeRock
     jsr setRandomSpeed
     rts
-
 
 .setRandomSpeedY: {stx restoreX+1 : tya : tax : jsr setRandomSpeed : .restoreX : ldx #&77 : rts }
 
@@ -1098,12 +1155,14 @@ macro Slower : lsr a : endmacro
     rts
 
 .updateRock:
+    jsr deactivateIfHit
     jmp updateGenericObject
 
 .createRock:
     lda #KindRock : sta myKind, x
     Copy16ix rockPlot, myPlot
     Copy16ix rockUnPlot, myUnPlot
+    Copy16ix rockHitCheck, myHitCheck
     Copy16ix updateRock, myUpdateF
     rts
 
@@ -1222,15 +1281,18 @@ endmacro
     rts
 
 .updateShip:
+    ;; TODO: much of this could/should be conditional on being active?!
     jsr updateDirection
     jsr computeAcceleration
     jsr updateSpeedFromAcceleration
+    jsr deactivateIfHit
     jmp updateGenericObject
 
 .createShip:
     lda #KindShip : sta myKind, x
     Copy16ix shipPlot, myPlot
     Copy16ix shipUnPlot, myUnPlot
+    Copy16ix shipHitCheck, myHitCheck
     Copy16ix updateShip, myUpdateF
     rts
 
@@ -1263,23 +1325,24 @@ endmacro
 .activateBullet:
     jsr inheritPositionFromShip
     jsr setBulletSpeed
-    jsr doubleSpeed
+    ;; TODO: try 1.5x speed
+    ;; jsr doubleSpeed ;; DEV: Bullets which are too fast pass through objects
     jsr updatePositionFromSpeed
     jsr updatePositionFromSpeed
     jsr updatePositionFromSpeed
     jsr startTimer
     rts
 
-.spawnIfFiringAttempted:
+.spawnIfFiringAttempted: {
     lda fireAttempted : beq no ; not attempted
     lda isActive, x : bne no ; not if we are already active
     jsr activate
     lda #0 : sta fireAttempted ; just one bullet!
 .no:
-    rts
+    rts }
 
 .dieWhenTimerExpires: {
-    lda myTimer, x : clc : adc #50 ; not so long that we can shoot ourselve!
+    lda myTimer, x : clc : adc #75
     cmp frameCounter : bpl no
     jsr deactivate
 .no:
@@ -1287,8 +1350,9 @@ endmacro
     }
 
 .updateBullet:
-    jsr spawnIfFiringAttempted
+    jsr spawnIfFiringAttempted ;; must be run when inactive
     jsr dieWhenTimerExpires
+    jsr deactivateIfHit
     jmp updateGenericObject
 
 .createBullet:
@@ -1296,6 +1360,7 @@ endmacro
     Copy16ix bulletOutline, myOutline
     Copy16ix bulletPlot, myPlot
     Copy16ix bulletUnPlot, myUnPlot
+    Copy16ix bulletHitCheck, myHitCheck
     Copy16ix updateBullet, myUpdateF
     Copy16ix activateBullet, myActivateF
     rts
@@ -1355,6 +1420,7 @@ endmacro
     ldx #ShipObjectNum
     jsr setCentralPosition
     lda #0 : sta myDirection, x
+    jsr setShipOutlineFromDirection
     Copy16ix 0, mySpeedX
     Copy16ix 0, mySpeedY
     jsr activate
@@ -1364,7 +1430,7 @@ endmacro
 ;;; control
 
 .turnLeftOnCaps: {
-    lda frameCounter : and #1 : beq no ; on even frames
+    lda frameCounter : and #1 : beq no ; on even frames ;; TODO: do in less hacky way
     CheckPress keyCaps : beq no
     dec myDirection, x
 .no:
@@ -1414,7 +1480,7 @@ endmacro
     }
 
 .updateGlobal:
-    jsr tryFireOnEnter
+    jsr tryFireOnEnter ;; TODO: move to shipUpdate (to avoid overrun newly fired bullet)?
     jsr killAllRocksOnK
     jsr startNewWaveOnW
     jsr newLifeOnN
@@ -1436,6 +1502,7 @@ endmacro
 
 .onSync:
     inc frameCounter
+    ;; Position 1,0 : lda frameCounter : jsr printHexA
     jsr playSounds
     jsr readKeys
     ;; if Debug : jsr printKeyState : endif ;; not that useful
@@ -1449,13 +1516,14 @@ endmacro
 .renderN: skip 1
 .renderLoop: {
 .loop:
+    ;; TODO: bullets should be special, and rendered on every sync
     lda vsyncNotify : { beq no : dec vsyncNotify : jsr onSync : .no }
     ldx renderN : cpx #NUM : bne notZeroObject
     ldx #0 : stx renderN
     jsr printGlobalState
 .notZeroObject:
     inc randomOffset ;; better randomness; necessary?
-    jsr renderObject
+    jsr renderObjectAndHitCheck
     inc renderN
     jmp loop
     }
