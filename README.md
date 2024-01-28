@@ -4,12 +4,9 @@ Playing around with examples to run on the BBC Micro.
 Goal: Re-Implementation of Acorsoft Meteors.
 [Original Game](https://bbc.godbolt.org/?&disc1=https://nick-chapman.github.io/beeb/Meteors.ssd&autoboot)
 
-## WIP demos in JsBeeb
-- [2023: Game3 (final state of 2023 work)](https://bbc.godbolt.org/?&disc1=https://nick-chapman.github.io/beeb/game3.ssd&autoboot)
-- [2024: New year; new fun: Ship with thrust](https://bbc.godbolt.org/?&disc1=https://nick-chapman.github.io/beeb/jan.ssd&autoboot)
-- [WIP Sound: drone,fire,explode](https://bbc.godbolt.org/?&disc1=https://nick-chapman.github.io/beeb/explode.ssd&autoboot)
-- [objects: ship, rocks, bullets, firing](https://bbc.godbolt.org/?&disc1=https://nick-chapman.github.io/beeb/objects.ssd&autoboot)
-- [Combine sound into game](https://bbc.godbolt.org/?&disc1=https://nick-chapman.github.io/beeb/meteors.ssd&autoboot)
+## Demo My Meteors in JsBeeb
+- [MyMeteors](https://bbc.godbolt.org/?&disc1=https://nick-chapman.github.io/beeb/mymeteors.ssd&autoboot)
+- [Various WIP steps on the way](https://nick-chapman.github.io/beeb)
 
 ## Resources
 
