@@ -112,3 +112,5 @@ Goal: Re-Implementation of Acorsoft Meteors.
 
 ## meteors
 - Combine objects and sounds
+- game logic: gameover, level cleared, next life new game
+- pretty score, lives, waves

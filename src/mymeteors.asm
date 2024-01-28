@@ -2,10 +2,10 @@
 ;;; Meteors: Combine objects and sound
 
 ;;; TODO
+;;; - startup banner with instructions
+;;; - keys: Tab/z/x: alternative-turn
 ;;; - switch to own emit (faster; fix code 13 issue)
 ;;; - other performance improvement?
-;;; - game logic: (space)start, lives, gameover, level cleared, startup banner
-;;; - keys: z/x: alternative-turn
 
 Debug = FALSE
 DebugObjects = FALSE
@@ -250,6 +250,21 @@ org &1100
 .digits: equs "0123456789abcdef"
     }
 
+.printHexA_leadingSpace: {
+    pha
+    and #&f0 : lsr a : lsr a : lsr a : lsr a : tay
+    lda digitsA,y
+    jsr osasci
+    pla
+    and #&f : tay
+    lda digitsB,y
+    jsr osasci
+    rts
+.digitsA: equs " 123456789abcdef"
+.digitsB: equs "0123456789abcdef"
+    }
+
+
 .emit:
     jmp osasci
 
@@ -283,7 +298,6 @@ org &1100
 
 .setupColours:
     jsr setLogicalThreeAsCyan
-    jsr selectLogicalTwo ; for debug info in yellow. default is cyan
     rts
 
 .setupZeroRts: {
@@ -336,6 +350,11 @@ endmacro
 .c0tockPhaseNext equb 0 ; start on tick
 .c0period equb 23 ; initial period (between tick/tock)
 
+.c0muted equb 1
+
+.droneOn: lda #0 : sta c0muted : rts
+.droneOff: lda #1 : sta c0muted : rts
+
 .doChannelZero:
     lda c0playing : bne c0step
     jmp c0maybeStart
@@ -361,10 +380,14 @@ endmacro
     dec c0playing
     rts
 
-.c0sound:
+.c0sound: {
+    lda c0muted : bne no
     lda c0tockPhaseNext
     bne c0tock
     jmp c0tick
+.no:
+    rts
+    }
 
 .c0tick:
     lda #&89 : SEND
@@ -535,15 +558,11 @@ ASSERT c2dataSize = 40
 
 .startKeys:
 
-.keySpace equb 0 ; TODO: start game
+.keySpace equb 0
 .keyCaps  equb 0
 .keyCtrl  equb 0
 .keyShift equb 0
 .keyEnter equb 0
-
-.keyK     equb 0
-.keyW     equb 0
-.keyN     equb 0
 
 .endKeys:
 numberKeys = endKeys - startKeys
@@ -563,21 +582,13 @@ endmacro
     Edge keySpace
     Edge keyEnter
 
-    Edge keyK
-    Edge keyW
-    Edge keyN
-
     PollKey -99,  keySpace
     PollKey -65,  keyCaps
-    ;;PollKey -97,  keyCaps ; TAB
+    ;;PollKey -97,  keyCaps ; TAB ; TODO revert
 
     PollKey -2,   keyCtrl
     PollKey -1,   keyShift
     PollKey -74,  keyEnter
-
-    PollKey -71,  keyK
-    PollKey -34,  keyW
-    PollKey -86,  keyN
 
     rts
 
@@ -842,6 +853,8 @@ SWi = SW or INVISIBLE
 
 .frameCounter: skip 1
 
+.livesRemaining skip 1
+.waveNumber skip 1
 .score skip 2
 
 ;;; only needed for Ship
@@ -1123,15 +1136,22 @@ endmacro
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; print game and debug info
 
+.clearNewGameMessage:
+    Position 9,15
+    Puts "                      "
+    rts
+
+.printNewGameMessage:
+    Position 9,15
+    Puts "Press Space to restart"
+    rts
+
 .printScore:
-    Position 4,0
-    ;;lda #'.' : { ldy gameIsRunning: beq no : lda #'R' : .no } : jsr emit
-    ;;Space : lda #'L' : jsr emit : lda livesRemaining : jsr printHexA
-    ;;Space : lda #'W' : jsr emit : lda sheetNumber : jsr printHexA
-    ;;Space : lda #'S' : jsr emit
+    lda gameOver : bne printNewGameMessage
+    Position 1,1
     lda score+1 : jsr printHexA : lda score,x : jsr printHexA : Emit '0'
-    ;;Space : lda #'.' : { ldy fireAttempted: beq no : lda #'F' : .no } : jsr emit
-    ;;Space : lda #'D' : jsr emit : lda myDirection+ShipObjectNum : jsr printHexA
+    Position 28,1 : lda livesRemaining : jsr printHexA_leadingSpace
+    Position 35,1 : lda waveNumber : jsr printHexA_leadingSpace
     rts
 
 ShipSpeedX = mySpeedX + ShipObjectNum
@@ -1153,9 +1173,9 @@ ShipSpeedY = mySpeedY + ShipObjectNum
     rts
 
 .printGlobalState:
-    ;;jsr printScore ;; TODO: faster emit; only print when changed
-    ;;Position 1,1 : jsr printLag ;; alway print lag for now
-    ;;IF Debug : Position 15,1 : jsr printObjectCountsByKind : ENDIF ;; not that useful
+    jsr printScore ;; TODO: faster emit; only print when changed
+    ;;Position 10,0 : jsr printLag ;; alway print lag for now
+    IF Debug : Position 15,1 : jsr printObjectCountsByKind : ENDIF ;; not that useful
     IF Debug : jsr printThrustInfo : ENDIF
     rts
 
@@ -1224,6 +1244,7 @@ endmacro
     }
 
 .deactivateIfHit: {
+    lda gameOver : bne no ; so animation is unaffected by restart message
     lda isActive, x : beq no
     lda isHit, x : beq no
     jsr deactivate
@@ -1504,13 +1525,55 @@ endmacro
     Add16xv mySpeedY, theAccY
     rts
 
-.updateShip:
-    ;; TODO: much of this could/should be conditional on being active?!
+.tryFireOnEnter: {
+    CheckPress keyEnter : beq no
+    lda kindCount + KindBullet
+    cmp #MaxBullets : bpl no
+    lda #1 : sta fireAttempted ; will be cleared by first available bullet
+.no:
+    rts
+    }
+
+.activateShip:
+    ldx #ShipObjectNum
+    jsr setCentralPosition
+    lda #0 : sta myDirection, x
+    jsr setShipOutlineFromDirection
+    Copy16ix 0, mySpeedX
+    Copy16ix 0, mySpeedY
+    dec livesRemaining
+    jsr activate
+    jsr droneOn
+    rts
+
+.deactivateShip:
+    ;; TODO: exploded ship sound; death animation
+    jsr droneOff
+    jsr startTimer
+    rts
+
+.reanimateDeadShipAfterPause: {
+    lda isActive,x : bne no ; we are not killed yet
+    lda isHit,x : bne no ; must wait until un-plot has occurred
+    lda myTimer, x : clc : adc #200 : cmp frameCounter : bmi no
+    lda livesRemaining : beq no
+    jsr activateShip
+.no:
+    rts
+    }
+
+.updateShip: {
+    jsr reanimateDeadShipAfterPause ;; TODO: move to global logic?
+    lda isActive,x : beq done
+    jsr tryFireOnEnter
     jsr updateDirection
     jsr computeAcceleration
     jsr updateSpeedFromAcceleration
     jsr deactivateIfHit
     jmp updateGenericObject
+.done:
+    rts
+    }
 
 .createShip:
     lda #KindShip : sta myKind, x
@@ -1518,6 +1581,7 @@ endmacro
     Copy16ix shipUnPlot, myUnPlot
     Copy16ix shipHitCheck, myHitCheck
     Copy16ix updateShip, myUpdateF
+    Copy16ix deactivateShip, myDeactivateF
     rts
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -1620,12 +1684,34 @@ endmacro
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; game logic
 
+.bumpWaveNumber:
+    sed
+    lda waveNumber
+    clc : adc #1
+    sta waveNumber
+    cld
+    rts
+
 .startNewWave:
+    jsr droneOn
+    jsr bumpWaveNumber
     jsr c0resetPeriod
     ;; TODO: be more principled in discovering large rock numbers
     ldx #1 : jsr activate
     ldx #8: jsr activate
     ldx #15: jsr activate
+    rts
+
+.resetGameCounts:
+    lda #0 : sta score : sta score+1
+    lda #0 : sta waveNumber
+    rts
+
+.startNewGame:
+    lda #3 : sta livesRemaining
+    jsr resetGameCounts
+    jsr startNewWave
+    jsr activateShip
     rts
 
 .killAllRocks: {
@@ -1641,16 +1727,6 @@ endmacro
 .done:
     rts
     }
-
-.activateShip:
-    ldx #ShipObjectNum
-    jsr setCentralPosition
-    lda #0 : sta myDirection, x
-    jsr setShipOutlineFromDirection
-    Copy16ix 0, mySpeedX
-    Copy16ix 0, mySpeedY
-    jsr activate
-    rts
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; control
@@ -1671,45 +1747,78 @@ endmacro
     rts
     }
 
-.killAllRocksOnK: {
-    CheckPress keyK : beq no
-    jsr killAllRocks
-.no:
-    rts
-    }
-
-.startNewWaveOnW: {
-    CheckPress keyW : beq no
-    jsr startNewWave
-.no:
-    rts
-    }
-
-.newLifeOnN: {
-    CheckPress keyN : beq no
-    jsr activateShip
-.no:
-    rts
-    }
-
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; global behaviour
 
-.tryFireOnEnter: {
-    CheckPress keyEnter : beq no
-    lda kindCount + KindBullet
-    cmp #MaxBullets : bpl no
-    ;; TODO: cant fire when ship is not active
-    lda #1 : sta fireAttempted ; will be cleared by first available bullet
+.globalTimer skip 1
+
+.startGlobalTimer:
+    lda frameCounter : sta globalTimer
+    rts
+
+.gameOver skip 1
+.newGameStarting skip 1
+
+.watchForGameOver: {
+    ldx newGameStarting : bne no
+    ldx #ShipObjectNum : lda isActive, x : bne no ; ship still active
+    lda livesRemaining : bne no ; lives remain
+    lda #1 : sta gameOver
+.no:
+    rts
+    }
+
+.watchForStartNewGameOnSpace: {
+    lda gameOver : beq no ; game is not over
+    lda newGameStarting : bne no ; edge detection
+    CheckPress keySpace : beq no
+    jsr killAllRocks
+    jsr clearNewGameMessage
+    jsr resetGameCounts ; before timer
+    jsr startGlobalTimer
+    lda #1 : sta newGameStarting
+    lda #0 : sta gameOver
+.no:
+    rts
+    }
+
+.startNewGameSoon: {
+    lda newGameStarting : beq no
+    lda globalTimer : clc : adc #100 : cmp frameCounter : bpl no
+    jsr startNewGame
+    lda #0 : sta newGameStarting
+.no:
+    rts
+    }
+
+.waveComplete skip 1
+
+.watchForEndOfWave: {
+    ldx #ShipObjectNum : lda isActive, x : beq no ; ship must be active
+    lda waveComplete : bne no ; edge detection
+    lda kindCount + KindRock : bne no
+    lda #1 : sta waveComplete
+    jsr droneOff
+    jsr startGlobalTimer
+.no:
+    rts
+    }
+
+.startNextWaveSoon: {
+    lda waveComplete : beq no
+    lda globalTimer : clc : adc #100 : cmp frameCounter : bpl no
+    jsr startNewWave
+    lda #0 : sta waveComplete
 .no:
     rts
     }
 
 .updateGlobal:
-    jsr tryFireOnEnter ;; TODO: move to shipUpdate (to avoid overrun newly fired bullet)?
-    jsr killAllRocksOnK
-    jsr startNewWaveOnW
-    jsr newLifeOnN
+    jsr watchForGameOver
+    jsr watchForStartNewGameOnSpace
+    jsr startNewGameSoon
+    jsr watchForEndOfWave
+    jsr startNextWaveSoon
     rts
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -1757,13 +1866,21 @@ endmacro
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; main
 
+.fixedBanner:
+    Position 1,0
+    Puts "Score"
+    Position 27,0
+    Puts "Lives  Waves"
+    rts
+
 .main:
     jsr init
     jsr createAllObjects
     jsr setupChannelThree
+    jsr fixedBanner
+    jsr selectLogicalTwo ; for score etc in yellow
     Copy16iv myIRQ, irq1v ; initialise sync
-    jsr startNewWave
-    jsr activateShip
+    jsr startNewGame
     jmp renderLoop
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
