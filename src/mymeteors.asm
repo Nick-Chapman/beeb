@@ -8,12 +8,13 @@
 ;;; - other performance improvement?
 
 ;;; Difficulty curve:
-;;; - wave 1: 4 rocks; slow   ; 4 bullets
-;;; - wave 2: 5 rocks; slow   ; 4 bullets
-;;; - wave 3: 5 rocks; faster ; 4 bullets
-;;; - wave 4: 5 rocks; faster ; 3 bullets
-;;; - wave 5: 5 rocks; faster ; 2 bullets
-;;; - wave 6: 5 rocks; faster ; 1 bullet
+;;; - wave 1: 3 rocks; slow   ; 4 bullets
+;;; - wave 2: 4 rocks; slow   ; 4 bullets
+;;; - wave 3: 5 rocks; slow   ; 4 bullets
+;;; - wave 4: 5 rocks; faster ; 4 bullets
+;;; - wave 5: 5 rocks; faster ; 3 bullets
+;;; - wave 6: 5 rocks; faster ; 2 bullets
+;;; - wave 7: 5 rocks; faster ; 1 bullet
 
 Debug = FALSE
 DebugObjects = FALSE
@@ -1337,8 +1338,8 @@ endmacro
     lda frameCounter : sta myTimer, x
     rts
 
-macro Slower ;; for first two levels
-    pha : lda #2 : cmp waveNumber : pla : { bcc no : lsr a : .no }
+macro Slower ;; for first three levels
+    pha : lda #3 : cmp waveNumber : pla : { bcc no : lsr a : .no }
 endmacro
 
 .setRandomSpeed:
@@ -1713,9 +1714,9 @@ endmacro
     cld
     rts
 
-.looseBulletFromWave4: {
+.looseBulletFromWave5: {
     lda currentBullets : cmp #1 : beq no
-    lda waveNumber : cmp #4 : bmi no
+    lda waveNumber : cmp #5 : bmi no
     dec currentBullets
 .no:
     rts
@@ -1724,15 +1725,16 @@ endmacro
 .startNewWave:
     jsr droneOn
     jsr bumpWaveNumber
-    jsr looseBulletFromWave4
+    jsr looseBulletFromWave5
     jsr c0resetPeriod
-    ;; just 4 large rocks on first wave
+    ;; 3 large rocks on first wave
     ldx #1 : jsr activate
     ldx #8: jsr activate
     ldx #15: jsr activate
-    ldx #22: jsr activate
-    ;; 5 rocks from 2nd wave onwards
-    lda #1 : cmp waveNumber : { bcs no : ldx #29: jsr activate : .no }
+    ;; 4 rocks from 2nd wave onwards
+    lda #1 : cmp waveNumber : { bcs no : ldx #22: jsr activate : .no }
+    ;; 5 rocks from 3rd wave onwards
+    lda #2 : cmp waveNumber : { bcs no : ldx #29: jsr activate : .no }
     rts
 
 .resetGameCounts:
