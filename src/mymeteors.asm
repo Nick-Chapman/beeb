@@ -7,14 +7,22 @@
 ;;; - switch to own emit (faster; fix code 13 issue)
 ;;; - other performance improvement?
 
+;;; Difficulty curve:
+;;; - wave 1: 4 rocks; slow   ; 4 bullets
+;;; - wave 2: 5 rocks; slow   ; 4 bullets
+;;; - wave 3: 5 rocks; faster ; 4 bullets
+;;; - wave 4: 5 rocks; faster ; 3 bullets
+;;; - wave 5: 5 rocks; faster ; 2 bullets
+;;; - wave 6: 5 rocks; faster ; 1 bullet
+
 Debug = FALSE
 DebugObjects = FALSE
 
-NUM = 32 ;; Number of objects, indexed consistently using X-register
+NUM = 40 ;; Number of objects, indexed consistently using X-register
 
 ShipObjectNum = 0
-MaxBullets = 4
 
+InitialMaxBullets = 4 ; Starts reducing from wave 4
 MomentumIndex = 7  ; Higher is more momentum (and increased max speed)
 ImpulseIndex = 4 ; Higher is lower thrust (and decreased max speed)
 
@@ -176,6 +184,10 @@ endmacro
 
 macro Space
     Emit ' '
+endmacro
+
+macro Dot
+    Emit '.'
 endmacro
 
 macro Puts S
@@ -563,6 +575,7 @@ ASSERT c2dataSize = 40
 .keyCtrl  equb 0
 .keyShift equb 0
 .keyEnter equb 0
+.keyK     equb 0
 
 .endKeys:
 numberKeys = endKeys - startKeys
@@ -581,6 +594,7 @@ endmacro
 .readKeys:
     Edge keySpace
     Edge keyEnter
+    Edge keyK
 
     PollKey -99,  keySpace
     PollKey -65,  keyCaps
@@ -589,6 +603,7 @@ endmacro
     PollKey -2,   keyCtrl
     PollKey -1,   keyShift
     PollKey -74,  keyEnter
+    PollKey -71,  keyK
 
     rts
 
@@ -597,7 +612,6 @@ macro CheckPress Key ; -> NZ
 endmacro
 
 .printKeyState:
-    Position 15,0
     lda #'.' : { ldy keyCaps : beq no : lda #'L' : .no } : jsr emit
     lda #'.' : { ldy keyCtrl : beq no : lda #'C' : .no } : jsr emit
     lda #'.' : { ldy keySpace: beq no : lda #'B' : .no } : jsr emit
@@ -853,6 +867,7 @@ SWi = SW or INVISIBLE
 
 .frameCounter: skip 1
 
+.currentBullets skip 1
 .livesRemaining skip 1
 .waveNumber skip 1
 .score skip 2
@@ -1012,14 +1027,15 @@ FullCircle = 4*QuarterTurn
 
 macro DebugPositionForObject
     lda #31 : jsr osasci
-    lda #37 : jsr osasci ; Xpos
+    lda #36 : jsr osasci ; Xpos
     txa : clc : adc #3 : jsr osasci ; Ypos
 endmacro
 
 .strobe skip NUM
 
 .debugObject: {
-    cpx #10 : beq done; dont debug object 10 because line 13 position is weird
+    cpx #10 : beq done ; dont debug object 10 because line 13 position is weird
+    cpx #29 : bpl done ; too many for screen
     lda myKind, x : beq done ; kind not set, so not a real object
     DebugPositionForObject
     ;lda #'.' : { ldy isActive, x : beq no : lda #'a' : .no } : jsr emit
@@ -1099,7 +1115,7 @@ endmacro
     rti
 .vblank:
     sta system_VIA_interruptFlags ; ack
-    IF NOT(Debug) : lda vsyncNotify : bne crash : ENDIF
+    ;; IF NOT(Debug) : lda vsyncNotify : bne crash : ENDIF ;; TODO reinstate
     inc vsyncNotify
     lda interruptSaveA
     rti
@@ -1158,25 +1174,26 @@ ShipSpeedX = mySpeedX + ShipObjectNum
 ShipSpeedY = mySpeedY + ShipObjectNum
 
 .printObjectCountsByKind:
-    lda #'s' : jsr emit : lda kindCount + KindShip : jsr printHexA
-    Space : lda #'r' : jsr emit : lda kindCount + KindRock : jsr printHexA
-    Space : lda #'b' : jsr emit : lda kindCount + KindBullet : jsr printHexA
+    lda kindCount + KindShip : jsr printHexA : Dot
+    lda kindCount + KindRock : jsr printHexA : Dot
+    lda kindCount + KindBullet : jsr printHexA
     rts
 
 .printThrustInfo:
-    Position 28, 0 : Emit 'a'
-    Space : lda theAccX+1 : jsr printHexA : lda theAccX : jsr printHexA
-    Space : lda theAccY+1 : jsr printHexA : lda theAccY : jsr printHexA
-    Position 28, 1  : Emit 'v'
-    Space : lda ShipSpeedX+NUM : jsr printHexA : lda ShipSpeedX : jsr printHexA
-    Space : lda ShipSpeedY+NUM : jsr printHexA : lda ShipSpeedY : jsr printHexA
+    Position 16, 0
+    lda theAccX+1 : jsr printHexA : lda theAccX : jsr printHexA : Space
+    lda theAccY+1 : jsr printHexA : lda theAccY : jsr printHexA
+    Position 16, 1
+    lda ShipSpeedX+NUM : jsr printHexA : lda ShipSpeedX : jsr printHexA : Space
+    lda ShipSpeedY+NUM : jsr printHexA : lda ShipSpeedY : jsr printHexA
     rts
 
 .printGlobalState:
     jsr printScore ;; TODO: faster emit; only print when changed
-    ;;Position 10,0 : jsr printLag ;; alway print lag for now
-    IF Debug : Position 15,1 : jsr printObjectCountsByKind : ENDIF ;; not that useful
-    IF Debug : jsr printThrustInfo : ENDIF
+    IF Debug : Position 7,0 : jsr printLag : ENDIF
+    ;;IF Debug : Position 7,1 : jsr printObjectCountsByKind : ENDIF ;; not that useful
+    ;;IF Debug : Position 7,1 : jsr printKeyState : ENDIF ;; not that useful
+    ;;IF Debug : jsr printThrustInfo : ENDIF
     rts
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -1320,7 +1337,9 @@ endmacro
     lda frameCounter : sta myTimer, x
     rts
 
-macro Slower : lsr a : endmacro
+macro Slower ;; for first two levels
+    pha : lda #2 : cmp waveNumber : pla : { bcc no : lsr a : .no }
+endmacro
 
 .setRandomSpeed:
     lda #0
@@ -1528,7 +1547,7 @@ endmacro
 .tryFireOnEnter: {
     CheckPress keyEnter : beq no
     lda kindCount + KindBullet
-    cmp #MaxBullets : bpl no
+    cmp currentBullets : bpl no
     lda #1 : sta fireAttempted ; will be cleared by first available bullet
 .no:
     rts
@@ -1657,7 +1676,7 @@ endmacro
 .createRockFamily:
     jsr createRockL : txa : clc : adc #1 : sta childA, x : adc #1 : sta childB, x : inx
     jsr createRockM : txa : clc : adc #2 : sta childA, x : adc #1 : sta childB, x : inx
-    jsr createRockM : txa : clc : adc #2 : sta childA, x : adc #1 : sta childB, x : inx
+    jsr createRockM : txa : clc : adc #3 : sta childA, x : adc #1 : sta childB, x : inx
     jsr createRockS : inx
     jsr createRockS : inx
     jsr createRockS : inx
@@ -1672,9 +1691,11 @@ endmacro
     ldx #1 : jsr createRockFamily ; 1--7
     ldx #8 : jsr createRockFamily ; 8--14
     ldx #15 : jsr createRockFamily ; 15--21
-    txa : clc : adc #MaxBullets : sta smc_cond+1
+    ldx #22 : jsr createRockFamily ; 22--28
+    ldx #29 : jsr createRockFamily ; 29--35
+    txa : clc : adc #InitialMaxBullets : sta smc_cond+1
 .loopB:
-    jsr createBullet ; 22--25
+    jsr createBullet ; 36--39
     inx
     .smc_cond : cpx #&77
     bne loopB
@@ -1692,19 +1713,32 @@ endmacro
     cld
     rts
 
+.looseBulletFromWave4: {
+    lda currentBullets : cmp #1 : beq no
+    lda waveNumber : cmp #4 : bmi no
+    dec currentBullets
+.no:
+    rts
+    }
+
 .startNewWave:
     jsr droneOn
     jsr bumpWaveNumber
+    jsr looseBulletFromWave4
     jsr c0resetPeriod
-    ;; TODO: be more principled in discovering large rock numbers
+    ;; just 4 large rocks on first wave
     ldx #1 : jsr activate
     ldx #8: jsr activate
     ldx #15: jsr activate
+    ldx #22: jsr activate
+    ;; 5 rocks from 2nd wave onwards
+    lda #1 : cmp waveNumber : { bcs no : ldx #29: jsr activate : .no }
     rts
 
 .resetGameCounts:
     lda #0 : sta score : sta score+1
     lda #0 : sta waveNumber
+    lda #InitialMaxBullets : sta currentBullets
     rts
 
 .startNewGame:
@@ -1822,6 +1856,16 @@ endmacro
     rts
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; DEV
+
+.killAllRocksOnK: {
+    CheckPress keyK : beq no
+    jsr killAllRocks
+.no:
+    rts
+    }
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; onSync (update-all)
 
 .updateN: skip 1
@@ -1840,9 +1884,9 @@ endmacro
     ;; Position 1,0 : lda frameCounter : jsr printHexA
     jsr playSounds
     jsr readKeys
-    ;; if Debug : jsr printKeyState : endif ;; not that useful
     jsr updateGlobal
     jsr updateObjects
+    jsr killAllRocksOnK
     rts
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
